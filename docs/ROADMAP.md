@@ -3,7 +3,7 @@
 The roadmap is intentionally staged so the product never claims privacy or protocol properties ahead of implementation.
 
 ## M1A — Visual and product shell
-**Status:** in progress
+**Status:** complete
 
 - Brand system and provisional logo
 - Next.js product shell
@@ -16,6 +16,8 @@ The roadmap is intentionally staged so the product never claims privacy or proto
 No signing, secure vault, protocol verification, Zcash integration, ZK, or mainnet.
 
 ## M1B — Rust credential core
+**Status:** credential core implemented
+
 - Create `zerant-core` and `zerant-credential`
 - Canonical formats and strict parsers
 - Ed25519/JWS verification through maintained libraries

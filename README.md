@@ -12,9 +12,9 @@ Holders remain free in the product thesis. Future B2B infrastructure and integra
 
 ## Current status
 
-**M1A: product shell and local protocol preview.** `apps/web` contains a responsive landing page and Holder / Issuer / Verifier views using static typed public fixtures. Review and decline controls change transient UI state only. There is no backend, authentication, wallet connection, encrypted vault, credential issuance, cryptographic verification, ZK, testnet or mainnet integration.
+**M1B: Rust credential core implemented.** `apps/web` remains a static product preview, while `crates/zerant-core` and `crates/zerant-credential` now implement strict signed-payload parsing, atomic credential verification, issuer trust, audience/expiry checks, and signed revocation snapshots. The holder vault, key-possession enrollment, contextual reputation engine, disclosure/replay engine, Zcash integration, and ZK remain unimplemented.
 
-The protocol documents are normative drafts for future implementation. MUST/MUST NOT requirements are not evidence of implemented guarantees. M1A is not completion of the [full M1 acceptance criteria](docs/scope/milestone-01.md).
+The protocol documents include both implemented M1B contracts and planned M1C/M2 requirements. MUST/MUST NOT language is only an implemented guarantee where the corresponding Rust code and tests exist. Zerant has not yet completed the [full M1 acceptance criteria](docs/scope/milestone-01.md).
 
 ## Architecture
 
@@ -30,7 +30,7 @@ flowchart LR
     W[M1A apps/web: public static role preview]
 ```
 
-Only the public web shell is implemented. Core, credential, reputation, disclosure, SDK and Zcash boundaries remain planned. Generic credentials and reputation must not depend on wallet state. See [architecture decisions](docs/ARCHITECTURE.md) and [protocol overview](docs/PROTOCOL.md).
+The public web shell plus the Rust core/credential boundaries are implemented. Reputation, disclosure, SDK and Zcash boundaries remain planned. Generic credentials and reputation must not depend on wallet state. See [architecture decisions](docs/ARCHITECTURE.md) and [protocol overview](docs/PROTOCOL.md).
 
 ## Planned M1 flow
 
@@ -45,7 +45,7 @@ M1 uses separately signed atomic attestations, **not zero knowledge or redaction
 
 ## Privacy requirements and limits
 
-These are design requirements for M1B/M1C, not implemented M1A guarantees.
+Credential authenticity, issuer authorization, audience/expiry validation, and revocation checks are implemented in M1B. Holder vault privacy, consent transport, reputation evaluation, response signing, and replay persistence remain M1C requirements.
 
 | Intended requirement | Limit |
 | --- | --- |
@@ -54,7 +54,7 @@ These are design requirements for M1B/M1C, not implemented M1A guarantees.
 | Independent audience keys and fresh identifiers reduce obvious correlation | No anonymity or unlinkability guarantee; same-audience reuse, rare claims, timestamps, IP/account data and issuer/verifier collusion can correlate |
 | Explicit single-request consent; denial sends no response | A user can still approve a revealing predicate; device compromise defeats local consent integrity |
 | Encrypted local vault, no default server sync | Future encryption cannot protect an unlocked vault from malicious same-origin code, weak passphrases or a compromised device |
-| Bound requests and durable replay checks | These require actual authenticated transport and persistent atomic state; neither exists in M1A |
+| Bound requests and durable replay checks | These require authenticated transport and persistent atomic state; neither exists yet |
 
 No generic wallet addresses, balances or transactions are part of the response. Zcash’s transaction privacy does not automatically apply to Zerant credentials. Read [privacy](docs/PRIVACY.md) and [threat model](docs/THREAT_MODEL.md) before making claims or designing integrations.
 
@@ -81,7 +81,7 @@ pnpm-workspace.yaml        Workspace definition
 vercel.json                Static-export hosting and clean route URLs
 ```
 
-`crates/zerant-*` and `packages/sdk` are **planned**, not present implementations. No unused component library, query cache, database or crypto library is installed. The local button and utility structure support adding shadcn/ui components when needed.
+`crates/zerant-core` and `crates/zerant-credential` are implemented. The remaining Rust crates and `packages/sdk` are still planned. No unused component library, query cache, database or crypto library is installed. The local button and utility structure support adding shadcn/ui components when needed.
 
 ## Local setup
 
@@ -139,8 +139,8 @@ The source build path is configured; no Vercel deployment has been performed or 
 
 ## Roadmap
 
-- **M1A:** Visual/product shell, consent preview, workspace and docs.
-- **M1B:** Local signed credential flow, reviewed libraries, encrypted vault and subject binding.
+- **M1A:** Complete — visual/product shell, consent preview, workspace and docs.
+- **M1B:** Credential core implemented — strict Rust credential/trust/revocation verification. Encrypted vault and holder proof-of-possession remain pending.
 - **M1C:** Contextual reputation, authenticated consent/disclosure, durable replay and revocation.
 - **M2:** Separately scoped Zcash testnet identity adapter and real integration.
 - **M3:** Research into stronger privacy predicates and anonymous credentials; no stronger guarantees before review and implementation evidence.
@@ -149,7 +149,7 @@ See [the roadmap](docs/ROADMAP.md). There are no committed release dates.
 
 ## Security and development principles
 
-Do not use M1A for real eligibility decisions or enter real credentials into the preview. Static examples are deliberately illustrative and are not wire-format requests or authenticated evidence.
+Do not use the public M1A preview for real eligibility decisions or enter real credentials into it. The web examples remain illustrative; the M1B Rust credential verifier is a local protocol component, not a deployed trust service.
 
 Before protocol implementation, document trust boundaries, cryptographic profiles, subject binding, consent, key lifecycle, storage, replay, revocation and retention in the architecture document. Use maintained libraries and interoperable test vectors; do not invent cryptography or silently substitute a protocol. Never send a whole credential portfolio to simplify verification.
 

@@ -41,3 +41,13 @@ Validate maintained JOSE/JCS and Web Crypto library compatibility, finalize exac
 M1A introduces `apps/web`, a statically exportable Next.js interface deployed as public assets on Vercel. Its role views use invented, typed public fixtures; they do not implement protocol parsers, origin authentication, signing, encrypted storage, issuance, verification, replay state, or revocation. Review and decline controls change only transient React state. Reloading resets that state; no browser persistence, analytics, wallet connection, backend, or credential transport is introduced. All displayed origins, keys and identifiers are illustrative placeholders, not authenticated evidence.
 
 The hosting boundary serves public product copy and demo assets only. No holder secrets are accepted or rendered. Existing cryptographic profiles, subject binding, consent, storage, key lifecycle, revocation, replay and retention decisions remain requirements for M1B/M1C. Static hosting is not a protocol verifier or an isolation boundary between the demo roles. Production protocol implementation still requires the decision gate above. M1A does not complete M1 security acceptance criteria.
+
+## M1B Rust credential core (implemented)
+
+The first protocol-critical implementation now lives in Rust. `zerant-core` owns strict encoding, canonicalization, time, and origin primitives. `zerant-credential` owns atomic credential parsing, issuer trust, EdDSA/Ed25519 compact-JWS validation, audience/expiry checks, and signed revocation snapshots.
+
+The cryptographic boundary uses maintained libraries: `josekit 0.10.3` for JOSE/JWS EdDSA and `serde_json_canonicalizer 0.3.2` for RFC 8785 payload canonicalization. Zerant does not implement Ed25519 or JWS itself. Protected JOSE headers are restricted to `alg=EdDSA`, exact `kid`, and exact message-specific `typ`; signed Zerant payloads are JCS canonical.
+
+M1B remains native Rust. Browser/WASM integration is intentionally deferred until there is a concrete M1C product boundary and shared vectors can prove parity. Holder vault storage, key enrollment/possession, reputation evaluation, disclosure responses, replay persistence, authenticated transport, and Zcash remain unimplemented.
+
+See [M1B implementation](specs/implementation-m1b.md).

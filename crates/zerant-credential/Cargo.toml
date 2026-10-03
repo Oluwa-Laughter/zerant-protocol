@@ -1,0 +1,11 @@
+[package]
+name = "zerant-credential"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+josekit.workspace = true
+sha2.workspace = true
+zerant-core = { path = "../zerant-core" }
