@@ -1,0 +1,15 @@
+{
+  "name": "zerant-protocol",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @zerant/web dev",
+    "build": "pnpm --filter @zerant/web build",
+    "lint": "pnpm --filter @zerant/web lint",
+    "typecheck": "pnpm --filter @zerant/web typecheck",
+    "test": "pnpm --filter @zerant/web test"
+  },
+  "engines": {
+    "node": ">=22.13.0",
+    "pnpm": ">=10"
+  }
+}

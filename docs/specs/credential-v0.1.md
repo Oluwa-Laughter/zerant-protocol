@@ -1,31 +1,29 @@
 # Credential v0.1
 
-Status: proposed M1 wire contract. A signed credential contains exactly one atomic claim; there is no hidden-field proof.
+Status: proposed M1 wire contract. A credential is one atomic signed claim. This is signed minimal disclosure, not a hidden-field proof.
 
-## Canonical payload
+## Common encoding and envelope
 
-The `payload` object contains only the fields below. Unknown fields, duplicate JSON keys, floats, and invalid encodings are rejected. IDs and nonces are cryptographically random 256-bit bytes encoded as unpadded base64url. Times are UTC RFC 3339 strings; implementations compare parsed instants.
+The payload is UTF-8 JSON canonicalized with RFC 8785 JCS and signed as a compact JWS. The protected header contains exactly `alg: "Ed25519"`, `kid`, and `typ: "zerant-credential-v0.1"`; use the standard JWS signing input and a maintained JOSE library. The `kid` equals `issuer_key_id`. The key is an allowlisted Ed25519 public key. Reject noncanonical payloads, duplicate keys, floats, unsafe integers, unknown fields, alternate algorithms, and malformed encodings. See [protocol encoding](../PROTOCOL.md) and [RFC 9864](https://www.rfc-editor.org/rfc/rfc9864.html).
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `schema` | string | Exactly `zerant.credential.v0.1` |
-| `credential_id` | string | Unique random identifier; never reused |
-| `issuer_id` | string | Stable identifier in the local issuer trust manifest |
-| `issuer_key_id` | string | Exact Ed25519 key reference in that manifest |
-| `subject_key` | string | Unpadded base64url Ed25519 public key controlled by holder, unique per verifier origin |
-| `audience` | string | Canonical verifier origin (`scheme://host[:port]`); no path or wildcard |
-| `issued_at`, `expires_at` | string | Issuance and expiration; expiry strictly after issuance |
-| `revocation_handle` | string | Random 256-bit private-to-credential revocation handle |
-| `claim` | object | Exactly one typed claim, defined below |
+All times are integer UTC Unix seconds. IDs are independent 128-bit CSPRNG bytes encoded unpadded base64url. Public keys are Ed25519 public JWKs with `kty: "OKP"`, `crv: "Ed25519"`, and `x`; private `d` is forbidden on the wire.
 
-`claim` has required `type` and `value` fields; `value` is a string, boolean, or bounded integer. It may also have `context`, `policy_id`, and `policy_version` strings. Claim type names are registry-controlled. Source event claims require `context` and an integer `value`; other ordinary claims omit irrelevant fields. A `reputation.threshold` claim requires `value: true`, `context`, `policy_id`, `policy_version`, integer `threshold`, and `operator: "gte"`. No other fields are allowed for that variant. False predicates are not issued; an absent credential is not proof of false. Numeric scores and source events are forbidden in threshold credentials.
+| Payload field | Meaning |
+| --- | --- |
+| `schema` | Exactly `zerant.credential.v0.1` |
+| `kind` | `source` or `attestation` |
+| `credential_id` | Fresh random identifier; never reused |
+| `issuer_id`, `issuer_key_id` | Exact entries in a pinned issuer trust manifest |
+| `subject_key` | Holder Ed25519 public JWK verified at issuance |
+| `audience` | `holder-local` for private source evidence, or a canonical verifier origin for an attestation |
+| `issued_at`, `expires_at` | Validity interval with `expires_at > issued_at`; `issued_at` is the start of validity |
+| `revocation_handle` | Fresh random 128-bit handle for this credential |
+| `claim` | Exactly one typed claim |
 
-The signed envelope is `{ "payload": ..., "signature": { "alg": "Ed25519", "value": string } }`. `value` is the unpadded base64url signature over UTF-8 bytes of `zerant-credential-v0.1\n` followed by RFC 8785 JCS serialization of `payload`. The signature does not cover the envelope wrapper. Reject any alternative algorithm, malformed key, or signature. Ed25519 and JCS are specified by [RFC 8032](https://www.rfc-editor.org/rfc/rfc8032.html) and [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html). Do not implement either primitive from scratch.
+`claim` requires `type` and `value` (string, boolean, or safe integer). For a source event, `type` is the policy's `source_schema_id`; `value` is the registered category string; and `source_schema_version`, `context`, and integer `occurred_at` are required. The source `credential_id` is its stable event ID. An ordinary attestation contains only its required claim fields. A `reputation.threshold` attestation requires `value: true`, `context`, `policy_id`, `policy_version`, unpadded base64url `policy_digest` (SHA-256 of pinned JCS policy bytes), integer `as_of` equal to `issued_at`, safe integer `threshold` from that policy's supported thresholds, and `operator: "gte"`. False predicates are not issued; absence is not proof of false. It contains no numeric score or source event ID.
 
-## Subject binding and trust
+Source credentials use a separate local holder key and `audience: "holder-local"`. They MUST NOT appear in verifier responses. Attestations use a fresh key per verifier origin and that origin as audience. The issuer checks holder control of the relevant key by challenge signature and checks the audience enrollment before issuance. Verifier validation requires a holder response signature by the exact attestation subject key. Issuer IDs alone do not establish trust.
 
-Issuer checks control of `subject_key` before issuance (challenge signature). A verifier requires a holder response signature by that exact key. Issuer ID and key ID resolve through an explicit allowlist; self-asserted keys are never enough. The audience and subject key are per origin, including distinct credentials for distinct verifiers. This incurs issuance overhead and does not conceal the target origin from the issuer.
+## Revocation
 
-## MVP revocation
-
-The issuer publishes a signed, monotonic revocation-list snapshot with `issuer_id`, `issuer_key_id`, `version`, `issued_at`, `next_update`, and sorted digests. Each digest is SHA-256 of UTF-8 `zerant-revocation-v0.1\n` followed by the decoded 32-byte `revocation_handle`. The list envelope uses Ed25519 over `zerant-revocation-list-v0.1\n` plus JCS of the snapshot. The verifier checks list signature/key, version rollback protection, `next_update`, and absence of the digest. A missing or stale list fails closed. The random handle prevents guessing another credential's digest, but revocation metadata is public and not private lookup infrastructure.
+The issuer publishes a compact JWS with protected `alg: "Ed25519"`, issuer `kid`, and `typ: "zerant-revocation-v0.1"`. Its JCS payload contains `schema: "zerant.revocation.v0.1"`, `issuer_id`, `issuer_key_id`, monotonically increasing integer `version`, `issued_at`, `next_update`, and sorted unique `revoked_digests`. Each digest is unpadded base64url SHA-256 of the decoded 16-byte random handle. Require `issued_at < next_update <= issued_at + 86400`. A verifier validates the JWS and issuer key, rejects future/expired/rolled-back snapshots, and checks that the presented handle digest is absent. Missing or stale snapshots fail closed. Publishing whole signed snapshots locally avoids credential-specific online lookups; a revocation digest can still correlate reuse of the same attestation within one origin.

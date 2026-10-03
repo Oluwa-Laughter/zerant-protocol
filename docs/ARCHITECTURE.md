@@ -35,3 +35,9 @@ M2 must choose what testnet identity means, who verifies possession, the observa
 ## Decision gate before code
 
 Validate maintained JOSE/JCS and Web Crypto library compatibility, finalize exact public metadata fixtures and vault format, and record key rotation/compromise and storage implementation choices here. Preserve the contracts below or explicitly version a change; unresolved library choices are not permission to weaken disclosure or replay rules.
+
+## M1A product shell (implemented scope)
+
+M1A introduces `apps/web`, a statically exportable Next.js interface deployed as public assets on Vercel. Its role views use invented, typed public fixtures; they do not implement protocol parsers, origin authentication, signing, encrypted storage, issuance, verification, replay state, or revocation. Review and decline controls change only transient React state. Reloading resets that state; no browser persistence, analytics, wallet connection, backend, or credential transport is introduced. All displayed origins, keys and identifiers are illustrative placeholders, not authenticated evidence.
+
+The hosting boundary serves public product copy and demo assets only. No holder secrets are accepted or rendered. Existing cryptographic profiles, subject binding, consent, storage, key lifecycle, revocation, replay and retention decisions remain requirements for M1B/M1C. Static hosting is not a protocol verifier or an isolation boundary between the demo roles. Production protocol implementation still requires the decision gate above. M1A does not complete M1 security acceptance criteria.

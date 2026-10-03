@@ -1,20 +1,28 @@
-# Threat model — M1
+# Threat model
 
-## Assets and adversaries
+Status: preimplementation M1 model. Assets: private credentials/events/scores, holder signing and vault keys, issuer keys, consent integrity, trust metadata, and one-time verifier acceptance.
 
-Protect credential plaintext, vault and subject private keys, issuer signing keys, consent decisions, and verifier nonce state. Consider a malicious verifier, forged issuer/verifier metadata, compromised browser or device, replaying network party, curious metadata host, and colluding issuers/verifiers. M1 assumes trusted local device execution and trusted issuer evidence checking; compromise of those assumptions is outside its protection.
+Trust boundaries separate issuer, holder browser/vault, verifier session/state, and public metadata. A local demo on one machine does not isolate these actors from a malicious OS. Issuers are trusted only for configured contexts/schemas; verifiers are potentially curious or malicious. Holder-signed assertions cannot replace issuer evidence.
 
-| Threat | M1 control | Residual risk |
+| Threat | Required mitigation | Residual risk / later test |
 | --- | --- | --- |
-| Forged or altered credential | Allowlisted issuer key, Ed25519 signature, exact scope and schema checks | Trusted issuer may issue false statements; key compromise requires rotation/revocation |
-| Request impersonates another domain | Authenticated origin bound to allowlisted verifier key and signed request | Local simulation is not origin security; transport integration must enforce it |
-| Stolen response or replay | Short expiry, challenge/nonce and origin binding, holder signature, atomic nonce consumption | Compromised verifier can reuse data it legitimately saw |
-| Revoked or stale credential | Signed revocation list with freshness deadline; fail closed | Revocation publication delay; offline use unavailable past deadline |
-| Over-disclosure | One claim per credential, exact response preview, explicit per-request consent | A narrow claim can still be identifying |
-| Cross-app correlation | Per-origin holder keys and credentials; reject audience mismatch | Issuer, rare claims, timing, IP, and collusion may correlate |
-| Vault theft | Client-side encryption at rest and no default central credential store | Unlocked or compromised device can expose plaintext |
-| Score manipulation | Versioned deterministic policy and issuer-signed threshold result | Issuer trust and source evidence quality remain decisive |
+| Forged or modified credential/result | Pinned issuer keys, closed schemas, standard JWS, strict parsing | Honest signature does not imply honest issuer; tamper vectors |
+| Malicious request over-discloses | One requirement, exact attestation match, explicit preview/approval, no fallback source upload | User may approve revealing predicates; deny/unknown-field tests |
+| Score fabrication or policy substitution | Issuer independently evaluates pinned policy; holder score never proof | Issuer bias/fraud; mismatch/digest tests |
+| Replay, concurrent acceptance, restart | Full request binding, authenticated session, durable atomic consumption | State loss invalidates outstanding requests; race/restart tests |
+| Domain spoofing or phishing | Authenticated transport origin, exact audience, ASCII domain display, source-window checks | Social engineering remains; port/scheme/window substitution tests |
+| Credential theft/transfer | Audience-key possession, encrypted vault, separate source key | Stolen signing key or voluntary sharing defeats possession; wrong-key test |
+| Stale/revoked evidence | Signed whole snapshots, 24-hour maximum freshness, sequence persistence, dependency revocation | Up to 24-hour revocation lag; stale/rollback/source-revoke tests |
+| Issuer compromise/rotation | Explicit compromise flags, old-key history, fail-closed reissuance | Attack before compromise known; key lifecycle tests |
+| Cross-application correlation | Independent audience keys and IDs, minimal result, no global holder ID | Issuer collusion, rare metadata, IP and account correlation remain |
+| Vault theft/weak password | Reviewed Web Crypto profile, encrypted manual backup, auto-lock | Offline guessing and backup loss remain; storage inspection/unlock tests |
+| XSS, dependency or browser compromise | No credential HTML rendering, CSP review, dependency pinning, secrets outside SSR/logs | Same-origin malicious code can read unlocked data; implementation security review |
+| Status lookup tracking or central profiles | Local full snapshots, no individual lookups or portfolio endpoint | Future metadata hosting exposes access patterns; network/log inspection |
+| DoS/resource exhaustion | Size limits, bounded event lists, no untrusted URL fetches, request timeout | Future hosting needs rate limits; oversize parser tests |
+| Clock manipulation | Trusted local clock assumption, fail closed if unhealthy, no expiry grace | Undetected OS clock manipulation defeats time bounds; simulated-clock tests |
 
-## Required review gates
+## Limits and response
 
-Before code: document vault encryption and recovery, key rotation, issuer/verifier trust bootstrap, transport/origin binding, revocation freshness, and logging behavior. Before any public deployment: review dependency and cryptographic library choices, adversarial tests, privacy leakage, and operational incident handling. Future Zcash identity and stronger predicate proofs require their own threat model updates.
+M1 does not solve sybil resistance, issuer honesty, malicious device control, traffic anonymity, coercion, credential lending or global completeness of evidence. Loss of holder keys requires issuer reissuance after enrollment checks; no universal wallet-derived recovery. Compromised issuer keys require trust metadata update, rejection and reissuance. Revocation/distribution outages fail closed rather than expose extra attributes.
+
+Before implementation, turn mitigations into independent acceptance fixtures, validate maintained crypto library behavior, and document chosen local persistence and authenticated-origin transport. Before hosted or Zcash testnet work, extend this model for deployment, metadata observability, service authentication, retention and wallet-specific authority. No security/privacy claim should exceed tested behavior.

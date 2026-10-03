@@ -1,20 +1,34 @@
-# Privacy model and limits
+# Privacy contract and limits
 
-## M1 invariants
+Status: design requirements, not implemented guarantees. M1 is signed minimal disclosure, not zero knowledge, anonymity or cryptographic unlinkability.
 
-- Unrequested credentials are never returned.
-- Denied attributes never appear in verifier responses, including error payloads and telemetry.
-- A threshold-only request receives only an issuer-signed boolean threshold claim; it never receives the exact reputation score or underlying events.
-- Wallet, address, balance, and transaction history are not fields in a generic protocol response.
-- Requests bind verifier origin, challenge, nonce, and expiration; a response for another verifier/origin fails validation.
-- No default backend can reconstruct a holder's complete credential profile. Holder credentials remain in an encrypted client-side vault.
+## Required M1 invariants
 
-## Necessary disclosures
+- Unrequested credentials are never returned. Private source credentials remain in the encrypted vault; a response contains one matching minimal attestation only.
+- Denied attributes never appear in verifier responses. Denial emits no response; approving one claim never approves another.
+- Exact reputation is not returned for threshold-only requests. Only the policy-bound issuer-attested boolean and required verification metadata appear.
+- Wallet/address/balance/transaction history are not part of the generic protocol response.
+- Requests and holder signatures are bound to verifier origin/domain, challenge, nonce and expiration, plus the complete request digest.
+- Replay to another verifier/domain fails; replay to the same request fails through durable atomic consumption.
+- Backend protocol data cannot reconstruct a holder's complete credential profile. No vault upload, central holder index, cross-issuer aggregation endpoint or source-credential telemetry exists by default.
 
-An approval reveals one signed atomic claim, issuer/key reference, credential and revocation identifiers, origin-specific holder public key, and response timing. A boolean threshold can still reveal sensitive eligibility. A verifier can retain what it receives. The issuer knows its issuance and may know the verifier origin; a public revocation service may observe lookups. Origin-specific keys and credentials reduce trivial cross-verifier matching, but metadata, distinctive claims, network identifiers, issuer collusion, and repeated interactions can correlate a holder. No anonymity or unlinkability guarantee is made.
+## What is visible
 
-The holder's local score is not transmitted. Issuer-signed threshold predicates require the issuer to evaluate evidence it has authority to inspect. M1 does not hide that evidence from the issuer or prove the predicate to the verifier without issuer trust. More private proofs require a separately specified future mechanism.
+| Party | Visible data |
+| --- | --- |
+| Originating issuer | Its enrollment/evidence, source subject key, its audience keys and issuance/revocation dependencies |
+| Holder | Its decrypted vault while unlocked, local scores and audit trace, requests and outbound metadata |
+| Verifier | One result, audience subject public key, issuer/key/schema/context/policy, credential/revocation IDs, validity times, request bindings |
+| Future public metadata host | Public keys/schemas/policies/whole revocation snapshots; network access metadata if hosting is introduced |
 
-## Data handling decisions before code
+Issuers know their own issuance records; no component is allowed to collect a holder-wide multi-issuer portfolio. A one-issuer demo naturally gives that issuer knowledge of all evidence it issued, not a guarantee that an issuer cannot know its own subjects. Issuer/verifier collusion can correlate audience keys via issuance records. Metadata hosts could correlate IP/timing; a future deployment needs a separate transport privacy review.
 
-Specify vault encryption, key derivation, backup/recovery, lock timeout, origin authentication, metadata cache freshness, and analytics defaults before implementation. The local demo should use no analytics and keep secrets out of logs. Reject requests that cannot be displayed and validated exactly. Consent applies to one request and one response; it is never blanket authorization.
+Independent keys and fresh IDs per audience remove obvious global identifiers. They do not prevent correlation by rare claims, timestamps, browser fingerprinting, accounts, IP addresses, timing or collusion. Repeated presentations to the same audience are linkable. Threshold responses disclose the predicate outcome and can enable inference; M1 limits thresholds to the fixed policy value, with no score query API. Issuer learning the audience during provisioning is an explicit tradeoff.
+
+## Data handling
+
+Vault encryption protects stored ciphertext against casual storage inspection, not malicious browser code, weak passphrases or device compromise. No server-side rendering of holder secrets. No analytics, plaintext logs, crash payloads, remote backups or public profile indexing. Store only required public metadata and request/replay state outside the vault. Consent receipts and local scoring traces are encrypted, deletable and not shared.
+
+Verifier protocol state retains consumed request IDs until expiry and public revocation sequence watermarks thereafter. Do not persist raw responses by default; retain only request ID, boolean outcome and acceptance time until request expiry. A later business retention requirement needs a documented purpose, deletion policy and holder notice. Issuer retains only its issuance/dependency ledger needed for validity/revocation through credential expiry; enrollment retention beyond that requires a separate decision. Browser/device compromise or deliberate collusion is outside the backend profile invariant, not grounds for advertising stronger guarantees.
+
+No public ledger receives credentials or presentations in M1. Zcash integration will require new decisions about observable identity and transport; Zcash's shielded transaction properties do not automatically apply to Zerant.
