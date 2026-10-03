@@ -9,31 +9,15 @@ Zerant should feel like serious privacy infrastructure: calm, precise, modern, a
 - No fake metrics, testimonials, logos, or claims.
 - Motion explains state changes only and respects `prefers-reduced-motion`.
 
-## Tokens
+## Tokens and typography
 
-| Token | Light | Dark | Role |
-| --- | --- | --- | --- |
-| background | `#F5F4EF` | `#111310` | page |
-| card | `#FFFFFF` | `#1B1E19` | panels |
-| foreground | `#171916` | `#F3F3ED` | primary text |
-| muted | `#EBE9E1` | `#262922` | subtle fill |
-| muted-foreground | `#666960` | `#A6AAA0` | secondary text |
-| border | `#D8D6CC` | `#34382F` | separators |
-| accent | `#B9A83A` | `#C8B852` | proof/verification accent |
-| success | `#2F7251` | `#63B587` | accepted state |
-| warning | `#8C671C` | `#D7AD57` | caution |
-| error | `#9A4138` | `#E07E73` | invalid/denied |
-
-## Typography
-Use a high-quality system sans stack for reliability: Inter when available, then system UI. Monospace is reserved for identifiers, hashes, origins, protocol versions, and key material.
-
-Headlines are compact, weight 600–650, with slightly negative tracking. Body copy prioritizes readability over density.
+The concrete M1A token table and typography below are authoritative for the implemented shell. Light and dark themes share the same semantic roles; dark mode follows the system preference.
 
 ## Brand mark
 The provisional Zerant mark combines:
 1. a geometric Z path,
 2. bounded corners suggesting explicit trust boundaries,
-3. a single accent aperture/verification point.
+3. an open aperture through the bounded path.
 
 It intentionally avoids shields, locks, eyes, and chain-link clichés. The mark must work in monochrome. Assets live in `apps/web/public/brand/`.
 
@@ -73,3 +57,9 @@ Typography: Arial/Helvetica/system sans for reading and headings; SFMono-Regular
 Layout: maximum 1280px outer container; horizontal gutters 48/30/20px; section spacing 84px desktop, 50px mobile. Surfaces use 4–10px corner radii, fine borders and limited elevation. Controls target at least 44px height and use a visible 3px focus outline. Tabs implement arrow/Home/End navigation. CSS transitions are limited to button opacity; reduced motion disables transitions and smooth scrolling.
 
 The provisional geometric mark combines a Z traversal with open corner boundaries: an aperture rather than a shield or lock. SVG mark, path-based wordmark lockup and app icon share the geometry. Final logo review is pending. M1A status indicators always include text, and origin labels explicitly say they are illustrative and unauthenticated. UI approval does not produce or transmit evidence.
+
+## Protocol-backed consent requirements
+
+For future M1B/M1C, show the authenticated verifier origin, purpose, exact claim or threshold, context/policy, selected issuer, expiry and full outbound evidence. Distinguish source credentials, local scores and issuer-attested results. Keys, IDs, revocation handles and timestamps are visible to the verifier; threshold outcomes are not ZK proofs.
+
+Approval and denial must be equally reachable. Default to no disclosure; no bundled consent, remembered blanket permission or preselected approval. Changing request/evidence invalidates approval. Unlocking does not approve. Denial emits no response. Future receipts and scoring traces must be encrypted and deletable; delivery does not establish acceptance. Private vault state must not enter SSR, shared caches or logs.

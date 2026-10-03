@@ -78,6 +78,7 @@ docs/
 PRODUCT.md                 Product thesis and initial wedge
 DESIGN.md                  Consent principles, tokens and typography
 pnpm-workspace.yaml        Workspace definition
+vercel.json                Static-export hosting and clean route URLs
 ```
 
 `crates/zerant-*` and `packages/sdk` are **planned**, not present implementations. No unused component library, query cache, database or crypto library is installed. The local button and utility structure support adding shadcn/ui components when needed.
@@ -94,7 +95,7 @@ pnpm dev
 
 Open `http://localhost:3000`, then `/demo`. If pnpm is unavailable, install it using your normal package-manager setup or use `npm exec --yes --package=pnpm -- pnpm install`. This requires registry access.
 
-Dependencies initially request stable registry `latest` tags. Installation must resolve them and produce `pnpm-lock.yaml`; commit the reviewed lockfile before a reproducible deployment. Do not claim compatibility from an unexecuted install. See the validation status below.
+Dependencies are pinned to the stable versions resolved by pnpm: Next.js 16.3.8, React 19.3.0 and Tailwind CSS 4.3.3. ESLint 9.39.2 and TypeScript 5.9.3 stay within the supported lint-tool peer ranges. `pnpm-lock.yaml` records the full graph; use frozen installs for CI and deployment.
 
 ## Scripts
 
@@ -122,15 +123,15 @@ The consent test checks visible request identity, exact predicate, withheld cate
 
 ### Validation status for this scaffold
 
-Registry access in the initial authoring environment failed with DNS `EAI_AGAIN`, and pnpm was unavailable. Dependency resolution, lockfile generation and runtime lint/typecheck/test/build validation are pending in a network-enabled environment. Source/configuration checks are not a substitute for a passing production build.
+The scaffold includes a resolved lockfile and consent rendering test. In the authoring sandbox, a full install encountered a read-only global pnpm store; an offline lockfile-only install passed and validation used available workspace dependencies. Run a full frozen install in your deployment environment. Build validation uses the supported Webpack path (`next build --webpack`) because the authoring sandbox blocks the internal sockets required by Turbopack. Lint, strict typecheck, the consent test and production static export passed. Next.js uses the TypeScript compiler API with pinned TypeScript 5.9. Browser and Vercel deployment checks remain separate from build validation.
 
 ## Deployment to Vercel
 
 M1A exports public static assets. No server runtime or secrets are required, and publishing the shell does not deploy a protocol verifier.
 
-1. Resolve dependencies locally, review/commit the lockfile, and run all checks above.
+1. Install dependencies with the checked-in lockfile and run all checks above.
 2. Import this repository into Vercel. Set **Root Directory** to the repository root, not `apps/web`.
-3. Use the **Other** framework preset for this explicit static-export setup. Set install command to `pnpm install --frozen-lockfile`, build command to `pnpm build`, and output directory to `apps/web/out`.
+3. The root `vercel.json` selects the **Other** framework preset for this explicit static-export setup: install command `pnpm install --frozen-lockfile`, build command `pnpm build`, output directory `apps/web/out`, and clean URLs so `/demo` resolves to its exported HTML. Keep these defaults.
 4. Choose a supported Node.js LTS runtime compatible with the resolved Next.js version. No environment variables are needed.
 5. Deploy and confirm `/`, `/demo`, the icon and `/brand/zerant-mark.svg` load on both desktop and mobile. Check keyboard tabs, disclosure details, decline/approval preview labels and system dark mode.
 
