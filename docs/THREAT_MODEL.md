@@ -67,7 +67,7 @@ No generic Zerant verifier is entitled to whole-wallet RPC output. Reorg detecti
 | --- | --- | --- |
 | Database theft | per-record AES-256-GCM DEK; DEK separately wrapped by server KEK | ciphertext length/timing metadata remains observable |
 | Record substitution | account ID, credential ID and key version are authenticated as AAD | application/database compromise can still delete or roll back rows |
-| Session theft | 256-bit random token, DB stores only token hash, HttpOnly secure cookie | compromised device/browser can still act as the signed-in user |
+| Session theft | 256-bit random token, DB stores only token hash, HttpOnly secure cookie, active-session review, remote revocation and fresh-session protection for remote sign-out | compromised device/browser can still act until its session is revoked or expires |
 | ZecAuth replay | short-lived server challenge, exact message match, one-time consumption and one-time browser redemption | ZecAuth v1 capability grants remain server-authoritative |
 | KEK compromise | per-record wrapped DEKs and key versioning | managed KMS/HSM integration is still required for production |
 | Zcash operator compromise | browser never receives RPC credentials; API returns bounded projections only | compromised Z3/Zallet can lie about its own state |

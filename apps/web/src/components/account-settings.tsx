@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { PasskeyManager, type PasskeyView } from "@/components/passkey-manager";
+import { SessionManager, type AccountSessionView } from "@/components/session-manager";
 
 export type AccountSummary = {
   zerant_id: string;
@@ -21,11 +22,13 @@ export function AccountSettings({
   backendAvailable,
   summary,
   initialPasskeys,
+  initialSessions,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
   summary: AccountSummary | null;
   initialPasskeys: PasskeyView[];
+  initialSessions: AccountSessionView[];
 }) {
   const router = useRouter();
   const [confirmText, setConfirmText] = useState("");
@@ -147,6 +150,8 @@ export function AccountSettings({
 
 
         <PasskeyManager initialPasskeys={initialPasskeys} />
+
+        <SessionManager initialSessions={initialSessions} />
 
         <article className="account-card">
           <p className="eyebrow">Export</p>

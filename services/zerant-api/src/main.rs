@@ -67,6 +67,8 @@ const MAX_CREDENTIAL_BYTES: usize = 256 * 1024;
 const MAX_ACCOUNT_CREDENTIALS: i64 = 256;
 const MAX_ACCOUNT_EXPORT_EVENTS: i64 = 5_000;
 const SESSION_TTL_DAYS: i64 = 7;
+const MAX_ACTIVE_SESSIONS_PER_ACCOUNT: i64 = 20;
+const SESSION_TOUCH_INTERVAL_MINUTES: i64 = 5;
 const ZECAUTH_TTL_MINUTES: i64 = 5;
 const PASSKEY_TTL_MINUTES: i64 = 5;
 const PASSKEY_SECURITY_REAUTH_MINUTES: i64 = 15;
@@ -286,6 +288,21 @@ struct SessionInfo {
     identity: String,
     zerant_id: String,
     scopes: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct SessionView {
+    id: Uuid,
+    auth_method: String,
+    current: bool,
+    created_at: OffsetDateTime,
+    last_seen_at: OffsetDateTime,
+    expires_at: OffsetDateTime,
+}
+
+#[derive(Serialize)]
+struct SessionRevokeResult {
+    revoked: u64,
 }
 
 #[derive(Serialize)]
@@ -961,7 +978,56 @@ async fn create_account_session(
     tx: &Transaction<'_>,
     account: Uuid,
     scopes: &[String],
+    auth_method: &str,
 ) -> Result<String, ApiError> {
+    if !matches!(auth_method, "legacy" | "passkey" | "zcash") {
+        return Err(ApiError::Unavailable);
+    }
+
+    tx.query_one(
+        "SELECT id FROM accounts WHERE id = $1 FOR UPDATE",
+        &[&account],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.execute(
+        "DELETE FROM sessions
+         WHERE account_id = $1 AND expires_at <= NOW()",
+        &[&account],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    let active: i64 = tx
+        .query_one(
+            "SELECT COUNT(*) FROM sessions
+             WHERE account_id = $1 AND expires_at > NOW()",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+
+    if active >= MAX_ACTIVE_SESSIONS_PER_ACCOUNT {
+        let remove_count = active
+            .checked_sub(MAX_ACTIVE_SESSIONS_PER_ACCOUNT)
+            .and_then(|value| value.checked_add(1))
+            .ok_or(ApiError::Unavailable)?;
+        tx.execute(
+            "DELETE FROM sessions
+             WHERE id IN (
+                 SELECT id FROM sessions
+                 WHERE account_id = $1 AND expires_at > NOW()
+                 ORDER BY last_seen_at ASC, created_at ASC
+                 LIMIT $2
+             )",
+            &[&account, &remove_count],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    }
+
     let mut token_bytes = [0_u8; 32];
     OsRng.fill_bytes(&mut token_bytes);
     let token = URL_SAFE_NO_PAD.encode(token_bytes);
@@ -971,8 +1037,17 @@ async fn create_account_session(
     let scopes_json = serde_json::to_value(scopes).map_err(|_| ApiError::Unavailable)?;
 
     tx.execute(
-        "INSERT INTO sessions(id, account_id, token_hash, scopes, expires_at) VALUES ($1, $2, $3, $4, $5)",
-        &[&Uuid::new_v4(), &account, &token_hash, &scopes_json, &expires],
+        "INSERT INTO sessions
+         (id, account_id, token_hash, scopes, auth_method, expires_at, last_seen_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())",
+        &[
+            &Uuid::new_v4(),
+            &account,
+            &token_hash,
+            &scopes_json,
+            &auth_method,
+            &expires,
+        ],
     )
     .await
     .map_err(|_| ApiError::Unavailable)?;
@@ -1182,8 +1257,21 @@ async fn account_id(headers: &HeaderMap, db: &Pool) -> Result<Uuid, ApiError> {
     let client = db_client(db).await?;
     client
         .query_opt(
-            "SELECT account_id FROM sessions WHERE token_hash = $1 AND expires_at > NOW()",
-            &[&hash],
+            "WITH found AS (
+                 SELECT id, account_id
+                 FROM sessions
+                 WHERE token_hash = $1 AND expires_at > NOW()
+             ),
+             touched AS (
+                 UPDATE sessions s
+                 SET last_seen_at = NOW()
+                 FROM found f
+                 WHERE s.id = f.id
+                   AND s.last_seen_at < NOW() - ($2::bigint * INTERVAL '1 minute')
+                 RETURNING s.id
+             )
+             SELECT account_id FROM found",
+            &[&hash, &SESSION_TOUCH_INTERVAL_MINUTES],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -1197,11 +1285,27 @@ async fn recent_account_id(headers: &HeaderMap, db: &Pool) -> Result<Uuid, ApiEr
     let client = db_client(db).await?;
     let row = client
         .query_opt(
-            "SELECT account_id,
+            "WITH found AS (
+                 SELECT id, account_id, created_at
+                 FROM sessions
+                 WHERE token_hash = $1 AND expires_at > NOW()
+             ),
+             touched AS (
+                 UPDATE sessions s
+                 SET last_seen_at = NOW()
+                 FROM found f
+                 WHERE s.id = f.id
+                   AND s.last_seen_at < NOW() - ($3::bigint * INTERVAL '1 minute')
+                 RETURNING s.id
+             )
+             SELECT account_id,
                     created_at > NOW() - ($2::bigint * INTERVAL '1 minute') AS recent
-             FROM sessions
-             WHERE token_hash = $1 AND expires_at > NOW()",
-            &[&hash, &PASSKEY_SECURITY_REAUTH_MINUTES],
+             FROM found",
+            &[
+                &hash,
+                &PASSKEY_SECURITY_REAUTH_MINUTES,
+                &SESSION_TOUCH_INTERVAL_MINUTES,
+            ],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -1981,7 +2085,7 @@ async fn passkey_registration_finish(
     .map_err(|_| ApiError::Unavailable)?;
 
     let scopes = vec!["auth".to_owned()];
-    let token = create_account_session(&tx, account, &scopes).await?;
+    let token = create_account_session(&tx, account, &scopes, "passkey").await?;
     tx.commit().await.map_err(|_| ApiError::Unavailable)?;
 
     let mut response = Json(Authenticated {
@@ -2141,7 +2245,7 @@ async fn passkey_authentication_finish(
     .map_err(|_| ApiError::Unavailable)?;
 
     let scopes = vec!["auth".to_owned()];
-    let token = create_account_session(&tx, account, &scopes).await?;
+    let token = create_account_session(&tx, account, &scopes, "passkey").await?;
     let row = tx
         .query_one(
             "SELECT public_handle FROM accounts WHERE id = $1",
@@ -2866,27 +2970,7 @@ async fn redeem_zecauth_session(
     let scopes: Vec<String> =
         serde_json::from_value(scopes_json).map_err(|_| ApiError::Unavailable)?;
 
-    let mut token_bytes = [0_u8; 32];
-    OsRng.fill_bytes(&mut token_bytes);
-    let token = URL_SAFE_NO_PAD.encode(token_bytes);
-    token_bytes.fill(0);
-    let token_hash = Sha256::digest(token.as_bytes()).to_vec();
-    let expires = OffsetDateTime::now_utc() + Duration::days(SESSION_TTL_DAYS);
-    let scopes_json = serde_json::to_value(&scopes).map_err(|_| ApiError::Unavailable)?;
-
-    tx.execute(
-        "INSERT INTO sessions(id, account_id, token_hash, scopes, expires_at)
-         VALUES ($1, $2, $3, $4, $5)",
-        &[
-            &Uuid::new_v4(),
-            &account,
-            &token_hash,
-            &scopes_json,
-            &expires,
-        ],
-    )
-    .await
-    .map_err(|_| ApiError::Unavailable)?;
+    let token = create_account_session(&tx, account, &scopes, "zcash").await?;
     tx.commit().await.map_err(|_| ApiError::Unavailable)?;
 
     let session_cookie = format!(
@@ -7571,6 +7655,114 @@ async fn list_issued_credentials(
     Ok(Json(result))
 }
 
+async fn list_account_sessions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<SessionView>>, ApiError> {
+    let token = session_token(&headers)?;
+    let token_hash = Sha256::digest(token.as_bytes()).to_vec();
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let rows = client
+        .query(
+            "SELECT id, auth_method, token_hash = $2 AS current,
+                    created_at, last_seen_at, expires_at
+             FROM sessions
+             WHERE account_id = $1 AND expires_at > NOW()
+             ORDER BY last_seen_at DESC, created_at DESC
+             LIMIT $3",
+            &[&account, &token_hash, &MAX_ACTIVE_SESSIONS_PER_ACCOUNT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|row| SessionView {
+                id: row.get(0),
+                auth_method: row.get(1),
+                current: row.get(2),
+                created_at: row.get(3),
+                last_seen_at: row.get(4),
+                expires_at: row.get(5),
+            })
+            .collect(),
+    ))
+}
+
+async fn revoke_account_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Response, ApiError> {
+    let token = session_token(&headers)?;
+    let token_hash = Sha256::digest(token.as_bytes()).to_vec();
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "session_revoke", 30).await?;
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            "SELECT token_hash = $3 AS current
+             FROM sessions
+             WHERE id = $1 AND account_id = $2 AND expires_at > NOW()",
+            &[&id, &account, &token_hash],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let current: bool = row.get(0);
+
+    if !current {
+        let recent = recent_account_id(&headers, &state.db).await?;
+        if recent != account {
+            return Err(ApiError::Unauthorized);
+        }
+    }
+
+    let removed = client
+        .execute(
+            "DELETE FROM sessions WHERE id = $1 AND account_id = $2",
+            &[&id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    if removed != 1 {
+        return Err(ApiError::NotFound);
+    }
+
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    if current {
+        response.headers_mut().insert(
+            SET_COOKIE,
+            HeaderValue::from_str(&clear_cookie_header(SESSION_COOKIE))
+                .map_err(|_| ApiError::Unavailable)?,
+        );
+    }
+    Ok(response)
+}
+
+async fn revoke_other_account_sessions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<SessionRevokeResult>, ApiError> {
+    let token = session_token(&headers)?;
+    let token_hash = Sha256::digest(token.as_bytes()).to_vec();
+    let account = recent_account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "session_revoke_others", 10).await?;
+    let client = db_client(&state.db).await?;
+    let removed = client
+        .execute(
+            "DELETE FROM sessions
+             WHERE account_id = $1
+               AND token_hash <> $2",
+            &[&account, &token_hash],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(SessionRevokeResult { revoked: removed }))
+}
+
 async fn session_info(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -7580,11 +7772,23 @@ async fn session_info(
     let client = db_client(&state.db).await?;
     let row = client
         .query_opt(
-            "SELECT a.public_handle, s.scopes
-             FROM sessions s
-             JOIN accounts a ON a.id = s.account_id
-             WHERE s.token_hash = $1 AND s.expires_at > NOW()",
-            &[&hash],
+            "WITH found AS (
+                 SELECT id, account_id, scopes
+                 FROM sessions
+                 WHERE token_hash = $1 AND expires_at > NOW()
+             ),
+             touched AS (
+                 UPDATE sessions s
+                 SET last_seen_at = NOW()
+                 FROM found f
+                 WHERE s.id = f.id
+                   AND s.last_seen_at < NOW() - ($2::bigint * INTERVAL '1 minute')
+                 RETURNING s.id
+             )
+             SELECT a.public_handle, f.scopes
+             FROM found f
+             JOIN accounts a ON a.id = f.account_id",
+            &[&hash, &SESSION_TOUCH_INTERVAL_MINUTES],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -7776,6 +7980,15 @@ fn app(state: AppState) -> Router {
             "/v1/account/passkeys/{id}",
             axum::routing::delete(delete_account_passkey),
         )
+        .route("/v1/account/sessions", get(list_account_sessions))
+        .route(
+            "/v1/account/sessions/revoke-others",
+            post(revoke_other_account_sessions),
+        )
+        .route(
+            "/v1/account/sessions/{id}",
+            axum::routing::delete(revoke_account_session),
+        )
         .route("/v1/activity", get(list_activity))
         .route("/v1/issuer", get(get_issuer_profile).post(register_issuer))
         .route("/v1/issuer/team", get(list_issuer_team))
@@ -7935,6 +8148,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0020_verifier_webhooks.sql"),
             include_str!("../migrations/0021_verification_policies.sql"),
             include_str!("../migrations/0022_passkeys.sql"),
+            include_str!("../migrations/0023_session_management.sql"),
         ] {
             client
                 .batch_execute(migration)

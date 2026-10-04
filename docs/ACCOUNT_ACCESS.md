@@ -36,3 +36,19 @@ Passkeys are an account-access mechanism only. They are not credentials, reputat
 The service persists serialized WebAuthn ceremony state in PostgreSQL because Vercel instances are stateless and may scale between ceremony start and finish. The stored ceremony is short-lived and one-time. The `webauthn-rs` state-serialization feature is therefore used only behind Zerant's protected database boundary.
 
 Account settings expose only internal passkey record IDs, creation time, and last-use time. Raw WebAuthn credential material remains server-side.
+
+## Session control
+
+Authenticated users can review active Zerant sessions from account settings. Each session exposes only:
+
+- access method (`passkey`, `zcash`, or legacy);
+- creation time;
+- last activity time;
+- expiry time;
+- whether it is the current browser session.
+
+Zerant intentionally does not persist IP address, geolocation, browser fingerprint, or wallet address as session-management metadata.
+
+A user may sign out the current session at any time. Revoking another session or all other sessions requires a session created within the last 15 minutes. This prevents an older stolen session from silently evicting the user's newer legitimate sessions.
+
+Each account is capped at 20 active sessions. When a new authenticated session would exceed the cap, Zerant removes the least-recently-active session before creating the new one. Expired sessions are pruned first. Last-activity timestamps are touched at most once every five minutes to bound database write amplification.
