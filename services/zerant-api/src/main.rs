@@ -11,6 +11,7 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
+use josekit::jwk::{Jwk, alg::ed::EdCurve};
 use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
 use rand::rngs::OsRng;
@@ -31,6 +32,17 @@ use tokio_postgres::{NoTls, Row, Transaction, config::SslMode};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 use uuid::Uuid;
+use zerant_core::validate_origin;
+use zerant_credential::{
+    CREDENTIAL_SCHEMA, Claim, ClaimValue, CredentialKind, CredentialPayload, HOLDER_LOCAL_AUDIENCE,
+    IssuerTrustManifest, OrdinaryClaim, PublicJwk, REVOCATION_SCHEMA, RevocationSnapshot,
+    SourceEventClaim, SourceSchemaAuthorization, TrustedIssuer, TrustedIssuerKey, sign_credential,
+    sign_revocation_snapshot, verify_credential,
+};
+use zerant_disclosure::{
+    Context as DisclosureContext, Decision, Evidence, REQUEST_SCHEMA, Request, VerifierPin,
+    respond, sign_request,
+};
 use zerant_zcash::{Adapter, HttpRegtestTransport};
 
 const SESSION_COOKIE: &str = "zerant_session";
@@ -62,6 +74,8 @@ enum ApiError {
     NotFound,
     #[error("invalid request")]
     Invalid,
+    #[error("conflict")]
+    Conflict,
     #[error("service unavailable")]
     Unavailable,
 }
@@ -72,6 +86,7 @@ impl IntoResponse for ApiError {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Invalid => StatusCode::BAD_REQUEST,
+            Self::Conflict => StatusCode::CONFLICT,
             Self::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
         };
         (
@@ -189,6 +204,7 @@ struct ChallengeRow {
 struct Authenticated {
     authenticated: bool,
     identity: String,
+    zerant_id: String,
     scopes: Vec<String>,
 }
 
@@ -196,7 +212,104 @@ struct Authenticated {
 struct SessionInfo {
     authenticated: bool,
     identity: String,
+    zerant_id: String,
     scopes: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegisterIssuer {
+    display_name: String,
+}
+
+#[derive(Serialize)]
+struct IssuerProfileView {
+    display_name: String,
+    issuer_id: String,
+    created_at: OffsetDateTime,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IssueCredential {
+    holder_zerant_id: String,
+    claim_type: String,
+    value: String,
+    context: String,
+    occurred_at: Option<u64>,
+    expires_in_days: Option<u16>,
+}
+
+#[derive(Serialize)]
+struct IssuedCredentialView {
+    credential_id: String,
+    holder_zerant_id: String,
+    claim_type: String,
+    context: String,
+    issued_at: OffsetDateTime,
+    expires_at: OffsetDateTime,
+    revoked: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegisterVerifier {
+    display_name: String,
+    origin: String,
+}
+
+#[derive(Serialize)]
+struct VerifierProfileView {
+    display_name: String,
+    origin: String,
+    created_at: OffsetDateTime,
+}
+
+#[derive(Serialize)]
+struct IssuerDirectoryEntry {
+    display_name: String,
+    issuer_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateVerificationRequest {
+    holder_zerant_id: String,
+    purpose: String,
+    claim_type: String,
+    context: String,
+    accepted_issuer_ids: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct HolderRequestView {
+    id: Uuid,
+    verifier_name: String,
+    verifier_origin: String,
+    purpose: String,
+    claim_type: String,
+    context: String,
+    created_at: OffsetDateTime,
+    expires_at: OffsetDateTime,
+}
+
+#[derive(Serialize)]
+struct VerifierRequestView {
+    id: Uuid,
+    holder_zerant_id: String,
+    purpose: String,
+    claim_type: String,
+    context: String,
+    status: String,
+    verified: bool,
+    created_at: OffsetDateTime,
+    expires_at: OffsetDateTime,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DecideRequest {
+    decision: String,
 }
 
 #[derive(Deserialize)]
@@ -372,6 +485,140 @@ async fn account_id(headers: &HeaderMap, db: &Pool) -> Result<Uuid, ApiError> {
         .map_err(|_| ApiError::Unavailable)?
         .map(|row| row.get(0))
         .ok_or(ApiError::Unauthorized)
+}
+
+fn zerant_public_handle(verification_key: &[u8]) -> String {
+    let digest = Sha256::digest(verification_key);
+    format!("zr_{}", &hex::encode(digest)[..24])
+}
+
+fn random_id() -> String {
+    let mut bytes = [0_u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+    let encoded = URL_SAFE_NO_PAD.encode(bytes);
+    bytes.fill(0);
+    encoded
+}
+
+fn random_challenge() -> String {
+    let mut bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    let encoded = URL_SAFE_NO_PAD.encode(bytes);
+    bytes.fill(0);
+    encoded
+}
+
+fn public_jwk(private: &Jwk) -> Result<PublicJwk, ApiError> {
+    let public = private.to_public_key().map_err(|_| ApiError::Unavailable)?;
+    let value = serde_json::to_value(public).map_err(|_| ApiError::Unavailable)?;
+    let result = PublicJwk {
+        kty: value
+            .get("kty")
+            .and_then(Value::as_str)
+            .ok_or(ApiError::Unavailable)?
+            .to_owned(),
+        crv: value
+            .get("crv")
+            .and_then(Value::as_str)
+            .ok_or(ApiError::Unavailable)?
+            .to_owned(),
+        x: value
+            .get("x")
+            .and_then(Value::as_str)
+            .ok_or(ApiError::Unavailable)?
+            .to_owned(),
+    };
+    result.validate().map_err(|_| ApiError::Unavailable)?;
+    Ok(result)
+}
+
+async fn ensure_account_credential_key(
+    state: &AppState,
+    account: Uuid,
+) -> Result<PublicJwk, ApiError> {
+    let client = db_client(&state.db).await?;
+    if let Some(row) = client
+        .query_opt(
+            "SELECT public_jwk FROM account_credential_keys WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+    {
+        let value: Value = row.get(0);
+        return serde_json::from_value(value).map_err(|_| ApiError::Unavailable);
+    }
+
+    let private = Jwk::generate_ed_key(EdCurve::Ed25519).map_err(|_| ApiError::Unavailable)?;
+    let public = public_jwk(&private)?;
+    let mut plaintext = serde_json::to_vec(&private).map_err(|_| ApiError::Unavailable)?;
+    let encrypted = state.cipher.encrypt(account, account, &plaintext)?;
+    plaintext.fill(0);
+    let public_value = serde_json::to_value(&public).map_err(|_| ApiError::Unavailable)?;
+
+    let inserted = client
+        .execute(
+            "INSERT INTO account_credential_keys
+             (account_id, public_jwk, ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (account_id) DO NOTHING",
+            &[
+                &account,
+                &public_value,
+                &encrypted.ciphertext,
+                &encrypted.data_nonce,
+                &encrypted.wrapped_dek,
+                &encrypted.wrap_nonce,
+                &encrypted.key_version,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    if inserted == 1 {
+        Ok(public)
+    } else {
+        let row = client
+            .query_one(
+                "SELECT public_jwk FROM account_credential_keys WHERE account_id = $1",
+                &[&account],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+        let value: Value = row.get(0);
+        serde_json::from_value(value).map_err(|_| ApiError::Unavailable)
+    }
+}
+
+async fn load_account_credential_keypair(
+    state: &AppState,
+    account: Uuid,
+) -> Result<(Jwk, PublicJwk), ApiError> {
+    let public = ensure_account_credential_key(state, account).await?;
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_one(
+            "SELECT ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version
+             FROM account_credential_keys WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let now = OffsetDateTime::now_utc();
+    let secret = CredentialRow {
+        id: account,
+        ciphertext: row.get(0),
+        data_nonce: row.get(1),
+        wrapped_dek: row.get(2),
+        wrap_nonce: row.get(3),
+        key_version: row.get(4),
+        created_at: now,
+        updated_at: now,
+    };
+    let mut bytes = state.cipher.decrypt(account, &secret)?;
+    let private = serde_json::from_slice(&bytes).map_err(|_| ApiError::Unavailable)?;
+    bytes.fill(0);
+    Ok((private, public))
 }
 
 async fn health() -> Json<Health> {
@@ -625,6 +872,14 @@ async fn zecauth_verify(
         }
     };
 
+    let zerant_id = zerant_public_handle(&verification_key);
+    tx.execute(
+        "UPDATE accounts SET public_handle = COALESCE(public_handle, $2) WHERE id = $1",
+        &[&account, &zerant_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
     let scopes: Vec<_> = granted.into_iter().collect();
     let scopes_json = serde_json::to_value(&scopes).map_err(|_| ApiError::Unavailable)?;
     tx.execute(
@@ -640,6 +895,7 @@ async fn zecauth_verify(
     Ok(Json(Authenticated {
         authenticated: true,
         identity: hex::encode(verification_key),
+        zerant_id,
         scopes,
     })
     .into_response())
@@ -824,6 +1080,1017 @@ async fn delete_credential(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn get_verifier_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<VerifierProfileView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            "SELECT display_name, origin, created_at
+             FROM verifier_profiles WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+
+    Ok(Json(VerifierProfileView {
+        display_name: row.get(0),
+        origin: row.get(1),
+        created_at: row.get(2),
+    }))
+}
+
+async fn register_verifier(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<RegisterVerifier>,
+) -> Result<(StatusCode, Json<VerifierProfileView>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let display_name = input.display_name.trim().to_owned();
+    let origin = input.origin.trim().to_owned();
+    if !valid_short_text(&display_name, 2, 120) || validate_origin(&origin, &[]).is_err() {
+        return Err(ApiError::Invalid);
+    }
+
+    let client = db_client(&state.db).await?;
+    if client
+        .query_opt(
+            "SELECT 1 FROM verifier_profiles WHERE account_id = $1 OR origin = $2",
+            &[&account, &origin],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .is_some()
+    {
+        return Err(ApiError::Conflict);
+    }
+
+    let profile_id = Uuid::new_v4();
+    let verifier_id = format!("zerant:verifier:{}", profile_id.simple());
+    let verifier_key_id = format!("key-{}", Uuid::new_v4().simple());
+    let mut private = Jwk::generate_ed_key(EdCurve::Ed25519).map_err(|_| ApiError::Unavailable)?;
+    private.set_key_id(verifier_key_id.clone());
+    let public = public_jwk(&private)?;
+    let public_value = serde_json::to_value(&public).map_err(|_| ApiError::Unavailable)?;
+    let mut plaintext = serde_json::to_vec(&private).map_err(|_| ApiError::Unavailable)?;
+    let encrypted = state.cipher.encrypt(account, profile_id, &plaintext)?;
+    plaintext.fill(0);
+
+    let row = client
+        .query_one(
+            "INSERT INTO verifier_profiles
+             (id, account_id, display_name, origin, verifier_id, verifier_key_id, public_jwk,
+              ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             RETURNING display_name, origin, created_at",
+            &[
+                &profile_id,
+                &account,
+                &display_name,
+                &origin,
+                &verifier_id,
+                &verifier_key_id,
+                &public_value,
+                &encrypted.ciphertext,
+                &encrypted.data_nonce,
+                &encrypted.wrapped_dek,
+                &encrypted.wrap_nonce,
+                &encrypted.key_version,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(VerifierProfileView {
+            display_name: row.get(0),
+            origin: row.get(1),
+            created_at: row.get(2),
+        }),
+    ))
+}
+
+async fn issuer_directory(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<IssuerDirectoryEntry>>, ApiError> {
+    let _ = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let rows = client
+        .query(
+            "SELECT display_name, issuer_id FROM issuer_profiles ORDER BY display_name ASC LIMIT 256",
+            &[],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|row| IssuerDirectoryEntry {
+                display_name: row.get(0),
+                issuer_id: row.get(1),
+            })
+            .collect(),
+    ))
+}
+
+async fn create_verification_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CreateVerificationRequest>,
+) -> Result<(StatusCode, Json<VerifierRequestView>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let holder_zerant_id = input.holder_zerant_id.trim().to_owned();
+    let purpose = input.purpose.trim().to_owned();
+    let claim_type = input.claim_type.trim().to_owned();
+    let context = input.context.trim().to_owned();
+    if !holder_zerant_id.starts_with("zr_")
+        || !valid_short_text(&holder_zerant_id, 27, 27)
+        || !valid_short_text(&purpose, 2, 1024)
+        || !valid_short_text(&claim_type, 2, 120)
+        || claim_type == "reputation.threshold"
+        || !valid_short_text(&context, 2, 120)
+        || input.accepted_issuer_ids.is_empty()
+        || input.accepted_issuer_ids.len() > 32
+    {
+        return Err(ApiError::Invalid);
+    }
+
+    let mut accepted = input.accepted_issuer_ids;
+    accepted.sort();
+    accepted.dedup();
+    if accepted.is_empty() {
+        return Err(ApiError::Invalid);
+    }
+
+    let client = db_client(&state.db).await?;
+    for issuer_id in &accepted {
+        if client
+            .query_opt(
+                "SELECT 1 FROM issuer_profiles WHERE issuer_id = $1",
+                &[issuer_id],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?
+            .is_none()
+        {
+            return Err(ApiError::Invalid);
+        }
+    }
+
+    let holder = client
+        .query_opt(
+            "SELECT id FROM accounts WHERE public_handle = $1",
+            &[&holder_zerant_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let subject_account: Uuid = holder.get(0);
+
+    let verifier = client
+        .query_opt(
+            "SELECT id, display_name, origin, verifier_id, verifier_key_id,
+                    ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version
+             FROM verifier_profiles WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+
+    let profile_id: Uuid = verifier.get(0);
+    let origin: String = verifier.get(2);
+    let verifier_id: String = verifier.get(3);
+    let verifier_key_id: String = verifier.get(4);
+    let verifier_secret = secret_row(&verifier, profile_id, 5);
+    let private = decrypt_stored_jwk(&state, account, &verifier_secret)?;
+
+    let now = OffsetDateTime::now_utc();
+    let now_i64 = now.unix_timestamp();
+    if now_i64 < 0 {
+        return Err(ApiError::Unavailable);
+    }
+    let issued_at = now_i64 as u64;
+    let expires_at = issued_at + 300;
+    let request = Request {
+        schema: REQUEST_SCHEMA.into(),
+        request_id: random_id(),
+        verifier_id,
+        verifier_key_id,
+        verifier_origin: origin,
+        purpose: purpose.clone(),
+        accepted_issuer_ids: accepted.clone(),
+        claim_type: claim_type.clone(),
+        context: Some(context.clone()),
+        predicate: None,
+        challenge: random_challenge(),
+        nonce: random_challenge(),
+        issued_at,
+        expires_at,
+    };
+    let request_jws = sign_request(&request, &private, &[]).map_err(|_| ApiError::Invalid)?;
+    let db_id = Uuid::new_v4();
+    let expires_time =
+        OffsetDateTime::from_unix_timestamp(expires_at as i64).map_err(|_| ApiError::Invalid)?;
+    let accepted_value = serde_json::to_value(&accepted).map_err(|_| ApiError::Unavailable)?;
+
+    client
+        .execute(
+            "INSERT INTO verification_requests
+             (id, verifier_profile_id, subject_account_id, request_id, request_jws, purpose,
+              claim_type, context, accepted_issuer_ids, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+            &[
+                &db_id,
+                &profile_id,
+                &subject_account,
+                &request.request_id,
+                &request_jws,
+                &purpose,
+                &claim_type,
+                &context,
+                &accepted_value,
+                &expires_time,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(VerifierRequestView {
+            id: db_id,
+            holder_zerant_id,
+            purpose,
+            claim_type,
+            context,
+            status: "pending".into(),
+            verified: false,
+            created_at: now,
+            expires_at: expires_time,
+        }),
+    ))
+}
+
+async fn list_verifier_requests(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<VerifierRequestView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    client
+        .execute(
+            "UPDATE verification_requests r
+             SET status = 'expired'
+             FROM verifier_profiles p
+             WHERE r.verifier_profile_id = p.id
+               AND p.account_id = $1
+               AND r.status = 'pending'
+               AND r.expires_at <= NOW()",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let rows = client
+        .query(
+            "SELECT r.id, a.public_handle, r.purpose, r.claim_type, r.context,
+                    r.status, r.created_at, r.expires_at
+             FROM verification_requests r
+             JOIN verifier_profiles p ON p.id = r.verifier_profile_id
+             JOIN accounts a ON a.id = r.subject_account_id
+             WHERE p.account_id = $1
+             ORDER BY r.created_at DESC
+             LIMIT 256",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        let status: String = row.get(5);
+        let holder: Option<String> = row.get(1);
+        result.push(VerifierRequestView {
+            id: row.get(0),
+            holder_zerant_id: holder.ok_or(ApiError::Unavailable)?,
+            purpose: row.get(2),
+            claim_type: row.get(3),
+            context: row.get(4),
+            verified: status == "approved",
+            status,
+            created_at: row.get(6),
+            expires_at: row.get(7),
+        });
+    }
+    Ok(Json(result))
+}
+
+async fn list_holder_requests(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<HolderRequestView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    client
+        .execute(
+            "UPDATE verification_requests
+             SET status = 'expired'
+             WHERE subject_account_id = $1
+               AND status = 'pending'
+               AND expires_at <= NOW()",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let rows = client
+        .query(
+            "SELECT r.id, v.display_name, v.origin, r.purpose, r.claim_type, r.context,
+                    r.created_at, r.expires_at
+             FROM verification_requests r
+             JOIN verifier_profiles v ON v.id = r.verifier_profile_id
+             WHERE r.subject_account_id = $1
+               AND r.status = 'pending'
+               AND r.expires_at > NOW()
+             ORDER BY r.created_at DESC
+             LIMIT 64",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|row| HolderRequestView {
+                id: row.get(0),
+                verifier_name: row.get(1),
+                verifier_origin: row.get(2),
+                purpose: row.get(3),
+                claim_type: row.get(4),
+                context: row.get(5),
+                created_at: row.get(6),
+                expires_at: row.get(7),
+            })
+            .collect(),
+    ))
+}
+
+async fn decide_holder_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(input): Json<DecideRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let holder_account = account_id(&headers, &state.db).await?;
+    if input.decision == "deny" {
+        let client = db_client(&state.db).await?;
+        let affected = client
+            .execute(
+                "UPDATE verification_requests
+                 SET status = 'denied', decided_at = NOW()
+                 WHERE id = $1 AND subject_account_id = $2
+                   AND status = 'pending' AND expires_at > NOW()",
+                &[&id, &holder_account],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+        if affected != 1 {
+            return Err(ApiError::Conflict);
+        }
+        return Ok(Json(
+            serde_json::json!({ "status": "denied", "verified": false }),
+        ));
+    }
+    if input.decision != "approve" {
+        return Err(ApiError::Invalid);
+    }
+
+    let client = db_client(&state.db).await?;
+    let request_row = client
+        .query_opt(
+            "SELECT r.request_jws, r.claim_type, r.context, r.accepted_issuer_ids,
+                    r.expires_at, r.status,
+                    v.id, v.account_id, v.origin, v.verifier_id, v.verifier_key_id,
+                    v.public_jwk, v.created_at
+             FROM verification_requests r
+             JOIN verifier_profiles v ON v.id = r.verifier_profile_id
+             WHERE r.id = $1 AND r.subject_account_id = $2",
+            &[&id, &holder_account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+
+    let status: String = request_row.get(5);
+    let request_expires: OffsetDateTime = request_row.get(4);
+    let now = OffsetDateTime::now_utc();
+    if status != "pending" || request_expires <= now {
+        return Err(ApiError::Conflict);
+    }
+
+    let request_jws: String = request_row.get(0);
+    let claim_type: String = request_row.get(1);
+    let context: String = request_row.get(2);
+    let accepted_value: Value = request_row.get(3);
+    let accepted: Vec<String> =
+        serde_json::from_value(accepted_value).map_err(|_| ApiError::Unavailable)?;
+
+    let candidates = client
+        .query(
+            "SELECT c.vault_record_id,
+                    p.id, p.account_id, p.issuer_id, p.issuer_key_id, p.public_jwk,
+                    p.ciphertext, p.data_nonce, p.wrapped_dek, p.wrap_nonce, p.key_version,
+                    p.created_at
+             FROM issued_credentials c
+             JOIN issuer_profiles p ON p.id = c.issuer_profile_id
+             WHERE c.subject_account_id = $1
+               AND c.claim_type = $2
+               AND c.context = $3
+               AND c.revoked_at IS NULL
+               AND c.expires_at > NOW()
+             ORDER BY c.created_at DESC",
+            &[&holder_account, &claim_type, &context],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let candidate = candidates
+        .into_iter()
+        .find(|row| {
+            let issuer_id: String = row.get(3);
+            let vault_record_id: Option<Uuid> = row.get(0);
+            vault_record_id.is_some() && accepted.contains(&issuer_id)
+        })
+        .ok_or(ApiError::NotFound)?;
+
+    let vault_record_id: Uuid = candidate
+        .get::<_, Option<Uuid>>(0)
+        .ok_or(ApiError::NotFound)?;
+    let vault_row = client
+        .query_opt(
+            "SELECT id, ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version,
+                    created_at, updated_at
+             FROM credential_envelopes
+             WHERE id = $1 AND account_id = $2",
+            &[&vault_record_id, &holder_account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let vault_row = CredentialRow::from_row(vault_row);
+    let mut private_record = state.cipher.decrypt(holder_account, &vault_row)?;
+    let record: Value =
+        serde_json::from_slice(&private_record).map_err(|_| ApiError::Unavailable)?;
+    private_record.fill(0);
+    if record.get("type").and_then(Value::as_str) != Some("zerant.private-credential")
+        || record.get("claim_type").and_then(Value::as_str) != Some(claim_type.as_str())
+        || record.get("context").and_then(Value::as_str) != Some(context.as_str())
+    {
+        return Err(ApiError::Invalid);
+    }
+    let value = record
+        .get("value")
+        .and_then(Value::as_str)
+        .ok_or(ApiError::Invalid)?
+        .to_owned();
+    let source_jws = record
+        .get("signed_credential")
+        .and_then(Value::as_str)
+        .ok_or(ApiError::Invalid)?
+        .to_owned();
+
+    let issuer_profile_id: Uuid = candidate.get(1);
+    let issuer_account: Uuid = candidate.get(2);
+    let issuer_id: String = candidate.get(3);
+    let issuer_key_id: String = candidate.get(4);
+    let issuer_public_value: Value = candidate.get(5);
+    let issuer_public: PublicJwk =
+        serde_json::from_value(issuer_public_value).map_err(|_| ApiError::Unavailable)?;
+    let issuer_secret = secret_row(&candidate, issuer_profile_id, 6);
+    let issuer_private = decrypt_stored_jwk(&state, issuer_account, &issuer_secret)?;
+    let issuer_created: OffsetDateTime = candidate.get(11);
+
+    let now_i64 = now.unix_timestamp();
+    let request_expiry_i64 = request_expires.unix_timestamp();
+    if now_i64 < 0 || request_expiry_i64 <= now_i64 {
+        return Err(ApiError::Conflict);
+    }
+    let now_u64 = now_i64 as u64;
+    let proof_expiry = (now_u64 + 300).min(request_expiry_i64 as u64);
+    if proof_expiry <= now_u64 {
+        return Err(ApiError::Conflict);
+    }
+
+    let issuer_valid_from = issuer_created.unix_timestamp();
+    if issuer_valid_from < 0 {
+        return Err(ApiError::Unavailable);
+    }
+    let key_valid_until = proof_expiry
+        .checked_add(86_400)
+        .ok_or(ApiError::Unavailable)?;
+    let trust = IssuerTrustManifest {
+        issuers: vec![TrustedIssuer {
+            issuer_id: issuer_id.clone(),
+            keys: vec![TrustedIssuerKey {
+                issuer_key_id: issuer_key_id.clone(),
+                public_key: issuer_public.clone(),
+                valid_from: issuer_valid_from as u64,
+                valid_until: key_valid_until,
+                compromised: false,
+            }],
+            allowed_claim_types: vec![claim_type.clone()],
+            allowed_contexts: vec![context.clone()],
+            source_schemas: vec![SourceSchemaAuthorization {
+                source_schema_id: claim_type.clone(),
+                version: "0.1".into(),
+                context: context.clone(),
+                categories: vec![value.clone()],
+            }],
+            policies: vec![],
+        }],
+    };
+
+    let snapshot = RevocationSnapshot {
+        schema: REVOCATION_SCHEMA.into(),
+        issuer_id: issuer_id.clone(),
+        issuer_key_id: issuer_key_id.clone(),
+        version: now_u64,
+        issued_at: now_u64,
+        next_update: proof_expiry,
+        revoked_digests: vec![],
+    };
+    let revocation_jws =
+        sign_revocation_snapshot(&snapshot, &issuer_private).map_err(|_| ApiError::Invalid)?;
+
+    let verified_source = verify_credential(
+        &source_jws,
+        &revocation_jws,
+        &trust,
+        &issuer_id,
+        HOLDER_LOCAL_AUDIENCE,
+        &[],
+        now_u64,
+        0,
+    )
+    .map_err(|_| ApiError::Invalid)?;
+
+    let (holder_private, holder_public) =
+        load_account_credential_keypair(&state, holder_account).await?;
+    if verified_source.payload.subject_key != holder_public {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let verifier_origin: String = request_row.get(8);
+    let attestation = CredentialPayload {
+        schema: CREDENTIAL_SCHEMA.into(),
+        kind: CredentialKind::Attestation,
+        credential_id: random_id(),
+        issuer_id: issuer_id.clone(),
+        issuer_key_id: issuer_key_id.clone(),
+        subject_key: holder_public,
+        audience: verifier_origin.clone(),
+        issued_at: now_u64,
+        expires_at: proof_expiry,
+        revocation_handle: random_id(),
+        claim: Claim::Ordinary(OrdinaryClaim {
+            claim_type: claim_type.clone(),
+            value: ClaimValue::String(value),
+            context: Some(context.clone()),
+        }),
+    };
+    let attestation_jws =
+        sign_credential(&attestation, &issuer_private).map_err(|_| ApiError::Invalid)?;
+
+    let verifier_public_value: Value = request_row.get(11);
+    let verifier_public: PublicJwk =
+        serde_json::from_value(verifier_public_value).map_err(|_| ApiError::Unavailable)?;
+    let verifier_created: OffsetDateTime = request_row.get(12);
+    let verifier_valid_from = verifier_created.unix_timestamp();
+    if verifier_valid_from < 0 {
+        return Err(ApiError::Unavailable);
+    }
+    let pin = VerifierPin {
+        verifier_id: request_row.get(9),
+        key_id: request_row.get(10),
+        key: verifier_public,
+        allowed_origins: vec![verifier_origin.clone()],
+        valid_from: verifier_valid_from as u64,
+        valid_until: key_valid_until,
+        compromised: false,
+    };
+    let disclosure_context = DisclosureContext {
+        pin: &pin,
+        origin: &verifier_origin,
+        trust: &trust,
+        now: now_u64,
+        allowed_loopback: &[],
+    };
+    let evidence = Evidence {
+        attestation_jws: &attestation_jws,
+        revocation_jws: &revocation_jws,
+        issuer_id: &issuer_id,
+        minimum_revocation_version: 0,
+    };
+    let response = respond(
+        &request_jws,
+        &disclosure_context,
+        Decision::Approve,
+        Some(&evidence),
+        &holder_private,
+    )
+    .map_err(|_| ApiError::Invalid)?
+    .ok_or(ApiError::Invalid)?;
+
+    let verifier_account: Uuid = request_row.get(7);
+    let encrypted_response = state
+        .cipher
+        .encrypt(verifier_account, id, response.as_bytes())?;
+    let affected = client
+        .execute(
+            "UPDATE verification_requests
+             SET status = 'approved',
+                 response_ciphertext = $3,
+                 response_data_nonce = $4,
+                 response_wrapped_dek = $5,
+                 response_wrap_nonce = $6,
+                 response_key_version = $7,
+                 decided_at = NOW()
+             WHERE id = $1 AND subject_account_id = $2
+               AND status = 'pending' AND expires_at > NOW()",
+            &[
+                &id,
+                &holder_account,
+                &encrypted_response.ciphertext,
+                &encrypted_response.data_nonce,
+                &encrypted_response.wrapped_dek,
+                &encrypted_response.wrap_nonce,
+                &encrypted_response.key_version,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    if affected != 1 {
+        return Err(ApiError::Conflict);
+    }
+
+    Ok(Json(
+        serde_json::json!({ "status": "approved", "verified": true }),
+    ))
+}
+
+fn secret_row(row: &Row, object_id: Uuid, offset: usize) -> CredentialRow {
+    let now = OffsetDateTime::now_utc();
+    CredentialRow {
+        id: object_id,
+        ciphertext: row.get(offset),
+        data_nonce: row.get(offset + 1),
+        wrapped_dek: row.get(offset + 2),
+        wrap_nonce: row.get(offset + 3),
+        key_version: row.get(offset + 4),
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+fn decrypt_stored_jwk(
+    state: &AppState,
+    owner_account: Uuid,
+    secret: &CredentialRow,
+) -> Result<Jwk, ApiError> {
+    let mut bytes = state.cipher.decrypt(owner_account, secret)?;
+    let key = serde_json::from_slice(&bytes).map_err(|_| ApiError::Unavailable)?;
+    bytes.fill(0);
+    Ok(key)
+}
+
+async fn get_issuer_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<IssuerProfileView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            "SELECT display_name, issuer_id, created_at
+             FROM issuer_profiles
+             WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+
+    Ok(Json(IssuerProfileView {
+        display_name: row.get(0),
+        issuer_id: row.get(1),
+        created_at: row.get(2),
+    }))
+}
+
+async fn register_issuer(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<RegisterIssuer>,
+) -> Result<(StatusCode, Json<IssuerProfileView>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let display_name = input.display_name.trim().to_owned();
+    if !(2..=120).contains(&display_name.chars().count())
+        || display_name.chars().any(char::is_control)
+    {
+        return Err(ApiError::Invalid);
+    }
+
+    let client = db_client(&state.db).await?;
+    if client
+        .query_opt(
+            "SELECT 1 FROM issuer_profiles WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .is_some()
+    {
+        return Err(ApiError::Conflict);
+    }
+
+    let profile_id = Uuid::new_v4();
+    let issuer_id = format!("zerant:issuer:{}", profile_id.simple());
+    let issuer_key_id = format!("key-{}", Uuid::new_v4().simple());
+    let mut private = Jwk::generate_ed_key(EdCurve::Ed25519).map_err(|_| ApiError::Unavailable)?;
+    private.set_key_id(issuer_key_id.clone());
+    let public = public_jwk(&private)?;
+
+    let mut plaintext = serde_json::to_vec(&private).map_err(|_| ApiError::Unavailable)?;
+    let encrypted = state.cipher.encrypt(account, profile_id, &plaintext)?;
+    plaintext.fill(0);
+    let public_value = serde_json::to_value(&public).map_err(|_| ApiError::Unavailable)?;
+
+    let row = client
+        .query_one(
+            "INSERT INTO issuer_profiles
+             (id, account_id, display_name, issuer_id, issuer_key_id, public_jwk,
+              ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             RETURNING display_name, issuer_id, created_at",
+            &[
+                &profile_id,
+                &account,
+                &display_name,
+                &issuer_id,
+                &issuer_key_id,
+                &public_value,
+                &encrypted.ciphertext,
+                &encrypted.data_nonce,
+                &encrypted.wrapped_dek,
+                &encrypted.wrap_nonce,
+                &encrypted.key_version,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(IssuerProfileView {
+            display_name: row.get(0),
+            issuer_id: row.get(1),
+            created_at: row.get(2),
+        }),
+    ))
+}
+
+fn valid_short_text(value: &str, min: usize, max: usize) -> bool {
+    let length = value.chars().count();
+    (min..=max).contains(&length) && !value.chars().any(char::is_control)
+}
+
+async fn issue_private_credential(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<IssueCredential>,
+) -> Result<(StatusCode, Json<IssuedCredentialView>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let holder_zerant_id = input.holder_zerant_id.trim().to_owned();
+    let claim_type = input.claim_type.trim().to_owned();
+    let value = input.value.trim().to_owned();
+    let context = input.context.trim().to_owned();
+
+    if !holder_zerant_id.starts_with("zr_")
+        || !valid_short_text(&holder_zerant_id, 27, 27)
+        || !valid_short_text(&claim_type, 2, 120)
+        || !valid_short_text(&value, 1, 512)
+        || !valid_short_text(&context, 2, 120)
+    {
+        return Err(ApiError::Invalid);
+    }
+
+    let expires_days = input.expires_in_days.unwrap_or(90);
+    if !(1..=365).contains(&expires_days) {
+        return Err(ApiError::Invalid);
+    }
+
+    let client = db_client(&state.db).await?;
+    let issuer = client
+        .query_opt(
+            "SELECT id, display_name, issuer_id, issuer_key_id,
+                    ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version
+             FROM issuer_profiles
+             WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+
+    let subject = client
+        .query_opt(
+            "SELECT id FROM accounts WHERE public_handle = $1",
+            &[&holder_zerant_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let subject_account: Uuid = subject.get(0);
+    let subject_key = ensure_account_credential_key(&state, subject_account).await?;
+
+    let profile_id: Uuid = issuer.get(0);
+    let issuer_name: String = issuer.get(1);
+    let issuer_id: String = issuer.get(2);
+    let issuer_key_id: String = issuer.get(3);
+    let now = OffsetDateTime::now_utc();
+    let secret_row = CredentialRow {
+        id: profile_id,
+        ciphertext: issuer.get(4),
+        data_nonce: issuer.get(5),
+        wrapped_dek: issuer.get(6),
+        wrap_nonce: issuer.get(7),
+        key_version: issuer.get(8),
+        created_at: now,
+        updated_at: now,
+    };
+    let mut private_bytes = state.cipher.decrypt(account, &secret_row)?;
+    let private: Jwk = serde_json::from_slice(&private_bytes).map_err(|_| ApiError::Unavailable)?;
+    private_bytes.fill(0);
+
+    let issued_at_i64 = now.unix_timestamp();
+    if issued_at_i64 < 0 {
+        return Err(ApiError::Unavailable);
+    }
+    let issued_at = issued_at_i64 as u64;
+    let expires_at = issued_at
+        .checked_add(u64::from(expires_days) * 86_400)
+        .ok_or(ApiError::Invalid)?;
+    let occurred_at = input.occurred_at.unwrap_or(issued_at);
+    if occurred_at > issued_at {
+        return Err(ApiError::Invalid);
+    }
+
+    let credential_id = random_id();
+    let payload = CredentialPayload {
+        schema: CREDENTIAL_SCHEMA.into(),
+        kind: CredentialKind::Source,
+        credential_id: credential_id.clone(),
+        issuer_id,
+        issuer_key_id,
+        subject_key,
+        audience: HOLDER_LOCAL_AUDIENCE.into(),
+        issued_at,
+        expires_at,
+        revocation_handle: random_id(),
+        claim: Claim::Source(SourceEventClaim {
+            claim_type: claim_type.clone(),
+            value: value.clone(),
+            source_schema_version: "0.1".into(),
+            context: context.clone(),
+            occurred_at,
+        }),
+    };
+    let token = sign_credential(&payload, &private).map_err(|_| ApiError::Invalid)?;
+
+    let holder_record = serde_json::json!({
+        "type": "zerant.private-credential",
+        "issuer": issuer_name,
+        "credential_id": credential_id,
+        "claim_type": claim_type,
+        "value": value,
+        "context": context,
+        "issued_at": issued_at,
+        "expires_at": expires_at,
+        "signed_credential": token,
+    });
+    let mut holder_plaintext =
+        serde_json::to_vec(&holder_record).map_err(|_| ApiError::Unavailable)?;
+    let vault_record_id = Uuid::new_v4();
+    let encrypted = state
+        .cipher
+        .encrypt(subject_account, vault_record_id, &holder_plaintext)?;
+    holder_plaintext.fill(0);
+
+    let issued_time =
+        OffsetDateTime::from_unix_timestamp(issued_at_i64).map_err(|_| ApiError::Invalid)?;
+    let expiry_time = now + Duration::days(i64::from(expires_days));
+
+    let mut tx_client = db_client(&state.db).await?;
+    let tx = tx_client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    tx.execute(
+        "INSERT INTO credential_envelopes
+         (id, account_id, ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        &[
+            &vault_record_id,
+            &subject_account,
+            &encrypted.ciphertext,
+            &encrypted.data_nonce,
+            &encrypted.wrapped_dek,
+            &encrypted.wrap_nonce,
+            &encrypted.key_version,
+        ],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.execute(
+        "INSERT INTO issued_credentials
+         (id, issuer_profile_id, subject_account_id, credential_id, claim_type, context,
+          issued_at, expires_at, vault_record_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        &[
+            &Uuid::new_v4(),
+            &profile_id,
+            &subject_account,
+            &payload.credential_id,
+            &claim_type,
+            &context,
+            &issued_time,
+            &expiry_time,
+            &vault_record_id,
+        ],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(IssuedCredentialView {
+            credential_id: payload.credential_id,
+            holder_zerant_id,
+            claim_type,
+            context,
+            issued_at: issued_time,
+            expires_at: expiry_time,
+            revoked: false,
+        }),
+    ))
+}
+
+async fn list_issued_credentials(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<IssuedCredentialView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let rows = client
+        .query(
+            "SELECT c.credential_id, a.public_handle, c.claim_type, c.context,
+                    c.issued_at, c.expires_at, c.revoked_at IS NOT NULL
+             FROM issued_credentials c
+             JOIN issuer_profiles p ON p.id = c.issuer_profile_id
+             JOIN accounts a ON a.id = c.subject_account_id
+             WHERE p.account_id = $1
+             ORDER BY c.created_at DESC
+             LIMIT 256",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        let holder: Option<String> = row.get(1);
+        result.push(IssuedCredentialView {
+            credential_id: row.get(0),
+            holder_zerant_id: holder.ok_or(ApiError::Unavailable)?,
+            claim_type: row.get(2),
+            context: row.get(3),
+            issued_at: row.get(4),
+            expires_at: row.get(5),
+            revoked: row.get(6),
+        });
+    }
+    Ok(Json(result))
+}
+
 async fn session_info(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -833,9 +2100,10 @@ async fn session_info(
     let client = db_client(&state.db).await?;
     let row = client
         .query_opt(
-            "SELECT encode(i.verification_key, 'hex'), s.scopes
+            "SELECT encode(i.verification_key, 'hex'), a.public_handle, s.scopes
              FROM sessions s
              JOIN zecauth_identities i ON i.account_id = s.account_id
+             JOIN accounts a ON a.id = s.account_id
              WHERE s.token_hash = $1 AND s.expires_at > NOW()",
             &[&hash],
         )
@@ -843,12 +2111,14 @@ async fn session_info(
         .map_err(|_| ApiError::Unavailable)?
         .ok_or(ApiError::Unauthorized)?;
     let identity: String = row.get(0);
-    let scopes_value: Value = row.get(1);
+    let zerant_id: Option<String> = row.get(1);
+    let scopes_value: Value = row.get(2);
     let scopes: Vec<String> =
         serde_json::from_value(scopes_value).map_err(|_| ApiError::Unavailable)?;
     Ok(Json(SessionInfo {
         authenticated: true,
         identity,
+        zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
         scopes,
     }))
 }
@@ -938,6 +2208,25 @@ fn app(state: AppState) -> Router {
         .route("/v1/auth/zecauth/verify", post(zecauth_verify))
         .route("/v1/auth/zecauth/session", get(redeem_zecauth_session))
         .route("/v1/session", get(session_info).delete(logout))
+        .route("/v1/issuer", get(get_issuer_profile).post(register_issuer))
+        .route("/v1/issuers", get(issuer_directory))
+        .route(
+            "/v1/verifier",
+            get(get_verifier_profile).post(register_verifier),
+        )
+        .route(
+            "/v1/verifier/requests",
+            get(list_verifier_requests).post(create_verification_request),
+        )
+        .route("/v1/holder/requests", get(list_holder_requests))
+        .route(
+            "/v1/holder/requests/{id}/decision",
+            post(decide_holder_request),
+        )
+        .route(
+            "/v1/issuer/credentials",
+            get(list_issued_credentials).post(issue_private_credential),
+        )
         .route(
             "/v1/credentials",
             get(list_credentials).post(store_credential),
@@ -959,20 +2248,18 @@ fn env_required(name: &str) -> Result<String, ApiError> {
 
 async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
     let client = db_client(pool).await?;
-    client
-        .batch_execute(include_str!("../migrations/0001_server_vault.sql"))
-        .await
-        .map_err(|_| ApiError::Unavailable)?;
-    client
-        .batch_execute(include_str!("../migrations/0002_zecauth.sql"))
-        .await
-        .map_err(|_| ApiError::Unavailable)?;
-    client
-        .batch_execute(include_str!(
-            "../migrations/0003_zecauth_browser_redeem.sql"
-        ))
-        .await
-        .map_err(|_| ApiError::Unavailable)?;
+    for migration in [
+        include_str!("../migrations/0001_server_vault.sql"),
+        include_str!("../migrations/0002_zecauth.sql"),
+        include_str!("../migrations/0003_zecauth_browser_redeem.sql"),
+        include_str!("../migrations/0004_trust_network.sql"),
+        include_str!("../migrations/0005_verification_network.sql"),
+    ] {
+        client
+            .batch_execute(migration)
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+    }
     Ok(())
 }
 

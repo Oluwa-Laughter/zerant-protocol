@@ -53,8 +53,7 @@ export function ZcashAddressInspector({ enabled }: { enabled: boolean }) {
         <p className="eyebrow">Zcash address validation</p>
         <h2 id="zcash-address-title">Understand the destination before using it.</h2>
         <p className="muted">
-          Zerant validates the canonical Zcash address server-side and reports safe capability
-          metadata without exposing receiver bytes or wallet key material.
+          Zerant checks whether a Zcash destination is valid and shows only the information you need before using it.
         </p>
       </div>
 

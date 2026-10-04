@@ -16,12 +16,12 @@ const problems = [
 ];
 
 const audiences = [
-  ["Individuals", "Hold credentials locally and decide what each application is allowed to learn."],
+  ["Individuals", "Keep trusted credentials private and decide what each application is allowed to learn."],
   ["Freelancers & service providers", "Prove work, eligibility or settlement conditions without exposing unrelated clients or wallet activity."],
   ["Businesses & marketplaces", "Verify vendors, customers, fulfillment or payment conditions with less data collection."],
   ["Communities & grants", "Check membership, contribution or program eligibility without building a universal reputation score."],
-  ["Organizations & teams", "Use scoped roles, approvals and shared-control payment workflows without centralizing every secret."],
-  ["Developers", "Integrate signed credentials, contextual policy, consent, replay protection and Zcash settlement as separate primitives."],
+  ["Organizations & teams", "Issue trusted roles and credentials, request narrow proofs, and use shared approvals for sensitive actions."],
+  ["Developers", "Add private trust checks to applications without turning identity or wallet activity into a public profile."],
 ];
 
 export default function Home() {
@@ -32,9 +32,7 @@ export default function Home() {
           <p className="eyebrow"><span className="status-dot" /> Privacy-preserving trust for Zcash applications</p>
           <h1>Verify what matters.<br /><span>Keep the rest private.</span></h1>
           <p className="hero-description">
-            Zerant is a credential, consent and contextual trust protocol that helps applications
-            verify claims without asking users to expose their full identity, credential history
-            or wallet activity.
+            Zerant helps people carry trusted credentials and prove specific claims without handing every application their full identity, credential history or wallet activity.
           </p>
           <p className="muted hero-detail">
             An application asks for a specific condition. The holder reviews that request.
@@ -93,7 +91,7 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="section product-flow-section">
+      <section id="how-it-works" className="section product-flow-section">
         <div className="section-heading">
           <p className="eyebrow">How Zerant works</p>
           <h2>Three roles. One narrow trust decision.</h2>
@@ -119,12 +117,12 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="who-uses-zerant" className="section use-cases">
+      <section id="use-cases" className="section use-cases">
         <div className="section-heading">
           <p className="eyebrow">Who Zerant is for</p>
-          <h2>One protocol, many real-world trust decisions.</h2>
+          <h2>One trust layer, many real-world decisions.</h2>
           <p className="muted">
-            These are applications of the same primitives — not separate versions of the protocol.
+            The same privacy-first trust model can serve people, organizations, communities and applications.
           </p>
         </div>
         <div className="use-case-grid broad-use-cases">
@@ -151,45 +149,41 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="architecture" className="section architecture">
+      <section className="section architecture">
         <div className="section-heading">
-          <p className="eyebrow">Under the hood</p>
-          <h2>Clear boundaries keep private data contained.</h2>
+          <p className="eyebrow">One private trust layer</p>
+          <h2>Trust can move with you without becoming a public profile.</h2>
           <p className="muted">
-            Issuer trust, holder storage, verifier policy and Zcash settlement are separated so
-            each component receives only what it needs.
+            Zerant connects organizations that issue trust, people who hold it, and applications that need to verify it — while keeping unnecessary personal information out of the exchange.
           </p>
         </div>
         <div className="architecture-map">
-          <div className="architecture-node"><span className="eyebrow">Issuer</span><h3>Signs evidence</h3><p>Authorized claims, signing keys, schemas and revocation.</p></div>
-          <div className="architecture-connector">↓ <span>signed credential</span></div>
-          <div className="architecture-node holder-node"><span className="eyebrow">Holder</span><h3>Stores and approves</h3><p>Encrypted local evidence and request-by-request consent.</p></div>
-          <div className="architecture-connector">↓ <span>approved result</span></div>
-          <div className="architecture-node"><span className="eyebrow">Verifier</span><h3>Checks the result</h3><p>Trust, validity, revocation, audience and replay checks.</p></div>
+          <div className="architecture-node"><span className="eyebrow">Issuer</span><h3>Creates trusted credentials</h3><p>Organizations attest to roles, contributions, memberships, achievements or eligibility.</p></div>
+          <div className="architecture-connector">↓ <span>private credential</span></div>
+          <div className="architecture-node holder-node"><span className="eyebrow">Holder</span><h3>Owns the decision</h3><p>Credentials stay private until the holder approves a specific use.</p></div>
+          <div className="architecture-connector">↓ <span>approved proof</span></div>
+          <div className="architecture-node"><span className="eyebrow">Verifier</span><h3>Gets only what it needs</h3><p>The application receives a narrow answer instead of the holder’s complete identity history.</p></div>
         </div>
       </section>
 
       <section className="section live-now">
         <div className="section-heading">
-          <p className="eyebrow">Implementation status</p>
-          <h2>Built, deployed, and still being connected — clearly labeled.</h2>
+          <p className="eyebrow">What Zerant enables</p>
+          <h2>A practical trust layer for people, communities and applications.</h2>
         </div>
         <div className="live-grid">
-          <article><span className="status-badge ready">Built</span><h3>Server credential vault</h3><p>ZecAuth-authenticated credentials encrypted by the Rust API and persisted in PostgreSQL. A deployed API and database are required.</p><Link href="/vault" className="text-link">Open vault →</Link></article>
-          <article><span className="status-badge ready">Built</span><h3>Native protocol core</h3><p>Credential, policy, disclosure, replay and payment verification implemented in Rust.</p></article>
-          <article><span className="status-badge building">Building</span><h3>Authenticated browser transport</h3><p>The web product will receive and respond to real verifier requests through the native protocol boundary.</p></article>
-          <article><span className="status-badge building">Building</span><h3>Production issuer and Zcash connections</h3><p>Issuer services, wallet operations and live threshold signing remain explicit integrations, not simulated browser state.</p></article>
+          <article><span className="status-badge ready">Available</span><h3>Receive private credentials</h3><p>Keep trusted evidence from organizations without publishing it as a public profile.</p><Link href="/vault" className="text-link">View credentials →</Link></article>
+          <article><span className="status-badge ready">Available</span><h3>Issue trusted credentials</h3><p>Organizations can send private credentials directly to a recipient’s Zerant ID.</p><Link href="/issuer" className="text-link">Issuer workspace →</Link></article>
+          <article><span className="status-badge ready">Available</span><h3>Prove only what matters</h3><p>Respond to verifier requests with a narrow approved result instead of sharing the whole credential.</p></article>
+          <article><span className="status-badge ready">Zcash-native</span><h3>Keep wallet identity separate</h3><p>Use Zcash-powered identity and payment review without turning wallet activity into a public reputation profile.</p></article>
         </div>
       </section>
 
       <section className="milestone product-cta">
         <div>
           <p className="eyebrow">Zerant workspace</p>
-          <h2>Start from real state.</h2>
-          <p>
-            The workspace begins empty and only fills when real credentials, requests, issuer
-            services or native Zcash integrations are connected.
-          </p>
+          <h2>Your trust, on your terms.</h2>
+          <p>Receive credentials, review requests and prove what matters without handing every application your full identity.</p>
         </div>
         <div className="milestone-side">
           <Link href="/app" className="button">Open workspace <span aria-hidden="true">→</span></Link>

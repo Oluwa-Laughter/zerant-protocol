@@ -21,11 +21,9 @@ export type WorkspaceZcash = {
 export function ProductWorkspace({
   session,
   zcash,
-  backendAvailable,
 }: {
   session: WorkspaceSession;
   zcash: WorkspaceZcash;
-  backendAvailable: boolean;
 }) {
   const authenticated = Boolean(session?.authenticated);
 
@@ -36,9 +34,7 @@ export function ProductWorkspace({
           <p className="eyebrow">Zerant workspace</p>
           <h1>Your private trust workspace.</h1>
           <p>
-            Zerant combines Zcash-native authentication, encrypted server credential storage,
-            consent-bound verification and native settlement checks without turning wallet data
-            into a public identity profile.
+            Zerant helps you build portable trust, prove what matters, and keep unrelated identity and wallet information private.
           </p>
         </div>
         <span className="pill">{authenticated ? "Zcash authenticated" : "Server-backed"}</span>
@@ -50,8 +46,8 @@ export function ProductWorkspace({
           <h2>Connect. Receive. Prove.</h2>
         </div>
         <ol>
-          <li><strong>Connect a Zcash identity</strong><span>ZecAuth proves control of a purpose-specific authentication key without exposing spending authority.</span></li>
-          <li><strong>Receive trusted credentials</strong><span>Credentials are encrypted by the Rust service and persisted in PostgreSQL, not one browser.</span></li>
+          <li><strong>Connect your Zcash identity</strong><span>Create a private Zerant identity without publishing your payment address or wallet history.</span></li>
+          <li><strong>Receive trusted credentials</strong><span>Collect proof of contributions, roles, memberships, achievements or eligibility from trusted issuers.</span></li>
           <li><strong>Approve narrow verification requests</strong><span>Zerant returns only the bounded result after native trust, revocation, audience and replay checks pass.</span></li>
         </ol>
       </section>
@@ -64,12 +60,11 @@ export function ProductWorkspace({
           </div>
           <p>
             {authenticated
-              ? "Your Zcash-authenticated account can access its encrypted server credential vault."
-              : "Connect your Zcash identity to access encrypted server-backed credentials."}
+              ? "Your private credentials are ready."
+              : "Connect your Zcash identity to start receiving and proving trusted credentials."}
           </p>
           <p className="small muted">
-            PostgreSQL is the durable source of truth. Browser storage is not used for credentials
-            or session tokens.
+            Your credentials follow your Zerant account instead of being trapped in one browser.
           </p>
           <Link className="button" href="/vault">
             {authenticated ? "Open credential vault" : "Connect Zcash identity"} <span aria-hidden="true">→</span>
@@ -77,15 +72,15 @@ export function ProductWorkspace({
         </article>
 
         <article className="workspace-card">
-          <p className="eyebrow">Zcash identity</p>
-          <h2>{authenticated ? "ZecAuth connected." : "Not connected."}</h2>
+          <p className="eyebrow">Private identity</p>
+          <h2>{authenticated ? "Identity connected." : "Not connected."}</h2>
           <p className="muted">
             {authenticated
-              ? "The session is backed by a RedPallas ZecAuth verification key and an HttpOnly server cookie."
-              : "Zerant authenticates with a Zcash-specific key that is isolated from payment addresses and spending keys."}
+              ? "Your Zerant identity is connected without exposing your payment address."
+              : "Connect a private Zcash identity that remains separate from the keys controlling your funds."}
           </p>
           <div className={authenticated ? "workspace-state ready" : "workspace-state"}>
-            <span />{authenticated ? "Authenticated server session" : "Authentication required"}
+            <span />{authenticated ? "Private identity connected" : "Connection required"}
           </div>
         </article>
 
@@ -96,42 +91,40 @@ export function ProductWorkspace({
             Incoming requests will show requester origin, purpose, requested conditions and
             disclosure boundaries before approval.
           </p>
-          <div className="workspace-state"><span />Waiting for a real request</div>
+          <Link className="text-link" href="/requests">Review requests <span aria-hidden="true">→</span></Link>
         </article>
 
         <article className="workspace-card">
-          <p className="eyebrow">Zcash infrastructure</p>
-          <h2>{zcash ? "Z3 / Zallet reachable." : "Native service not connected."}</h2>
+          <p className="eyebrow">Zcash readiness</p>
+          <h2>{zcash ? "Zcash services ready." : "Zcash services unavailable."}</h2>
           <p className="muted">
             {zcash
-              ? "The server discovered " + zcash.capabilities.length + " RPC methods at chain height " + zcash.chain_height + ". PCZT complete: " + (zcash.pczt_complete ? "yes" : "no") + "."
-              : "Z3 capability discovery, Zallet wallet state and payment verification stay behind the Rust service."}
+              ? "Zerant can validate Zcash activity and prepare supported privacy-preserving actions."
+              : "Zcash-powered verification and payment review are temporarily unavailable."}
           </p>
           <div className={zcash ? "workspace-state ready" : "workspace-state"}>
-            <span />{zcash ? "Live native capability state" : "Server-side Zcash boundary required"}
+            <span />{zcash ? "Zcash ready" : "Unavailable"}
           </div>
         </article>
 
         <article className="workspace-card">
-          <p className="eyebrow">Shared-control payments</p>
-          <h2>PCZT + FROST boundary.</h2>
+          <p className="eyebrow">Shared approvals</p>
+          <h2>Require more than one person when it matters.</h2>
           <p className="muted">
-            Zerant uses PCZT as the review-first transaction workflow when the running Zallet
-            advertises the complete pipeline. FROST remains the threshold-signing boundary for
-            organizations and shared treasuries; Zerant does not implement custom threshold crypto.
+            Teams and organizations can use shared approval policies for sensitive treasury actions instead of relying on one person alone.
           </p>
-          <div className="workspace-state"><span />Capability-gated native workflow</div>
+          <div className="workspace-state"><span />Shared approval support</div>
         </article>
 
         <article className="workspace-card">
-          <p className="eyebrow">Backend</p>
-          <h2>{backendAvailable ? "Rust API reachable." : "API not configured."}</h2>
+          <p className="eyebrow">For organizations</p>
+          <h2>Issue trust. Verify privately.</h2>
           <p className="muted">
-            Sessions, credential encryption, ZecAuth verification, replay state and Zcash RPC
-            access belong to the server. The web app is a presentation and consent surface.
+            Create trusted credentials for people, or request a narrow proof without collecting their whole identity profile.
           </p>
-          <div className={backendAvailable ? "workspace-state ready" : "workspace-state"}>
-            <span />{backendAvailable ? "Server source of truth" : "Configure ZERANT_API_ORIGIN"}
+          <div className="workspace-actions">
+            <Link className="text-link" href="/issuer">Issue credentials →</Link>
+            <Link className="text-link" href="/verifier">Request proof →</Link>
           </div>
         </article>
       </section>

@@ -8,9 +8,11 @@ export function SiteHeader() {
         <Image src="/brand/zerant-lockup.svg" alt="Zerant" width={180} height={36} priority />
       </Link>
       <nav aria-label="Main navigation">
-        <Link href="/#principles">Principles</Link>
-        <Link href="/#architecture">Architecture</Link>
-        <Link href="/vault">Vault</Link>
+        <Link href="/#how-it-works">How it works</Link>
+        <Link href="/issuer">Issue</Link>
+        <Link href="/verifier">Verify</Link>
+        <Link href="/requests">Requests</Link>
+        <Link href="/vault">Credentials</Link>
         <Link href="/app" className="nav-app">Open Zerant <span aria-hidden="true">↗</span></Link>
       </nav>
     </header>

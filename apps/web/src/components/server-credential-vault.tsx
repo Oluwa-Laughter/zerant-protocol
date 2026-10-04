@@ -7,6 +7,7 @@ import { ZcashConnect } from "@/components/zcash-connect";
 export type ServerVaultSession = {
   authenticated: boolean;
   identity: string;
+  zerant_id: string;
   scopes: string[];
 };
 
@@ -16,6 +17,35 @@ export type ServerVaultCredential = {
   created_at: string;
   updated_at: string;
 };
+
+type PrivateCredential = {
+  type: "zerant.private-credential";
+  issuer: string;
+  credential_id: string;
+  claim_type: string;
+  value: string;
+  context: string;
+  issued_at: number;
+  expires_at: number;
+};
+
+function asPrivateCredential(value: unknown): PrivateCredential | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (
+    record.type !== "zerant.private-credential" ||
+    typeof record.issuer !== "string" ||
+    typeof record.credential_id !== "string" ||
+    typeof record.claim_type !== "string" ||
+    typeof record.value !== "string" ||
+    typeof record.context !== "string" ||
+    typeof record.issued_at !== "number" ||
+    typeof record.expires_at !== "number"
+  ) {
+    return null;
+  }
+  return record as PrivateCredential;
+}
 
 export function ServerCredentialVault({
   initialSession,
@@ -28,40 +58,13 @@ export function ServerCredentialVault({
 }) {
   const [session, setSession] = useState<ServerVaultSession | null>(initialSession);
   const [credentials, setCredentials] = useState<ServerVaultCredential[]>(initialCredentials);
-  const [input, setInput] = useState("");
   const [status, setStatus] = useState(
     backendAvailable
       ? initialSession
-        ? "Credential vault loaded from Zerant's encrypted server store."
-        : "Connect your Zcash identity to access the server credential vault."
-      : "The Zerant Rust API is not configured for this deployment.",
+        ? "Your private credentials are ready."
+        : "Connect your Zcash identity to open your Zerant account."
+      : "Zerant is temporarily unavailable.",
   );
-
-  async function store() {
-    let credential: unknown;
-    try {
-      credential = JSON.parse(input);
-    } catch {
-      setStatus("Credential must be valid JSON.");
-      return;
-    }
-
-    const response = await fetch("/api/zerant/credentials", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ credential }),
-    });
-    if (!response.ok) {
-      setStatus("Credential could not be stored.");
-      return;
-    }
-
-    const stored = (await response.json()) as ServerVaultCredential;
-    setCredentials((current) => [stored, ...current.filter((item) => item.id !== stored.id)]);
-    setInput("");
-    setStatus("Credential encrypted and stored server-side.");
-  }
 
   async function remove(id: string) {
     const response = await fetch("/api/zerant/credentials/" + encodeURIComponent(id), {
@@ -90,12 +93,9 @@ export function ServerCredentialVault({
     return (
       <main id="main" className="vault-page">
         <section className="vault-hero">
-          <p className="eyebrow">Server credential vault</p>
-          <h1>The credential service is not configured.</h1>
-          <p>
-            Zerant no longer falls back to browser storage. Configure the Rust API and PostgreSQL
-            backend before credentials can be stored or retrieved.
-          </p>
+          <p className="eyebrow">Private credentials</p>
+          <h1>Zerant is temporarily unavailable.</h1>
+          <p>Your credentials will never be silently moved into an insecure fallback.</p>
         </section>
       </main>
     );
@@ -105,11 +105,11 @@ export function ServerCredentialVault({
     return (
       <main id="main" className="vault-page">
         <section className="vault-hero">
-          <p className="eyebrow">Server credential vault</p>
-          <h1>Your credentials belong to your Zerant account, not one browser.</h1>
+          <p className="eyebrow">Private credentials</p>
+          <h1>Build trust without building a public profile.</h1>
           <p>
-            Durable credential state is encrypted by the Rust service and persisted in
-            PostgreSQL. Authentication is Zcash-native through ZecAuth.
+            Connect your Zcash identity to receive trusted credentials and prove only what a
+            verifier actually needs to know.
           </p>
         </section>
         <ZcashConnect onConnected={() => window.location.reload()} />
@@ -120,28 +120,34 @@ export function ServerCredentialVault({
   return (
     <main id="main" className="vault-page">
       <section className="vault-hero">
-        <p className="eyebrow">Server credential vault</p>
-        <h1>Your private trust records, available across devices.</h1>
+        <p className="eyebrow">Your Zerant account</p>
+        <h1>Your private credentials.</h1>
         <p>
-          Credentials are envelope-encrypted by the Zerant Rust service and persisted in
-          PostgreSQL. Browser storage is not the source of truth.
+          Credentials you receive stay private until you choose to use them for a specific proof.
         </p>
       </section>
 
       <section className="vault-grid">
-        <article className="vault-card">
+        <article className="vault-card zerant-id-card">
           <div className="vault-card-heading">
             <div>
-              <p className="eyebrow">Zcash identity</p>
-              <h2>Authenticated</h2>
+              <p className="eyebrow">Your Zerant ID</p>
+              <h2>Share this to receive credentials.</h2>
             </div>
-            <span className="vault-state unlocked">ZecAuth</span>
+            <span className="vault-state unlocked">Connected</span>
           </div>
-          <p className="small muted mono">{session.identity}</p>
+          <p className="zerant-id-value mono">{session.zerant_id}</p>
           <p className="small muted">
-            This is a purpose-specific Zcash authentication identity, not a payment address.
+            Your Zerant ID is for receiving trust credentials. It is not your payment address and
+            does not reveal your wallet balance or transaction history.
           </p>
           <div className="vault-actions">
+            <Button
+              variant="secondary"
+              onClick={() => void navigator.clipboard?.writeText(session.zerant_id)}
+            >
+              Copy Zerant ID
+            </Button>
             <Button variant="secondary" onClick={logout}>Sign out</Button>
           </div>
         </article>
@@ -150,53 +156,68 @@ export function ServerCredentialVault({
           <div className="vault-card-heading">
             <div>
               <p className="eyebrow">Credentials</p>
-              <h2>{credentials.length} stored record{credentials.length === 1 ? "" : "s"}</h2>
+              <h2>{credentials.length} private credential{credentials.length === 1 ? "" : "s"}</h2>
             </div>
-            <span className="pill">Envelope-encrypted server-side</span>
+            <span className="pill">Private</span>
           </div>
 
-          <div className="vault-form">
-            <label htmlFor="credential-json">Import a credential JSON</label>
-            <textarea
-              id="credential-json"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              spellCheck={false}
-              rows={8}
-              placeholder="Paste a real credential JSON"
-            />
-            <Button disabled={!input.trim()} onClick={store}>Store credential</Button>
-          </div>
+          <div className="credential-card-list">
+            {credentials.length ? credentials.map((item) => {
+              const credential = asPrivateCredential(item.credential);
+              if (!credential) {
+                return (
+                  <article className="credential-card" key={item.id}>
+                    <div className="credential-card-top">
+                      <div>
+                        <span className="eyebrow">Private credential</span>
+                        <h3>Stored credential</h3>
+                      </div>
+                    </div>
+                    <p className="small muted">
+                      Added {new Date(item.created_at).toLocaleDateString()}.
+                    </p>
+                    <Button variant="secondary" onClick={() => remove(item.id)}>Remove</Button>
+                  </article>
+                );
+              }
 
-          <div className="server-record-list">
-            {credentials.length ? credentials.map((item) => (
-              <article className="server-record" key={item.id}>
-                <div>
-                  <span className="mono">{item.id}</span>
-                  <span className="small muted">
-                    Updated {new Date(item.updated_at).toLocaleString()}
-                  </span>
-                </div>
-                <details>
-                  <summary>View decrypted record</summary>
-                  <pre className="vault-preview">{JSON.stringify(item.credential, null, 2)}</pre>
-                </details>
-                <Button variant="secondary" onClick={() => remove(item.id)}>Remove</Button>
-              </article>
-            )) : <p className="muted">No credentials are stored for this account yet.</p>}
+              return (
+                <article className="credential-card" key={item.id}>
+                  <div className="credential-card-top">
+                    <div>
+                      <span className="eyebrow">{credential.issuer}</span>
+                      <h3>{credential.claim_type}</h3>
+                    </div>
+                    <span className="pill">{credential.context}</span>
+                  </div>
+                  <p className="credential-value">{credential.value}</p>
+                  <p className="small muted">
+                    Valid until {new Date(credential.expires_at * 1000).toLocaleDateString()}
+                  </p>
+                  <Button variant="secondary" onClick={() => remove(item.id)}>Remove</Button>
+                </article>
+              );
+            }) : (
+              <div className="empty-credentials">
+                <h3>No credentials yet.</h3>
+                <p className="muted">
+                  Share your Zerant ID with a trusted organization when you are ready to receive one.
+                </p>
+              </div>
+            )}
           </div>
         </article>
       </section>
 
       <section className="vault-security">
         <div>
-          <p className="eyebrow">Trust boundary</p>
-          <h2>Server-side does not mean plaintext.</h2>
+          <p className="eyebrow">Your privacy</p>
+          <h2>You decide what leaves your account.</h2>
         </div>
         <div className="vault-security-list">
-          <p><strong>Persistence:</strong> PostgreSQL is the source of truth. Every credential is encrypted with a fresh data key and that key is wrapped by the server KEK.</p>
-          <p><strong>Authentication:</strong> ZecAuth proves control of a purpose-specific RedPallas key without exposing Zcash spending authority.</p>
-          <p><strong>Wallet operations:</strong> Z3, Zallet, PCZT and FROST remain native/server integrations and are never delegated to browser JavaScript.</p>
+          <p><strong>Credentials stay private:</strong> receiving a credential does not make it public.</p>
+          <p><strong>Your wallet stays separate:</strong> your Zerant identity does not expose your payment address, balance or history.</p>
+          <p><strong>Proofs require consent:</strong> a verifier receives only the approved result for a specific request.</p>
         </div>
       </section>
 

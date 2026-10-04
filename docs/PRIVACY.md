@@ -10,7 +10,7 @@ Status: privacy contract and implementation limits. Native credential/disclosure
 - Wallet/address/balance/transaction history are not part of the generic protocol response.
 - Requests and holder signatures are bound to verifier origin/domain, challenge, nonce and expiration, plus the complete request digest.
 - Replay to another verifier/domain fails; replay to the same request fails through durable atomic consumption.
-- Backend protocol data cannot reconstruct a holder's complete credential profile. No vault upload, central holder index, cross-issuer aggregation endpoint or source-credential telemetry exists by default.
+- Verifiers receive only approved request-bound results; they do not receive the holder's complete credential portfolio. The current server-first Zerant service can decrypt authorized holder records at runtime, so service compromise is part of the trust model and must be mitigated operationally.
 
 ## What is visible
 
@@ -21,7 +21,7 @@ Status: privacy contract and implementation limits. Native credential/disclosure
 | Verifier | One result, audience subject public key, issuer/key/schema/context/policy, credential/revocation IDs, validity times, request bindings |
 | Future public metadata host | Public keys/schemas/policies/whole revocation snapshots; network access metadata if hosting is introduced |
 
-Issuers know their own issuance records; no component is allowed to collect a holder-wide multi-issuer portfolio. A one-issuer demo naturally gives that issuer knowledge of all evidence it issued, not a guarantee that an issuer cannot know its own subjects. Issuer/verifier collusion can correlate audience keys via issuance records. Metadata hosts could correlate IP/timing; a future deployment needs a separate transport privacy review.
+Issuers know their own issuance records. Verifiers do not receive a holder-wide multi-issuer portfolio. The current Zerant service does maintain holder credential records and can decrypt them for authorized service operations; this is not end-to-end holder-only encryption. Issuer/verifier collusion, service compromise and network metadata can still create correlation risk.
 
 Independent keys and fresh IDs per audience remove obvious global identifiers. They do not prevent correlation by rare claims, timestamps, browser fingerprinting, accounts, IP addresses, timing or collusion. Repeated presentations to the same audience are linkable. Threshold responses disclose predicate outcomes and can enable inference. A policy may define a small reviewed set of supported thresholds, so repeated requests at different supported thresholds can narrow the holder's score range. Deployments should expose only the minimum threshold set their use case needs; there is no arbitrary score-query API. Issuer learning the audience during provisioning is an explicit tradeoff.
 

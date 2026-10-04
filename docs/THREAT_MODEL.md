@@ -1,8 +1,8 @@
 # Threat model
 
-Status: preimplementation M1 model. Assets: private credentials/events/scores, holder signing and vault keys, issuer keys, consent integrity, trust metadata, and one-time verifier acceptance.
+Status: active implementation threat model. Assets: private credentials/events/scores, holder signing and vault keys, issuer keys, consent integrity, trust metadata, and one-time verifier acceptance.
 
-Trust boundaries separate issuer, holder browser/vault, verifier session/state, and public metadata. A local demo on one machine does not isolate these actors from a malicious OS. Issuers are trusted only for configured contexts/schemas; verifiers are potentially curious or malicious. Holder-signed assertions cannot replace issuer evidence.
+Trust boundaries separate issuer authority, holder account state, verifier request state, the Zerant service, PostgreSQL/KMS custody, and Zcash-native services. The browser is not a secrets boundary. Issuers are trusted only for configured contexts/schemas; verifiers are potentially curious or malicious. Holder-signed assertions cannot replace issuer evidence.
 
 | Threat | Required mitigation | Residual risk / later test |
 | --- | --- | --- |

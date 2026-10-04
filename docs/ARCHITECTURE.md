@@ -2,29 +2,27 @@
 
 Status: active implementation architecture. The Rust protocol crates and public web console described below exist; future boundaries are labeled explicitly.
 
-## Planned monorepo
+## Current monorepo
 
 | Boundary | Responsibility |
 | --- | --- |
-| `apps/web` | Next.js / React / TypeScript / Tailwind / shadcn/ui; encrypted local holder vault, consent console, distinct issuer/verifier demo roles |
-| `crates/zerant-core` | Types, strict parsing, origin/time rules, canonicalization and library-backed crypto interfaces |
-| `crates/zerant-credential` | Credential signing/validation, issuer trust and revocation snapshots |
-| `crates/zerant-reputation` | Deterministic context policies and local audit trace |
-| `crates/zerant-disclosure` | Request matching, response construction, verification and replay contracts |
-| `crates/zerant-zcash` | Future Zcash adapter; depends on generic interfaces, never the reverse |
-| `packages/sdk` | Future issuer/verifier JS API; no holder profile service |
+| apps/web | Customer product surfaces for credentials, issuers, verifiers, consent and Zcash review |
+| services/zerant-api | Authenticated account state, protected credential storage, issuer/verifier workflows and native integrations |
+| crates/zerant-core | Strict parsing, origin/time rules, IDs and canonicalization |
+| crates/zerant-credential | Credential signing/validation, issuer trust and revocation snapshots |
+| crates/zerant-policy | Deterministic contextual policy evaluation |
+| crates/zerant-disclosure | Signed verifier requests, holder responses, binding and replay contracts |
+| crates/zerant-zcash | Zcash address/payment parsing, Z3/Zallet observation, PCZT/FROST capability boundaries |
 
-Start with one repository and a local demo, not distributed services. Rust execution through WASM versus native local tooling requires a compatibility decision and shared test vectors before implementation. Do not duplicate divergent scoring or serialization logic in JS. TanStack Query may manage public metadata; private holder state stays outside server-rendered data and shared caches.
-
-Axum/PostgreSQL are optional later choices only if public issuer keys, schemas, policies or revocation services actually need hosting. M1 uses pinned local public metadata files and a local durable verifier request/replay store. These files are not holder databases. Local issuer keys, holder secrets and verifier state use separate storage namespaces and roles; a same-machine demo is not a production isolation boundary.
+The browser is a product and consent surface, not the protocol authority. Durable credential, session, issuer and verifier state is held by the service. Protocol-critical signing and verification reuse the Rust crates so the web layer does not implement a second version of the security rules.
 
 ## Load-bearing decisions
 
 1. **Minimal disclosure through atomic attestations.** A normal signature cannot survive deleting signed claims. Private source credentials stay local. Separately signed audience-bound attestations carry one result. This is signed selection, not cryptographic selective disclosure or ZK.
 2. **Threshold trust.** A trusted issuer evaluates its own evidence under the same pinned policy and signs a boolean. Holder computation gives transparency, not a verifiable hidden-input predicate. No issuer receives a complete holder portfolio. Supporting other issuers' aggregation requires a new trust/privacy design.
-3. **Pairwise subject binding.** Holder creates an independent Ed25519 key per verifier origin. Each attestation uses fresh IDs and that key. Private source credentials use a separate local holder key never presented. Issuer authenticates enrollment and binds the audience key to its subject; holder self-assertion alone is insufficient.
+3. **Subject and audience binding.** Each account has a protected credential key. Source credentials remain private; approved presentations are freshly audience-bound to the requesting verifier. Pairwise per-verifier holder keys remain a future unlinkability improvement.
 4. **Server credential vault.** `/vault` is backed by `zerant-api` and PostgreSQL. Every credential uses a fresh random AES-256 data key; the payload ciphertext is stored with that DEK wrapped by a versioned server key-encryption key. Sessions use opaque random tokens stored only as hashes and delivered as HttpOnly secure cookies. Browser storage is not a source of truth. The KEK is server-only and is designed to move behind a managed KMS/HSM in production. Zcash seeds, spending keys, PCZT artifacts and FROST shares are outside this vault.
-5. **Offline public revocation.** Issuer-signed snapshots expire within 24 hours. Missing or stale status fails closed. No credential-specific online lookups in M1. See credential spec for identifiers and validity.
+5. **Revocation is issuer-authoritative.** Signed snapshots are short-lived and stale status fails closed. Production distribution and rotation policy still require deployment hardening.
 6. **Durable replay state.** Verifier owns pending requests and atomically consumes them after full verification; expiry and restart rules are in disclosure spec.
 7. **No generic wallet identity.** No wallet addresses, balances or transactions enter generic schemas.
 
@@ -38,11 +36,9 @@ Any future wallet-identity or payment authorization feature must separately defi
 
 Validate maintained JOSE/JCS and server envelope-encryption compatibility, finalize exact public metadata contracts, and record KEK rotation/KMS and storage implementation choices here. Preserve the contracts below or explicitly version a change; unresolved library choices are not permission to weaken disclosure or replay rules.
 
-## M1A product shell (implemented scope)
+## Product application (implemented)
 
-M1A introduces `apps/web`, a statically exportable Next.js interface deployed as public assets on Vercel. Its role views use invented, typed public fixtures; they do not implement protocol parsers, origin authentication, signing, encrypted storage, issuance, verification, replay state, or revocation. Review and decline controls change only transient React state. Reloading resets that state; no browser persistence, analytics, wallet connection, backend, or credential transport is introduced. All displayed origins, keys and identifiers are illustrative placeholders, not authenticated evidence.
-
-The hosting boundary serves public product copy and demo assets only. No holder secrets are accepted or rendered. Static hosting is not a protocol verifier or an isolation boundary between the demo roles. Native Rust code implements credential, policy, disclosure and replay rules, but production browser integration still requires secure key/vault lifecycle, authenticated transport, consent wiring and deployment review.
+The web application now uses authenticated service state for real credentials, issuer profiles, verifier profiles and consent requests. It contains no seeded credential or verification data. A holder can receive issuer-created private credentials, review short-lived verifier requests, approve or deny them, and use Zcash-native identity/payment review surfaces.
 
 ## M1B Rust credential core (implemented)
 
@@ -50,7 +46,7 @@ The first protocol-critical implementation now lives in Rust. `zerant-core` owns
 
 The cryptographic boundary uses maintained libraries: `josekit 0.10.3` for JOSE/JWS EdDSA and `serde_json_canonicalizer 0.3.2` for RFC 8785 payload canonicalization. Zerant does not implement Ed25519 or JWS itself. Protected JOSE headers are restricted to `alg=EdDSA`, exact `kid`, and exact message-specific `typ`; signed Zerant payloads are JCS canonical.
 
-Protocol-critical logic remains native Rust. Contextual policy evaluation, disclosure v0.2/v0.3, replay persistence, payment-intent/settlement verification, the read-only Z3 transport, and server credential storage, ZecAuth authentication and server sessions are implemented and covered by tests. Browser/WASM protocol execution, enrollment/key-possession issuance UX, authenticated browser transport, wallet spending, production invoice lifecycle automation, and live FROST wiring remain unimplemented.
+Protocol-critical logic remains native Rust. Contextual policy evaluation, disclosure v0.2/v0.3, replay persistence, issuer issuance, verifier requests, holder consent, audience-bound proof construction, payment-intent/settlement verification, the read-only Z3 transport, protected credential storage, ZecAuth authentication and server sessions are implemented. Production wallet spending, managed KMS/HSM custody, production revocation distribution, invoice automation, pairwise unlinkability and live FROST signing remain future work.
 
 See [M1B implementation](specs/implementation-m1b.md).
 

@@ -20,11 +20,9 @@ export default async function AppPage() {
 
   let session: WorkspaceSession = null;
   let zcash: WorkspaceZcash = null;
-  let backendAvailable = false;
 
   try {
     const sessionResponse = await fetchZerantBackend("/v1/session", cookieHeader);
-    backendAvailable = sessionResponse !== null;
     if (sessionResponse?.ok) {
       session = (await sessionResponse.json()) as NonNullable<WorkspaceSession>;
       const zcashResponse = await fetchZerantBackend("/v1/zcash/status", cookieHeader);
@@ -33,14 +31,9 @@ export default async function AppPage() {
       }
     }
   } catch {
-    backendAvailable = false;
+    session = null;
+    zcash = null;
   }
 
-  return (
-    <ProductWorkspace
-      session={session}
-      zcash={zcash}
-      backendAvailable={backendAvailable}
-    />
-  );
+  return <ProductWorkspace session={session} zcash={zcash} />;
 }

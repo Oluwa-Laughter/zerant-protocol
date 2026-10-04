@@ -9,7 +9,7 @@ import { fetchZerantBackend } from "@/lib/server-api";
 
 export const metadata: Metadata = {
   title: "Credential vault",
-  description: "Server-backed encrypted credential storage authenticated with Zcash ZecAuth.",
+  description: "Private, portable credentials connected to your Zerant identity.",
 };
 
 export const dynamic = "force-dynamic";

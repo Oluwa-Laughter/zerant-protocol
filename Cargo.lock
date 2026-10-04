@@ -2701,6 +2701,7 @@ dependencies = [
  "base64 0.22.1",
  "deadpool-postgres",
  "hex",
+ "josekit",
  "native-tls",
  "postgres-native-tls",
  "rand 0.8.8",
@@ -2717,6 +2718,9 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "zerant-core",
+ "zerant-credential",
+ "zerant-disclosure",
  "zerant-zcash",
 ]
 

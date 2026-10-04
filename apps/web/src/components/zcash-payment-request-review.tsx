@@ -63,8 +63,7 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
         <p className="eyebrow">Zcash payment request</p>
         <h2 id="zcash-request-title">Review before wallet approval.</h2>
         <p className="muted">
-          Zerant validates ZIP-321 on the Rust server and shows the request in a bounded form.
-          It does not construct, prove, or sign the transaction in browser JavaScript.
+          Zerant checks the payment request and shows exactly who will receive funds, how much is requested, and what information accompanies the request before you approve anything.
         </p>
       </div>
 

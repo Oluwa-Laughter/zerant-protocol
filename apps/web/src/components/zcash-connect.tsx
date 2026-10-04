@@ -68,8 +68,7 @@ export function ZcashConnect({ onConnected }: { onConnected?: () => void }) {
         <p className="eyebrow">Zcash-native authentication</p>
         <h2>Connect your Zcash identity.</h2>
         <p className="muted">
-          Zerant uses a purpose-specific ZecAuth key for authentication. Your payment
-          address and spending keys are not used for sign-in.
+          Connect your Zcash identity without turning your payment address or wallet activity into your public profile.
         </p>
       </div>
       <div className="vault-actions wrap">

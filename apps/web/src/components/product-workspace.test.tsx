@@ -5,14 +5,14 @@ import { ProductWorkspace } from "./product-workspace";
 
 test("workspace renders server and Zcash boundaries without browser-local persistence", () => {
   const html = renderToStaticMarkup(
-    <ProductWorkspace session={null} zcash={null} backendAvailable={false} />,
+    <ProductWorkspace session={null} zcash={null} />,
   );
 
   for (const text of [
     "Connect. Receive. Prove.",
     "Connect your Zcash identity",
-    "PCZT + FROST boundary.",
-    "API not configured.",
+    "Require more than one person when it matters.",
+    "Issue trust. Verify privately.",
   ]) {
     assert.ok(html.includes(text), "missing production state: " + text);
   }
