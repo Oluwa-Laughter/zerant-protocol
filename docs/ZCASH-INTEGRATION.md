@@ -122,11 +122,11 @@ The concrete `HttpRegtestTransport` remains authenticated, loopback-only, proxy/
 ## Repeatable authenticated checks
 
 The repository keeps the previously verified live discovery capture in
-\`fixtures/z3-regtest-discovery.json\` and the sanitized historical payment observation
-under \`fixtures/z3-regtest-payment.json\`. They describe the local build that was
+`fixtures/z3-regtest-discovery.json` and the sanitized historical payment observation
+under `fixtures/z3-regtest-payment.json`. They describe the local build that was
 actually exercised; they are not a substitute for runtime discovery on a newer Zallet.
 
-\`\`\`sh
+```sh
 Z3_REGTEST_RPC_ROUTER_PASSWORD=<local-regtest-password> make z3-check
 
 cargo run -p zerant-zcash --example verify_payment -- --fixture \
@@ -140,9 +140,9 @@ Z3_REGTEST_RPC_ROUTER_PASSWORD=<local-regtest-password> \
 # Explicit synthetic funding / coinbase shielding, never mainnet:
 Z3_REGTEST_RPC_ROUTER_PASSWORD=<local-regtest-password> \
   python3 scripts/z3-payment-demo.py --execute-regtest
-\`\`\`
+```
 
 All concrete repository RPC helpers require authentication and use the fixed loopback
 router. CI uses deterministic fixtures and never starts a node or sends funds. Runtime
-\`rpc.discover\` remains authoritative for whether \`z_sendmany\`, \`z_sendfromaccount\`, or
+`rpc.discover` remains authoritative for whether `z_sendmany`, `z_sendfromaccount`, or
 individual PCZT methods are available on the operator's current Zallet build.
