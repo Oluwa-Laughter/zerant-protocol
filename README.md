@@ -24,6 +24,7 @@ There is no universal social-credit score. Reputation and eligibility remain con
 
 - /vault — private credentials, Zerant ID and credential history.
 - /issuer — create an issuer profile and deliver credentials to a Zerant ID.
+- /issuers — browse public issuer profiles and credential definitions.
 - /verifier — register an application and request a narrow proof from a holder.
 - /requests — holder inbox for approving or denying verification requests.
 - /app — product workspace plus Zcash address/payment-request review tools.
@@ -40,6 +41,7 @@ The product does not seed demo credentials, identities, payments or verification
 - Verifier-specific audience-bound attestations derived from private source credentials.
 - Protected account credential storage and opaque authenticated sessions.
 - Issuer registration, reusable credential types, private issuance, recipient delivery by Zerant ID, credential-type retirement and immediate credential revocation.
+- Public issuer discovery with paginated organization profiles, public signing-key lifecycle, immutable credential-definition history and signed revocation publications.
 - Verifier registration, issuer-defined credential selection, short-lived requests and verified status.
 - Append-only account activity history with cursor pagination.
 - Database-backed per-account write quotas across Vercel instances, plus a global authentication-challenge circuit breaker.
@@ -57,7 +59,7 @@ This is **not end-to-end holder-only encryption**: an authorized Zerant service 
 
 No zero-knowledge, anonymity or full unlinkability claim is made. Zerant now uses a distinct protected holder key for each verifier relationship so proofs do not expose one stable holder key across verifiers, but service metadata, issuers and surrounding context can still correlate activity. Managed KMS/HSM deployment, stronger unlinkable credentials, production Zcash spending and live FROST signing remain future work.
 
-Read architecture, disclosure profile, privacy limits, examples, Zcash integration, Zcash resource map and security documentation in docs/.
+Read architecture, disclosure profile, privacy limits, public trust discovery, examples, Zcash integration, Zcash resource map and security documentation in docs/.
 
 ## Local setup
 

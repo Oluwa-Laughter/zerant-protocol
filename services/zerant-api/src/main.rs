@@ -272,6 +272,74 @@ struct RegisterIssuer {
 }
 
 #[derive(Serialize)]
+struct PublicIssuerKeyView {
+    key_id: String,
+    public_jwk: PublicJwk,
+    valid_from: OffsetDateTime,
+    retired_at: Option<OffsetDateTime>,
+    compromised_at: Option<OffsetDateTime>,
+}
+
+#[derive(Serialize)]
+struct PublicCredentialSchemaView {
+    id: Uuid,
+    display_name: String,
+    description: String,
+    claim_type: String,
+    context: String,
+    default_expiry_days: i32,
+    version: i32,
+    active: bool,
+    supersedes_schema_id: Option<Uuid>,
+    retired_at: Option<OffsetDateTime>,
+    created_at: OffsetDateTime,
+}
+
+#[derive(Serialize)]
+struct PublicIssuerMetadata {
+    issuer_id: String,
+    display_name: String,
+    keys: Vec<PublicIssuerKeyView>,
+    credential_schemas: Vec<PublicCredentialSchemaView>,
+    revocation_version: u64,
+}
+
+#[derive(Serialize)]
+struct PublicRevocationPublication {
+    issuer_id: String,
+    version: u64,
+    issuer_key_id: String,
+    snapshot_jws: String,
+    issued_at: OffsetDateTime,
+    next_update: OffsetDateTime,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PublicIssuerDirectoryQuery {
+    limit: Option<u16>,
+    cursor: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+struct PublicIssuerDirectoryItem {
+    issuer_id: String,
+    display_name: String,
+    active_key_id: Option<String>,
+    active_schema_count: u32,
+    revocation_version: u64,
+    created_at: OffsetDateTime,
+    #[serde(skip)]
+    profile_id: Uuid,
+}
+
+#[derive(Serialize)]
+struct PublicIssuerDirectoryPage {
+    items: Vec<PublicIssuerDirectoryItem>,
+    next_cursor: Option<String>,
+}
+
+#[derive(Serialize)]
 struct IssuerProfileView {
     display_name: String,
     issuer_id: String,
@@ -3276,6 +3344,353 @@ fn decrypt_stored_jwk(
     Ok(key)
 }
 
+fn public_issuer_cursor(created_at: OffsetDateTime, id: Uuid) -> String {
+    URL_SAFE_NO_PAD.encode(format!("{}:{id}", created_at.unix_timestamp_nanos()))
+}
+
+fn parse_public_issuer_cursor(value: &str) -> Result<(OffsetDateTime, Uuid), ApiError> {
+    if value.len() > 256 {
+        return Err(ApiError::Invalid);
+    }
+    let decoded = URL_SAFE_NO_PAD
+        .decode(value.as_bytes())
+        .map_err(|_| ApiError::Invalid)?;
+    let text = std::str::from_utf8(&decoded).map_err(|_| ApiError::Invalid)?;
+    let (nanos, id) = text.split_once(':').ok_or(ApiError::Invalid)?;
+    let nanos = nanos.parse::<i128>().map_err(|_| ApiError::Invalid)?;
+    let id = Uuid::parse_str(id).map_err(|_| ApiError::Invalid)?;
+    let created_at =
+        OffsetDateTime::from_unix_timestamp_nanos(nanos).map_err(|_| ApiError::Invalid)?;
+    Ok((created_at, id))
+}
+
+fn validate_public_issuer_id(value: &str) -> Result<(), ApiError> {
+    if !value.starts_with("zerant:issuer:")
+        || value.len() > 128
+        || value.chars().any(char::is_control)
+    {
+        return Err(ApiError::Invalid);
+    }
+    Ok(())
+}
+
+fn public_cache_headers(max_age: u32) -> Result<HeaderMap, ApiError> {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        HeaderValue::from_str(&format!(
+            "public, max-age={max_age}, stale-while-revalidate=60"
+        ))
+        .map_err(|_| ApiError::Unavailable)?,
+    );
+    Ok(headers)
+}
+
+async fn public_issuer_directory(
+    State(state): State<AppState>,
+    Query(query): Query<PublicIssuerDirectoryQuery>,
+) -> Result<(HeaderMap, Json<PublicIssuerDirectoryPage>), ApiError> {
+    let limit = usize::from(query.limit.unwrap_or(25).clamp(1, 100));
+    let fetch_limit = i64::try_from(limit + 1).map_err(|_| ApiError::Invalid)?;
+    let client = db_client(&state.db).await?;
+
+    let rows = if let Some(cursor) = query.cursor.as_deref() {
+        let (created_at, profile_id) = parse_public_issuer_cursor(cursor)?;
+        client
+            .query(
+                "SELECT p.id, p.issuer_id, p.display_name, p.created_at,
+                        k.issuer_key_id,
+                        COUNT(s.id) FILTER (WHERE s.active = TRUE) AS active_schema_count,
+                        COALESCE(r.version, 1) AS revocation_version
+                 FROM issuer_profiles p
+                 LEFT JOIN issuer_signing_keys k
+                   ON k.issuer_profile_id = p.id
+                  AND k.retired_at IS NULL
+                  AND k.compromised_at IS NULL
+                 LEFT JOIN credential_schemas s ON s.issuer_profile_id = p.id
+                 LEFT JOIN issuer_revocation_state r ON r.issuer_profile_id = p.id
+                 WHERE (p.created_at, p.id) < ($1, $2)
+                 GROUP BY p.id, p.issuer_id, p.display_name, p.created_at,
+                          k.issuer_key_id, r.version
+                 ORDER BY p.created_at DESC, p.id DESC
+                 LIMIT $3",
+                &[&created_at, &profile_id, &fetch_limit],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?
+    } else {
+        client
+            .query(
+                "SELECT p.id, p.issuer_id, p.display_name, p.created_at,
+                        k.issuer_key_id,
+                        COUNT(s.id) FILTER (WHERE s.active = TRUE) AS active_schema_count,
+                        COALESCE(r.version, 1) AS revocation_version
+                 FROM issuer_profiles p
+                 LEFT JOIN issuer_signing_keys k
+                   ON k.issuer_profile_id = p.id
+                  AND k.retired_at IS NULL
+                  AND k.compromised_at IS NULL
+                 LEFT JOIN credential_schemas s ON s.issuer_profile_id = p.id
+                 LEFT JOIN issuer_revocation_state r ON r.issuer_profile_id = p.id
+                 GROUP BY p.id, p.issuer_id, p.display_name, p.created_at,
+                          k.issuer_key_id, r.version
+                 ORDER BY p.created_at DESC, p.id DESC
+                 LIMIT $1",
+                &[&fetch_limit],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?
+    };
+
+    let has_more = rows.len() > limit;
+    let mut items = Vec::with_capacity(limit.min(rows.len()));
+    for row in rows.into_iter().take(limit) {
+        let schema_count: i64 = row.get(5);
+        let version_i64: i64 = row.get(6);
+        if schema_count < 0 || version_i64 <= 0 {
+            return Err(ApiError::Unavailable);
+        }
+        items.push(PublicIssuerDirectoryItem {
+            profile_id: row.get(0),
+            issuer_id: row.get(1),
+            display_name: row.get(2),
+            created_at: row.get(3),
+            active_key_id: row.get(4),
+            active_schema_count: u32::try_from(schema_count).map_err(|_| ApiError::Unavailable)?,
+            revocation_version: u64::try_from(version_i64).map_err(|_| ApiError::Unavailable)?,
+        });
+    }
+
+    let next_cursor = if has_more {
+        items
+            .last()
+            .map(|item| public_issuer_cursor(item.created_at, item.profile_id))
+    } else {
+        None
+    };
+
+    Ok((
+        public_cache_headers(120)?,
+        Json(PublicIssuerDirectoryPage { items, next_cursor }),
+    ))
+}
+
+async fn public_issuer_metadata(
+    State(state): State<AppState>,
+    Path(issuer_id): Path<String>,
+) -> Result<(HeaderMap, Json<PublicIssuerMetadata>), ApiError> {
+    validate_public_issuer_id(&issuer_id)?;
+    let client = db_client(&state.db).await?;
+    let profile = client
+        .query_opt(
+            "SELECT id, display_name FROM issuer_profiles WHERE issuer_id = $1",
+            &[&issuer_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let profile_id: Uuid = profile.get(0);
+
+    let key_rows = client
+        .query(
+            "SELECT issuer_key_id, public_jwk, valid_from, retired_at, compromised_at
+             FROM issuer_signing_keys
+             WHERE issuer_profile_id = $1
+             ORDER BY valid_from DESC
+             LIMIT 64",
+            &[&profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let mut keys = Vec::with_capacity(key_rows.len());
+    for row in key_rows {
+        let value: Value = row.get(1);
+        let public_jwk: PublicJwk =
+            serde_json::from_value(value).map_err(|_| ApiError::Unavailable)?;
+        public_jwk.validate().map_err(|_| ApiError::Unavailable)?;
+        keys.push(PublicIssuerKeyView {
+            key_id: row.get(0),
+            public_jwk,
+            valid_from: row.get(2),
+            retired_at: row.get(3),
+            compromised_at: row.get(4),
+        });
+    }
+
+    let schema_rows = client
+        .query(
+            "SELECT id, display_name, description, claim_type, context, default_expiry_days,
+                    version, active, supersedes_schema_id, retired_at, created_at
+             FROM credential_schemas
+             WHERE issuer_profile_id = $1
+             ORDER BY slug ASC, version DESC
+             LIMIT 256",
+            &[&profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let schemas = schema_rows
+        .into_iter()
+        .map(|row| PublicCredentialSchemaView {
+            id: row.get(0),
+            display_name: row.get(1),
+            description: row.get(2),
+            claim_type: row.get(3),
+            context: row.get(4),
+            default_expiry_days: row.get(5),
+            version: row.get(6),
+            active: row.get(7),
+            supersedes_schema_id: row.get(8),
+            retired_at: row.get(9),
+            created_at: row.get(10),
+        })
+        .collect();
+
+    let revocation_row = client
+        .query_opt(
+            "SELECT version FROM issuer_revocation_state WHERE issuer_profile_id = $1",
+            &[&profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let version_i64 = revocation_row.map(|row| row.get::<_, i64>(0)).unwrap_or(1);
+    let revocation_version = u64::try_from(version_i64).map_err(|_| ApiError::Unavailable)?;
+
+    Ok((
+        public_cache_headers(300)?,
+        Json(PublicIssuerMetadata {
+            issuer_id,
+            display_name: profile.get(1),
+            keys,
+            credential_schemas: schemas,
+            revocation_version,
+        }),
+    ))
+}
+
+async fn public_issuer_revocation(
+    State(state): State<AppState>,
+    Path(issuer_id): Path<String>,
+) -> Result<(HeaderMap, Json<PublicRevocationPublication>), ApiError> {
+    validate_public_issuer_id(&issuer_id)?;
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            "SELECT p.id, p.account_id, p.issuer_id, k.issuer_key_id,
+                    k.ciphertext, k.data_nonce, k.wrapped_dek, k.wrap_nonce, k.key_version,
+                    COALESCE(r.version, 1)
+             FROM issuer_profiles p
+             JOIN issuer_signing_keys k ON k.issuer_profile_id = p.id
+             LEFT JOIN issuer_revocation_state r ON r.issuer_profile_id = p.id
+             WHERE p.issuer_id = $1
+               AND k.retired_at IS NULL
+               AND k.compromised_at IS NULL
+             ORDER BY k.valid_from DESC
+             LIMIT 1",
+            &[&issuer_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+
+    let profile_id: Uuid = row.get(0);
+    let account_id: Uuid = row.get(1);
+    let active_key_id: String = row.get(3);
+    let version_i64: i64 = row.get(9);
+    if version_i64 <= 0 {
+        return Err(ApiError::Unavailable);
+    }
+    let version = u64::try_from(version_i64).map_err(|_| ApiError::Unavailable)?;
+    let now = OffsetDateTime::now_utc();
+
+    if let Some(publication) = client
+        .query_opt(
+            "SELECT version, issuer_key_id, snapshot_jws, issued_at, next_update
+             FROM issuer_revocation_publications
+             WHERE issuer_profile_id = $1",
+            &[&profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+    {
+        let published_version: i64 = publication.get(0);
+        let published_key: String = publication.get(1);
+        let next_update: OffsetDateTime = publication.get(4);
+        if published_version == version_i64 && published_key == active_key_id && next_update > now {
+            return Ok((
+                public_cache_headers(60)?,
+                Json(PublicRevocationPublication {
+                    issuer_id,
+                    version,
+                    issuer_key_id: published_key,
+                    snapshot_jws: publication.get(2),
+                    issued_at: publication.get(3),
+                    next_update,
+                }),
+            ));
+        }
+    }
+
+    let secret = secret_row(&row, profile_id, 4);
+    let private = decrypt_stored_jwk(&state, account_id, &secret)?;
+    let issued_at_i64 = now.unix_timestamp();
+    if issued_at_i64 < 0 {
+        return Err(ApiError::Unavailable);
+    }
+    let issued_at = issued_at_i64 as u64;
+    let next_update_time = now + Duration::hours(6);
+    let next_update_i64 = next_update_time.unix_timestamp();
+    if next_update_i64 <= issued_at_i64 {
+        return Err(ApiError::Unavailable);
+    }
+    let snapshot_jws = signed_issuer_revocation_snapshot(
+        &state,
+        profile_id,
+        &issuer_id,
+        &active_key_id,
+        &private,
+        issued_at,
+        next_update_i64 as u64,
+    )
+    .await?;
+
+    client
+        .execute(
+            "INSERT INTO issuer_revocation_publications
+             (issuer_profile_id, version, issuer_key_id, snapshot_jws, issued_at, next_update, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,NOW())
+             ON CONFLICT (issuer_profile_id)
+             DO UPDATE SET version = EXCLUDED.version,
+                           issuer_key_id = EXCLUDED.issuer_key_id,
+                           snapshot_jws = EXCLUDED.snapshot_jws,
+                           issued_at = EXCLUDED.issued_at,
+                           next_update = EXCLUDED.next_update,
+                           updated_at = NOW()",
+            &[
+                &profile_id,
+                &version_i64,
+                &active_key_id,
+                &snapshot_jws,
+                &now,
+                &next_update_time,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok((
+        public_cache_headers(60)?,
+        Json(PublicRevocationPublication {
+            issuer_id,
+            version,
+            issuer_key_id: active_key_id,
+            snapshot_jws,
+            issued_at: now,
+            next_update: next_update_time,
+        }),
+    ))
+}
+
 async fn get_issuer_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -4053,6 +4468,15 @@ async fn zcash_status(
 fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/v1/public/issuers", get(public_issuer_directory))
+        .route(
+            "/v1/public/issuers/{issuer_id}",
+            get(public_issuer_metadata),
+        )
+        .route(
+            "/v1/public/issuers/{issuer_id}/revocation",
+            get(public_issuer_revocation),
+        )
         .route("/v1/auth/zecauth/challenge", get(zecauth_challenge))
         .route("/v1/auth/zecauth/verify", post(zecauth_verify))
         .route("/v1/auth/wallet/verify", post(wallet_message_verify))
@@ -4146,6 +4570,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0013_verifier_key_lifecycle.sql"),
             include_str!("../migrations/0014_wallet_message_auth.sql"),
             include_str!("../migrations/0015_credential_schema_versions.sql"),
+            include_str!("../migrations/0016_public_trust_metadata.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -4430,6 +4855,88 @@ mod tests {
         assert_ne!(first.wrap_nonce, second.wrap_nonce);
         assert_ne!(first.wrapped_dek, second.wrapped_dek);
         assert_ne!(first.ciphertext, second.ciphertext);
+    }
+
+    #[test]
+    fn public_issuer_cursor_roundtrips() {
+        let created_at = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+        let id = Uuid::from_u128(42);
+        let cursor = public_issuer_cursor(created_at, id);
+        assert_eq!(
+            parse_public_issuer_cursor(&cursor).unwrap(),
+            (created_at, id)
+        );
+        assert!(parse_public_issuer_cursor(&"x".repeat(257)).is_err());
+        assert!(parse_public_issuer_cursor("not-base64***").is_err());
+    }
+
+    #[test]
+    fn public_issuer_ids_are_strictly_bounded() {
+        assert!(validate_public_issuer_id("zerant:issuer:abc123").is_ok());
+        assert!(validate_public_issuer_id("issuer:abc123").is_err());
+        assert!(validate_public_issuer_id("zerant:issuer:bad\nvalue").is_err());
+        assert!(validate_public_issuer_id(&format!("zerant:issuer:{}", "x".repeat(120))).is_err());
+    }
+
+    #[test]
+    fn public_cache_headers_are_explicit() {
+        let headers = public_cache_headers(120).unwrap();
+        assert_eq!(
+            headers.get(axum::http::header::CACHE_CONTROL).unwrap(),
+            "public, max-age=120, stale-while-revalidate=60"
+        );
+    }
+
+    #[test]
+    fn public_issuer_metadata_shape_excludes_private_material() {
+        let metadata = PublicIssuerMetadata {
+            issuer_id: "zerant:issuer:test".into(),
+            display_name: "Test Issuer".into(),
+            keys: vec![PublicIssuerKeyView {
+                key_id: "key-test".into(),
+                public_jwk: PublicJwk {
+                    kty: "OKP".into(),
+                    crv: "Ed25519".into(),
+                    x: "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo".into(),
+                },
+                valid_from: OffsetDateTime::UNIX_EPOCH,
+                retired_at: None,
+                compromised_at: None,
+            }],
+            credential_schemas: vec![PublicCredentialSchemaView {
+                id: Uuid::from_u128(9),
+                display_name: "Membership".into(),
+                description: "Confirms active membership.".into(),
+                claim_type: "membership".into(),
+                context: "community".into(),
+                default_expiry_days: 90,
+                version: 1,
+                active: true,
+                supersedes_schema_id: None,
+                retired_at: None,
+                created_at: OffsetDateTime::UNIX_EPOCH,
+            }],
+            revocation_version: 1,
+        };
+
+        let json = serde_json::to_string(&metadata).unwrap();
+        for forbidden in [
+            "account_id",
+            "subject_account",
+            "holder_zerant_id",
+            "ciphertext",
+            "wrapped_dek",
+            "verification_key",
+            "wallet",
+            "signed_credential",
+        ] {
+            assert!(
+                !json.contains(forbidden),
+                "public metadata leaked {forbidden}"
+            );
+        }
+        assert!(json.contains("public_jwk"));
+        assert!(json.contains("credential_schemas"));
     }
 
     #[test]

@@ -10,6 +10,7 @@ export function SiteHeader() {
       <nav aria-label="Main navigation">
         <Link href="/#how-it-works">How it works</Link>
         <Link href="/issuer">Issue</Link>
+        <Link href="/issuers">Issuers</Link>
         <Link href="/verifier">Verify</Link>
         <Link href="/requests">Requests</Link>
         <Link href="/activity">Activity</Link>

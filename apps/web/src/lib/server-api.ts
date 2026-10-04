@@ -82,3 +82,43 @@ export async function fetchZerantBackend(
     return null;
   }
 }
+
+
+export async function proxyPublicToZerant(path: string): Promise<Response> {
+  let upstream: Response;
+  try {
+    upstream = await fetch(new URL(path, backendOrigin()), {
+      method: "GET",
+      redirect: "manual",
+      cache: "no-store",
+    });
+  } catch {
+    return Response.json({ error: "Zerant API unavailable" }, { status: 503 });
+  }
+
+  const responseHeaders = new Headers();
+  const contentType = upstream.headers.get("content-type");
+  if (contentType) responseHeaders.set("content-type", contentType);
+  const cacheControl = upstream.headers.get("cache-control");
+  responseHeaders.set(
+    "cache-control",
+    cacheControl ?? "public, max-age=60, stale-while-revalidate=60",
+  );
+
+  return new Response(await upstream.arrayBuffer(), {
+    status: upstream.status,
+    headers: responseHeaders,
+  });
+}
+
+export async function fetchZerantPublic(path: string): Promise<Response | null> {
+  try {
+    return await fetch(new URL(path, backendOrigin()), {
+      method: "GET",
+      redirect: "manual",
+      cache: "no-store",
+    });
+  } catch {
+    return null;
+  }
+}

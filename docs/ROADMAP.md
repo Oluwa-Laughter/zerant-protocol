@@ -55,6 +55,7 @@ No signing, secure vault, protocol verification, Zcash integration, ZK, or mainn
 - append-only activity history and bounded cursor pagination
 - database-backed write quotas and authentication circuit breaker
 - reusable credential definitions with immutable version history
+- public issuer directory, signing-key metadata and signed revocation publication
 - verifier-scoped holder proof keys
 - account export and deletion controls
 
