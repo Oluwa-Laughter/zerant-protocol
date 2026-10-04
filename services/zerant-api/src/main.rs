@@ -67,6 +67,7 @@ const WRITE_RATE_WINDOW_SECONDS: i64 = 60;
 const MAX_ACTIVE_ZECAUTH_CHALLENGES: i64 = 10_000;
 const MAX_ACTIVE_VERIFIER_API_KEYS: i64 = 20;
 const MAX_ACTIVE_VERIFIER_WEBHOOKS: i64 = 5;
+const MAX_ACTIVE_VERIFICATION_POLICIES: i64 = 100;
 const MAX_WEBHOOK_ATTEMPTS: i32 = 8;
 const VERIFIER_API_KEY_PREFIX: &str = "zrt_vk_";
 const VERIFIER_WEBHOOK_SECRET_PREFIX: &str = "zrt_whsec_";
@@ -579,6 +580,55 @@ struct VerifierWebhookView {
 struct CreatedVerifierWebhook {
     webhook: VerifierWebhookView,
     secret: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateVerificationPolicy {
+    display_name: String,
+    description: String,
+    purpose: String,
+    credential_schema_id: Uuid,
+    request_ttl_seconds: Option<u16>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateVerificationPolicyVersion {
+    description: String,
+    purpose: String,
+    credential_schema_id: Uuid,
+    request_ttl_seconds: u16,
+}
+
+#[derive(Serialize)]
+struct VerificationPolicyView {
+    id: Uuid,
+    display_name: String,
+    description: String,
+    purpose: String,
+    credential_schema_id: Uuid,
+    credential_name: String,
+    issuer_name: String,
+    request_ttl_seconds: i32,
+    version: i32,
+    active: bool,
+    supersedes_policy_id: Option<Uuid>,
+    retired_at: Option<OffsetDateTime>,
+    created_at: OffsetDateTime,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreatePolicyVerificationRequest {
+    holder_zerant_id: String,
+}
+
+struct ResolvedVerificationPolicy {
+    id: Uuid,
+    purpose: String,
+    credential_schema_id: Uuid,
+    request_ttl_seconds: u16,
 }
 
 #[derive(Serialize)]
@@ -4030,10 +4080,366 @@ async fn issuer_directory(
     Ok(Json(result))
 }
 
+fn verification_policy_view(row: &Row) -> VerificationPolicyView {
+    VerificationPolicyView {
+        id: row.get(0),
+        display_name: row.get(1),
+        description: row.get(2),
+        purpose: row.get(3),
+        credential_schema_id: row.get(4),
+        credential_name: row.get(5),
+        issuer_name: row.get(6),
+        request_ttl_seconds: row.get(7),
+        version: row.get(8),
+        active: row.get(9),
+        supersedes_policy_id: row.get(10),
+        retired_at: row.get(11),
+        created_at: row.get(12),
+    }
+}
+
+async fn verifier_profile_id_for_account(db: &Pool, account: Uuid) -> Result<Uuid, ApiError> {
+    let client = db_client(db).await?;
+    client
+        .query_opt(
+            "SELECT id FROM verifier_profiles WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .map(|row| row.get(0))
+        .ok_or(ApiError::Unauthorized)
+}
+
+async fn get_verification_policy_view(
+    db: &Pool,
+    account: Uuid,
+    policy_id: Uuid,
+) -> Result<VerificationPolicyView, ApiError> {
+    let client = db_client(db).await?;
+    let row = client
+        .query_opt(
+            "SELECT p.id, p.display_name, p.description, p.purpose,
+                    p.credential_schema_id, s.display_name, i.display_name,
+                    p.request_ttl_seconds, p.version, p.active,
+                    p.supersedes_policy_id, p.retired_at, p.created_at
+             FROM verification_policies p
+             JOIN verifier_profiles v ON v.id = p.verifier_profile_id
+             JOIN credential_schemas s ON s.id = p.credential_schema_id
+             JOIN issuer_profiles i ON i.id = s.issuer_profile_id
+             WHERE p.id = $1 AND v.account_id = $2",
+            &[&policy_id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    Ok(verification_policy_view(&row))
+}
+
+async fn list_verification_policies(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<VerificationPolicyView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let rows = client
+        .query(
+            "SELECT p.id, p.display_name, p.description, p.purpose,
+                    p.credential_schema_id, s.display_name, i.display_name,
+                    p.request_ttl_seconds, p.version, p.active,
+                    p.supersedes_policy_id, p.retired_at, p.created_at
+             FROM verification_policies p
+             JOIN verifier_profiles v ON v.id = p.verifier_profile_id
+             JOIN credential_schemas s ON s.id = p.credential_schema_id
+             JOIN issuer_profiles i ON i.id = s.issuer_profile_id
+             WHERE v.account_id = $1
+             ORDER BY p.created_at DESC
+             LIMIT 512",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    Ok(Json(rows.iter().map(verification_policy_view).collect()))
+}
+
+async fn create_verification_policy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CreateVerificationPolicy>,
+) -> Result<(StatusCode, Json<VerificationPolicyView>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "verification_policy_create", 20).await?;
+
+    let display_name = input.display_name.trim().to_owned();
+    let description = input.description.trim().to_owned();
+    let purpose = input.purpose.trim().to_owned();
+    let ttl = input.request_ttl_seconds.unwrap_or(300);
+    if !valid_short_text(&display_name, 2, 120)
+        || !valid_short_text(&description, 2, 1024)
+        || !valid_short_text(&purpose, 2, 1024)
+        || !(60..=900).contains(&ttl)
+    {
+        return Err(ApiError::Invalid);
+    }
+
+    let profile_id = verifier_profile_id_for_account(&state.db, account).await?;
+    let schema = resolve_public_schema(&state.db, input.credential_schema_id).await?;
+    let slug = schema_slug(&display_name);
+    if slug.len() < 2 || slug.len() > 80 {
+        return Err(ApiError::Invalid);
+    }
+
+    let client = db_client(&state.db).await?;
+    let active: i64 = client
+        .query_one(
+            "SELECT COUNT(*) FROM verification_policies
+             WHERE verifier_profile_id = $1 AND active = TRUE",
+            &[&profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    if active >= MAX_ACTIVE_VERIFICATION_POLICIES {
+        return Err(ApiError::TooManyRequests);
+    }
+
+    let id = Uuid::new_v4();
+    client
+        .execute(
+            "INSERT INTO verification_policies
+             (id, verifier_profile_id, slug, display_name, description, purpose,
+              credential_schema_id, request_ttl_seconds)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            &[
+                &id,
+                &profile_id,
+                &slug,
+                &display_name,
+                &description,
+                &purpose,
+                &schema.id,
+                &i32::from(ttl),
+            ],
+        )
+        .await
+        .map_err(|error| {
+            if error.as_db_error().and_then(|db| db.constraint())
+                == Some("verification_policies_active_slug_idx")
+            {
+                ApiError::Conflict
+            } else {
+                ApiError::Unavailable
+            }
+        })?;
+
+    let view = get_verification_policy_view(&state.db, account, id).await?;
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+async fn create_verification_policy_version(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(policy_id): Path<Uuid>,
+    Json(input): Json<CreateVerificationPolicyVersion>,
+) -> Result<(StatusCode, Json<VerificationPolicyView>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "verification_policy_version", 20).await?;
+
+    let description = input.description.trim().to_owned();
+    let purpose = input.purpose.trim().to_owned();
+    if !valid_short_text(&description, 2, 1024)
+        || !valid_short_text(&purpose, 2, 1024)
+        || !(60..=900).contains(&input.request_ttl_seconds)
+    {
+        return Err(ApiError::Invalid);
+    }
+    let schema = resolve_public_schema(&state.db, input.credential_schema_id).await?;
+
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let current = tx
+        .query_opt(
+            "SELECT p.verifier_profile_id, p.slug, p.display_name, p.version
+             FROM verification_policies p
+             JOIN verifier_profiles v ON v.id = p.verifier_profile_id
+             WHERE p.id = $1 AND v.account_id = $2 AND p.active = TRUE
+             FOR UPDATE OF p",
+            &[&policy_id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Conflict)?;
+
+    let profile_id: Uuid = current.get(0);
+    let slug: String = current.get(1);
+    let display_name: String = current.get(2);
+    let version: i32 = current.get(3);
+    let next_version = version.checked_add(1).ok_or(ApiError::Conflict)?;
+    let now = OffsetDateTime::now_utc();
+    let new_id = Uuid::new_v4();
+
+    tx.execute(
+        "UPDATE verification_policies
+         SET active = FALSE, retired_at = $2
+         WHERE id = $1 AND active = TRUE",
+        &[&policy_id, &now],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.execute(
+        "INSERT INTO verification_policies
+         (id, verifier_profile_id, slug, display_name, description, purpose,
+          credential_schema_id, request_ttl_seconds, version, active,
+          supersedes_policy_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, $10)",
+        &[
+            &new_id,
+            &profile_id,
+            &slug,
+            &display_name,
+            &description,
+            &purpose,
+            &schema.id,
+            &i32::from(input.request_ttl_seconds),
+            &next_version,
+            &policy_id,
+        ],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+    let view = get_verification_policy_view(&state.db, account, new_id).await?;
+    Ok((StatusCode::CREATED, Json(view)))
+}
+
+async fn retire_verification_policy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(policy_id): Path<Uuid>,
+) -> Result<Json<VerificationPolicyView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let affected = client
+        .execute(
+            "UPDATE verification_policies p
+             SET active = FALSE, retired_at = NOW()
+             FROM verifier_profiles v
+             WHERE p.id = $1
+               AND p.verifier_profile_id = v.id
+               AND v.account_id = $2
+               AND p.active = TRUE",
+            &[&policy_id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    if affected != 1 {
+        return Err(ApiError::Conflict);
+    }
+    Ok(Json(
+        get_verification_policy_view(&state.db, account, policy_id).await?,
+    ))
+}
+
+async fn resolve_verification_policy(
+    db: &Pool,
+    account: Uuid,
+    policy_id: Uuid,
+) -> Result<ResolvedVerificationPolicy, ApiError> {
+    let client = db_client(db).await?;
+    let row = client
+        .query_opt(
+            "SELECT p.id, p.purpose, p.credential_schema_id, p.request_ttl_seconds
+             FROM verification_policies p
+             JOIN verifier_profiles v ON v.id = p.verifier_profile_id
+             JOIN credential_schemas s ON s.id = p.credential_schema_id
+             WHERE p.id = $1
+               AND v.account_id = $2
+               AND p.active = TRUE
+               AND s.active = TRUE",
+            &[&policy_id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let ttl: i32 = row.get(3);
+    Ok(ResolvedVerificationPolicy {
+        id: row.get(0),
+        purpose: row.get(1),
+        credential_schema_id: row.get(2),
+        request_ttl_seconds: u16::try_from(ttl).map_err(|_| ApiError::Unavailable)?,
+    })
+}
+
+async fn create_policy_verification_request_for_account(
+    state: &AppState,
+    account: Uuid,
+    policy_id: Uuid,
+    holder_zerant_id: String,
+) -> Result<VerifierRequestView, ApiError> {
+    let policy = resolve_verification_policy(&state.db, account, policy_id).await?;
+    let input = CreateVerificationRequest {
+        holder_zerant_id,
+        purpose: policy.purpose,
+        credential_schema_id: Some(policy.credential_schema_id),
+        claim_type: None,
+        context: None,
+        accepted_issuer_ids: vec![],
+    };
+    create_verification_request_for_account(
+        state,
+        account,
+        input,
+        policy.request_ttl_seconds,
+        Some(policy.id),
+    )
+    .await
+}
+
+async fn create_policy_verification_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(policy_id): Path<Uuid>,
+    Json(input): Json<CreatePolicyVerificationRequest>,
+) -> Result<(StatusCode, Json<VerifierRequestView>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let request = create_policy_verification_request_for_account(
+        &state,
+        account,
+        policy_id,
+        input.holder_zerant_id,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(request)))
+}
+
+async fn create_integration_policy_verification_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(policy_id): Path<Uuid>,
+    Json(input): Json<CreatePolicyVerificationRequest>,
+) -> Result<(StatusCode, Json<VerifierRequestView>), ApiError> {
+    let account = verifier_api_account_id(&headers, &state.db, "requests:create").await?;
+    let request = create_policy_verification_request_for_account(
+        &state,
+        account,
+        policy_id,
+        input.holder_zerant_id,
+    )
+    .await?;
+    Ok((StatusCode::CREATED, Json(request)))
+}
+
 async fn create_verification_request_for_account(
     state: &AppState,
     account: Uuid,
     input: CreateVerificationRequest,
+    request_ttl_seconds: u16,
+    verification_policy_id: Option<Uuid>,
 ) -> Result<VerifierRequestView, ApiError> {
     enforce_account_rate_limit(&state.db, account, "verification_request", 60).await?;
     let holder_zerant_id = input.holder_zerant_id.trim().to_owned();
@@ -4145,7 +4551,10 @@ async fn create_verification_request_for_account(
         return Err(ApiError::Unavailable);
     }
     let issued_at = now_i64 as u64;
-    let expires_at = issued_at + 300;
+    if !(60..=900).contains(&request_ttl_seconds) {
+        return Err(ApiError::Invalid);
+    }
+    let expires_at = issued_at + u64::from(request_ttl_seconds);
     let request = Request {
         schema: REQUEST_SCHEMA.into(),
         request_id: random_id(),
@@ -4173,8 +4582,8 @@ async fn create_verification_request_for_account(
             "INSERT INTO verification_requests
              (id, verifier_profile_id, subject_account_id, request_id, request_jws, purpose,
               claim_type, context, accepted_issuer_ids, expires_at, credential_schema_id,
-              verifier_key_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+              verifier_key_id, verification_policy_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
             &[
                 &db_id,
                 &profile_id,
@@ -4188,6 +4597,7 @@ async fn create_verification_request_for_account(
                 &expires_time,
                 &credential_schema_id,
                 &verifier_key_id,
+                &verification_policy_id,
             ],
         )
         .await
@@ -4214,7 +4624,8 @@ async fn create_verification_request(
     Json(input): Json<CreateVerificationRequest>,
 ) -> Result<(StatusCode, Json<VerifierRequestView>), ApiError> {
     let account = account_id(&headers, &state.db).await?;
-    let request = create_verification_request_for_account(&state, account, input).await?;
+    let request =
+        create_verification_request_for_account(&state, account, input, 300, None).await?;
     Ok((StatusCode::CREATED, Json(request)))
 }
 
@@ -4228,7 +4639,8 @@ async fn create_integration_verification_request(
         return Err(ApiError::Invalid);
     }
     let account = verifier_api_account_id(&headers, &state.db, "requests:create").await?;
-    let request = create_verification_request_for_account(&state, account, input).await?;
+    let request =
+        create_verification_request_for_account(&state, account, input, 300, None).await?;
     Ok((StatusCode::CREATED, Json(request)))
 }
 
@@ -6675,12 +7087,32 @@ fn app(state: AppState) -> Router {
             post(dispatch_request_webhooks_internal),
         )
         .route(
+            "/v1/verifier/policies",
+            get(list_verification_policies).post(create_verification_policy),
+        )
+        .route(
+            "/v1/verifier/policies/{policy_id}/versions",
+            post(create_verification_policy_version),
+        )
+        .route(
+            "/v1/verifier/policies/{policy_id}/retire",
+            post(retire_verification_policy),
+        )
+        .route(
+            "/v1/verifier/policies/{policy_id}/requests",
+            post(create_policy_verification_request),
+        )
+        .route(
             "/v1/verifier/requests",
             get(list_verifier_requests).post(create_verification_request),
         )
         .route(
             "/v1/integrations/verifier/requests",
             post(create_integration_verification_request),
+        )
+        .route(
+            "/v1/integrations/verifier/policies/{policy_id}/requests",
+            post(create_integration_policy_verification_request),
         )
         .route(
             "/v1/integrations/verifier/requests/{id}",
@@ -6749,6 +7181,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0018_issuer_teams.sql"),
             include_str!("../migrations/0019_issuer_audit.sql"),
             include_str!("../migrations/0020_verifier_webhooks.sql"),
+            include_str!("../migrations/0021_verification_policies.sql"),
         ] {
             client
                 .batch_execute(migration)
