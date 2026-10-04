@@ -1,2 +1,18 @@
+import Image from "next/image";
 import Link from "next/link";
-export function SiteHeader() { return <header className="site-header"><Link href="/" className="brand" aria-label="Zerant home"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 12h28L12 36h26M10 24v12h12M38 24V12H26" fill="none" stroke="currentColor" strokeWidth="4" strokeLinejoin="miter" /></svg><span>zerant<span className="brand-period">.</span></span></Link><nav aria-label="Main navigation"><Link href="/#principles">Principles</Link><Link href="/#architecture">Architecture</Link><Link href="/vault">Local vault</Link><Link href="/demo" className="nav-demo">Open console <span aria-hidden="true">↗</span></Link></nav></header>; }
+
+export function SiteHeader() {
+  return (
+    <header className="site-header">
+      <Link href="/" className="brand brand-lockup" aria-label="Zerant home">
+        <Image src="/brand/zerant-lockup.svg" alt="Zerant" width={180} height={36} priority />
+      </Link>
+      <nav aria-label="Main navigation">
+        <Link href="/#principles">Principles</Link>
+        <Link href="/#architecture">Architecture</Link>
+        <Link href="/vault">Vault</Link>
+        <Link href="/app" className="nav-app">Open Zerant <span aria-hidden="true">↗</span></Link>
+      </nav>
+    </header>
+  );
+}

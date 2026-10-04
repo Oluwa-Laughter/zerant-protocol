@@ -18,8 +18,8 @@ example. Contextual rules never create a universal reputation score.
   holder signature, exact bindings, denial without response, SQLite replay state.
 - `zerant-zcash`: read-only regtest RPC capability/readiness adapter and minimal payment-claim
   constructor. Live local discovery/readiness and a synthetic coinbase-shielding payment were exercised, including recipient/amount/confirmation checks. Fully shielded `z_sendmany` spending remains unavailable.
-- `/demo`: public integration console across reusable trust/payment templates, with consent and honest
-  integration status. Browser simulation does not execute native Rust protocol verification.
+- `/app`: production workspace with empty integration states for holder, issuer, verifier and Zcash boundaries.
+  It does not pre-populate credentials, identities, payments or verification results.
 - `/vault`: real local encrypted holder storage using Web Crypto AES-256-GCM, PBKDF2-HMAC-SHA-256,
   opaque record IDs, IndexedDB persistence and automatic locking. It stores no wallet authority.
 
@@ -43,7 +43,7 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:3000`, then `/demo`. If pnpm is unavailable, install it using your normal package-manager setup or use `npm exec --yes --package=pnpm -- pnpm install`. This requires registry access.
+Open `http://localhost:3000`, then `/app`. If pnpm is unavailable, install it using your normal package-manager setup or use `npm exec --yes --package=pnpm -- pnpm install`. This requires registry access.
 
 Dependencies are pinned to the stable versions resolved by pnpm: Next.js 16.3.8, React 19.3.0 and Tailwind CSS 4.3.3. ESLint 9.39.2 and TypeScript 5.9.3 stay within the supported lint-tool peer ranges. `pnpm-lock.yaml` records the full graph; use frozen installs for CI and deployment.
 
@@ -54,27 +54,30 @@ source secret-pattern scan. `make integration` runs native integration/test targ
 `make z3-check` probes an already running official **local regtest** router; it never
 sends funds or prints raw wallet data. CI runs Rust and web gates independently.
 
-Static web output remains `apps/web/out`. Hosting this browser playground does not
-deploy a verifier or wallet service. No deployment was performed in this run.
+### Vercel deployment
+
+The deployable Next.js project lives in `apps/web`. In Vercel, set **Root Directory**
+to `apps/web` once; the repository now keeps the Next.js `vercel.json`, package
+metadata, favicon and build configuration inside that directory. Vercel should use its
+default Next.js build/output handling. The old repository-root static-export
+configuration has been removed.
 
 Public RFC test key material is labeled under credential fixtures. Never reuse it.
 
 
-## Compound integration console extension
+## Product integration surface
 
-The native v0.3 compound profile adds one consent decision for up to eight ordered
-credential, threshold and invoice-bound paid-boolean requirements; v0.2 remains
+The web product starts empty. `/app` exposes holder, issuer, verifier and Zcash
+integration states without seeded credentials, identities, payments, request origins or
+verification outcomes. `/vault` encrypts only holder-provided JSON locally. Signed
+request transport and native protocol execution will populate these surfaces when those
+integrations are connected.
+
+The native v0.3 compound profile still supports one consent decision for up to eight
+ordered credential, threshold and invoice-bound paid-boolean requirements; v0.2 remains
 available. Every condition must verify before atomic replay consumption. Payment
-recipient/amount checks belong to the responsible local issuer; the verifier receives
-only the intent-bound assertion. No source credential fallback is permitted.
-
-The browser integration console uses public fixtures and transient state only. Its
-settlement outcomes are simulations, separate from Native Rust capabilities and
-previously exercised live Z3 regtest. It holds no wallet keys and invokes no spending.
-Individual, freelancer, vendor, community/grant, OSS, marketplace, team and API use
-cases are templates over the same protocol. PCZT discovery is per method, never
-inferred from Zallet branding. Advertised spending is not authorization. Mainnet
-execution, live browser wallet integration and FROST cryptography are not enabled.
+recipient/amount checks stay inside the responsible native boundary; generic verifiers
+receive only the approved intent-bound assertion.
 
 See [compound disclosure](docs/specs/disclosure-v0.3.md), [payment protocol](docs/specs/payment-v0.1.md), and [Zcash integration](docs/ZCASH-INTEGRATION.md).
 
@@ -89,11 +92,8 @@ cargo run -p zerant-zcash --example verify_payment -- --fixture < fixtures/payme
 make z3-check # requires Z3_REGTEST_RPC_ROUTER_PASSWORD in the environment
 ```
 
-The demo remains a public simulation with a compound request builder, consent and
-settlement failure previews. Native signatures/replay and payment observations run
-in Rust; the browser does not invoke a wallet or cryptographic verifier. PCZT and
-FROST review/coordination interfaces are implemented and tested; live spend/signing
-adapters and browser origin/protocol integration remains unimplemented; the local encrypted holder vault is implemented. Current live
-reads succeeded; the latest synthetic shielding attempt failed closed. The prior
-confirmed coinbase-shielding record is historical evidence, not a new fully shielded
-send. Broad [composable templates](docs/examples/README.md) reuse the same primitives.
+Native signatures, replay protection and payment observations run in Rust; the browser
+does not invoke wallet RPC or duplicate the cryptographic verifier. PCZT and FROST
+review/coordination interfaces are implemented and tested, while live spend/signing
+adapters and authenticated browser protocol transport remain unimplemented. Historical
+regtest captures stay test/developer evidence and are not injected into the product UI.

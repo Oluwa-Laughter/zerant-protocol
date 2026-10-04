@@ -1,12 +1,103 @@
 import Link from "next/link";
+
 export default function Home() {
-  return <main id="main">
-    <section className="hero"><div className="hero-copy"><p className="eyebrow"><span className="status-dot" /> Privacy-first credential infrastructure</p><h1>Prove trust.<br /><span>Preserve privacy.</span></h1><p className="hero-description">An application needs to know you qualify.<br className="desktop-break" /> It doesn’t need your entire history.</p><p className="muted hero-detail">Zerant explores minimal credential disclosure and reputation that belongs to a context. Built around the holder’s decision to share.</p><div className="hero-actions"><Link href="/demo" className="button">Explore the local preview <span aria-hidden="true">↗</span></Link><a href="#architecture" className="text-link">Understand the protocol <span aria-hidden="true">↓</span></a></div><p className="small hero-note">Browser simulation. Native protocol libraries; no ZK, wallet connection or mainnet.</p></div>
-    <div className="hero-preview"><div className="preview-top"><span className="eyebrow">Verification request</span><span className="pill">Local protocol preview</span></div><div className="preview-body"><p className="small muted">Illustrative origin · not authenticated</p><p className="mono">grants.example</p><h2>Eligible to contribute.<br />History stays with you.</h2><div className="predicate"><span>Contextual eligibility threshold</span><strong>≥ 40 <span className="muted">→</span> true</strong><span className="small">Illustrative issuer-attested result · not a ZK proof</span></div><div className="preview-row"><span>Would share</span><strong>One result + required metadata</strong></div><div className="preview-row"><span>Not shared</span><strong>Exact score · source history</strong></div><Link className="preview-link" href="/demo">Review the consent preview <span aria-hidden="true">→</span></Link></div><div className="preview-bottom">01 / REQUEST <span>02 / REVIEW</span> 03 / RESPONSE</div></div></section>
-    <section className="flow" aria-label="Credential lifecycle"><div><span className="step-number">01</span><h3>Issuer attests</h3><p>A trusted issuer signs a claim it can substantiate.</p></div><span className="flow-arrow" aria-hidden="true">→</span><div><span className="step-number">02</span><h3>Holder decides</h3><p>Private evidence stays local. Every request gets its own review.</p></div><span className="flow-arrow" aria-hidden="true">→</span><div><span className="step-number">03</span><h3>Verifier checks</h3><p>One narrow result, checked against the verifier’s trust policy.</p></div><p className="flow-note small">Native protocol flow. The browser playground simulates these operations.</p></section>
-    <section id="principles" className="section principles"><div className="section-heading"><p className="eyebrow">01 / Protocol principles</p><h2>Less exposure.<br />More deliberate trust.</h2><p className="muted">Privacy begins with what a system chooses not to collect.</p></div><div className="principle-list">{[["01","Ask for the minimum","One request. One result. No fallback upload of the holder’s source credentials."],["02","Make consent legible","Show the origin, purpose, result and visible metadata. Approval belongs to a single request."],["03","Keep reputation contextual","A community’s eligibility policy is not a universal ranking of people."],["04","Be precise about privacy","Zerant uses signed atomic attestations. Pairwise keys reduce obvious correlation; they do not promise anonymity."]].map(([n,title,body]) => <article key={n}><span className="mono muted">{n}</span><div><h3>{title}</h3><p>{body}</p></div></article>)}</div></section>
-    <section className="section use-cases"><div className="section-heading"><p className="eyebrow">02 / Reusable trust primitives</p><h2>A useful answer.<br />A smaller footprint.</h2></div><div className="use-case-grid">{[["Freelancers and service providers","Show a completed paid engagement while keeping unrelated clients private."],["Businesses and marketplaces","Present vendor qualification or service fulfillment for one context."],["Communities, grants and organizations","Share eligibility or a role without disclosing other memberships."]].map(([title,body],i) => <article key={title}><span className="eyebrow">0{i+1} / Proposed use case</span><h3>{title}</h3><p>{body}</p></article>)}</div></section>
-    <section id="architecture" className="section architecture"><div className="section-heading"><p className="eyebrow">03 / Architecture</p><h2>Clear boundaries.<br />Independent roles.</h2><p>The generic protocol is designed to work without wallet state. Zcash belongs in a separate regtest adapter.</p></div><div className="architecture-map"><div className="architecture-node"><span className="eyebrow">Issuer</span><h3>Attestable evidence</h3><p>Enrollment, signing keys, revocation</p></div><div className="architecture-connector">↓ <span>Separate atomic attestation</span></div><div className="architecture-node holder-node"><span className="eyebrow">Holder</span><h3>Private vault + consent</h3><p>Source evidence, local policy, audience keys</p></div><div className="architecture-connector">↓ <span>One approved result + metadata</span></div><div className="architecture-node"><span className="eyebrow">Verifier</span><h3>Policy-bound acceptance</h3><p>Trust, validity, revocation, durable replay checks</p></div><p className="small muted">Native verification libraries · encrypted vault and browser transport remain future work.</p></div></section>
-    <section className="milestone"><div><p className="eyebrow">04 / Current implementation</p><h2>The foundation,<br />made visible.</h2><p>Signed atomic credentials, contextual policies and audience-bound disclosure form the native protocol. Explore the same primitives across reusable scenarios.</p></div><div className="milestone-side"><span className="pill">Protocol playground</span><p>Browser simulation using public fixtures. No secure vault or live payment settlement is claimed.</p><Link href="/demo" className="button">Open the playground <span aria-hidden="true">↗</span></Link></div></section>
-  </main>;
+  return (
+    <main id="main">
+      <section className="hero product-hero">
+        <div className="hero-copy">
+          <p className="eyebrow"><span className="status-dot" /> Privacy-preserving trust infrastructure</p>
+          <h1>Prove trust.<br /><span>Preserve privacy.</span></h1>
+          <p className="hero-description">
+            Zerant lets applications verify the facts they need without collecting a holder&apos;s
+            full identity, credential history, wallet activity, or unrelated evidence.
+          </p>
+          <p className="muted hero-detail">
+            Credentials, contextual policy, consent, replay protection and Zcash settlement are
+            independent protocol boundaries. The web product does not seed fake users or simulated
+            verification results.
+          </p>
+          <div className="hero-actions">
+            <Link href="/app" className="button">Open Zerant <span aria-hidden="true">→</span></Link>
+            <Link href="/vault" className="text-link">Open local vault <span aria-hidden="true">→</span></Link>
+          </div>
+        </div>
+
+        <div className="product-status-panel">
+          <p className="eyebrow">Product boundaries</p>
+          <div className="product-status-row">
+            <span>Holder storage</span>
+            <strong>Local encrypted vault</strong>
+          </div>
+          <div className="product-status-row">
+            <span>Protocol verification</span>
+            <strong>Native Rust core</strong>
+          </div>
+          <div className="product-status-row">
+            <span>Browser request transport</span>
+            <strong>Not connected</strong>
+          </div>
+          <div className="product-status-row">
+            <span>Browser wallet authority</span>
+            <strong>None</strong>
+          </div>
+          <p className="small muted">
+            Empty states are intentional. Zerant surfaces operational data only after a real
+            integration provides it.
+          </p>
+        </div>
+      </section>
+
+      <section className="flow" aria-label="Trust lifecycle">
+        <div><span className="step-number">01</span><h3>Issuer attests</h3><p>A trusted issuer signs only claims it is authorized to make.</p></div>
+        <span className="flow-arrow" aria-hidden="true">→</span>
+        <div><span className="step-number">02</span><h3>Holder decides</h3><p>Private evidence stays under holder control and disclosure is request-bound.</p></div>
+        <span className="flow-arrow" aria-hidden="true">→</span>
+        <div><span className="step-number">03</span><h3>Verifier checks</h3><p>The verifier validates the narrow signed result against explicit trust policy.</p></div>
+      </section>
+
+      <section id="principles" className="section principles">
+        <div className="section-heading">
+          <p className="eyebrow">Protocol principles</p>
+          <h2>Trust without building a surveillance profile.</h2>
+          <p className="muted">Privacy starts with refusing to collect unrelated evidence.</p>
+        </div>
+        <div className="principle-list">
+          <article><span className="mono muted">01</span><div><h3>Minimum disclosure</h3><p>Requests describe the exact condition required. Source credentials are not verifier fallbacks.</p></div></article>
+          <article><span className="mono muted">02</span><div><h3>Explicit consent</h3><p>Origin, purpose and requirements remain bound to the holder&apos;s approval decision.</p></div></article>
+          <article><span className="mono muted">03</span><div><h3>Contextual trust</h3><p>Reputation and authorization belong to a defined context, not one universal score.</p></div></article>
+          <article><span className="mono muted">04</span><div><h3>Zcash as a separate boundary</h3><p>Wallet authority and payment evidence stay behind native Z3/Zallet integration rather than entering generic browser state.</p></div></article>
+        </div>
+      </section>
+
+      <section id="architecture" className="section architecture">
+        <div className="section-heading">
+          <p className="eyebrow">Architecture</p>
+          <h2>Independent roles. Narrow interfaces.</h2>
+          <p className="muted">The protocol separates issuer trust, holder privacy, verifier policy and Zcash settlement.</p>
+        </div>
+        <div className="architecture-map">
+          <div className="architecture-node"><span className="eyebrow">Issuer</span><h3>Evidence and revocation</h3><p>Authorized claims, signing keys, schemas and trust policy.</p></div>
+          <div className="architecture-connector">↓ <span>signed atomic credential</span></div>
+          <div className="architecture-node holder-node"><span className="eyebrow">Holder</span><h3>Encrypted vault and consent</h3><p>Private evidence remains local until an authenticated request is approved.</p></div>
+          <div className="architecture-connector">↓ <span>minimum approved result</span></div>
+          <div className="architecture-node"><span className="eyebrow">Verifier</span><h3>Bound verification</h3><p>Trust, validity, revocation, audience, request digest and replay checks.</p></div>
+        </div>
+      </section>
+
+      <section className="milestone product-cta">
+        <div>
+          <p className="eyebrow">Current product</p>
+          <h2>Use the real surfaces.</h2>
+          <p>
+            Open the workspace for live integration states or use the encrypted local vault for
+            holder-controlled records. No product screen is pre-populated with fake credentials,
+            payments, identities or verification outcomes.
+          </p>
+        </div>
+        <div className="milestone-side">
+          <Link href="/app" className="button">Open workspace <span aria-hidden="true">→</span></Link>
+        </div>
+      </section>
+    </main>
+  );
 }
