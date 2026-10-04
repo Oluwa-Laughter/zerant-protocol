@@ -78,35 +78,17 @@ source secret-pattern scan. `make integration` runs native integration/test targ
 sends funds or prints raw wallet data. CI runs Rust and web gates independently.
 
 
-### Rust API environment
+### Vercel production deployment
 
-`zerant-api` is a separate server deployment. Required production configuration:
+Zerant deploys as one Vercel project using Vercel Services:
 
-```text
-DATABASE_URL
-ZERANT_PUBLIC_ORIGIN
-ZERANT_VAULT_KEK_B64
-ZERANT_VAULT_KEY_VERSION
-ZERANT_ZCASH_CHAIN
-ZERANT_ZECAUTH_SCOPES
-Z3_REGTEST_RPC_ROUTER_USER
-Z3_REGTEST_RPC_ROUTER_PASSWORD
-```
+- Next.js customer application;
+- private Rust/Axum service deployed as a Vercel container service;
+- Neon Postgres installed through the Vercel Marketplace.
 
-`ZERANT_VAULT_KEK_B64` is the bootstrap key-encryption key for envelope encryption. Production custody should move behind a managed KMS/HSM. `Z3_REGTEST_*` currently drives the exercised local Z3 adapter; the current concrete router transport is intentionally regtest/read-only and is not a mainnet spending backend.
+The web service reaches the Rust service through a private Vercel service binding. Do not configure a public backend hostname or a manual `ZERANT_API_ORIGIN`; Vercel injects the binding automatically.
 
-The Vercel project needs only the server-side `ZERANT_API_ORIGIN` pointing at the deployed Rust API. Do not expose it with a `NEXT_PUBLIC_` prefix.
-
-### Vercel deployment
-
-The deployable Next.js project lives in `apps/web`. In Vercel, set **Root Directory**
-to `apps/web` once; the repository now keeps the Next.js `vercel.json`, package
-metadata, favicon and build configuration inside that directory. Vercel should use its
-default Next.js build/output handling. The old repository-root static-export
-configuration has been removed.
-
-Public RFC test key material is labeled under credential fixtures. Never reuse it.
-
+Required project variables are documented in [docs/VERCEL_DEPLOYMENT.md](docs/VERCEL_DEPLOYMENT.md). Production requires a generated vault encryption key and the Neon-provided `DATABASE_URL`.
 
 ## Product integration surface
 

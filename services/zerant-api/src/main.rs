@@ -2247,20 +2247,50 @@ fn env_required(name: &str) -> Result<String, ApiError> {
 }
 
 async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
+    const MIGRATION_LOCK_ID: i64 = 9_248_177_301;
     let client = db_client(pool).await?;
-    for migration in [
-        include_str!("../migrations/0001_server_vault.sql"),
-        include_str!("../migrations/0002_zecauth.sql"),
-        include_str!("../migrations/0003_zecauth_browser_redeem.sql"),
-        include_str!("../migrations/0004_trust_network.sql"),
-        include_str!("../migrations/0005_verification_network.sql"),
-    ] {
-        client
-            .batch_execute(migration)
-            .await
-            .map_err(|_| ApiError::Unavailable)?;
+    client
+        .query_one("SELECT pg_advisory_lock($1)", &[&MIGRATION_LOCK_ID])
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let result = async {
+        for migration in [
+            include_str!("../migrations/0001_server_vault.sql"),
+            include_str!("../migrations/0002_zecauth.sql"),
+            include_str!("../migrations/0003_zecauth_browser_redeem.sql"),
+            include_str!("../migrations/0004_trust_network.sql"),
+            include_str!("../migrations/0005_verification_network.sql"),
+        ] {
+            client
+                .batch_execute(migration)
+                .await
+                .map_err(|_| ApiError::Unavailable)?;
+        }
+        Ok(())
     }
-    Ok(())
+    .await;
+
+    let _ = client
+        .query_one("SELECT pg_advisory_unlock($1)", &[&MIGRATION_LOCK_ID])
+        .await;
+    result
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        if let Ok(mut terminate) = signal(SignalKind::terminate()) {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {},
+                _ = terminate.recv() => {},
+            }
+            return;
+        }
+    }
+
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 #[tokio::main]
@@ -2273,7 +2303,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let database_url = env_required("DATABASE_URL").map_err(|error| error.to_string())?;
-    let public_origin = env_required("ZERANT_PUBLIC_ORIGIN").map_err(|error| error.to_string())?;
+    let public_origin = env::var("ZERANT_PUBLIC_ORIGIN")
+        .or_else(|_| {
+            env::var("VERCEL_URL").map(|host| {
+                if host.starts_with("http://") || host.starts_with("https://") {
+                    host
+                } else {
+                    format!("https://{host}")
+                }
+            })
+        })
+        .map_err(|_| ApiError::Unavailable.to_string())?;
     let zcash_chain = env::var("ZERANT_ZCASH_CHAIN").unwrap_or_else(|_| "zcash:testnet".into());
     if !matches!(zcash_chain.as_str(), "zcash:testnet" | "zcash:mainnet") {
         return Err(ApiError::Unavailable.to_string().into());
@@ -2337,7 +2377,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = SocketAddr::new(bind_ip, port);
     let listener = tokio::net::TcpListener::bind(address).await?;
     info!(%address, "zerant api listening");
-    axum::serve(listener, app(state)).await?;
+    axum::serve(listener, app(state))
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
     Ok(())
 }
 
