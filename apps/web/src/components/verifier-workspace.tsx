@@ -19,7 +19,10 @@ export type TrustedCredentialSchema = {
   claim_type: string;
   context: string;
   default_expiry_days: number;
+  version: number;
   active: boolean;
+  supersedes_schema_id: string | null;
+  retired_at: string | null;
   created_at: string;
 };
 
@@ -363,7 +366,7 @@ export function VerifierWorkspace({
             {availableSchemas.length ? (
               availableSchemas.map((schema) => (
                 <option value={schema.id} key={schema.id}>
-                  {schema.display_name} · {schema.issuer_name}
+                  {schema.display_name} v{schema.version} · {schema.issuer_name}
                 </option>
               ))
             ) : (

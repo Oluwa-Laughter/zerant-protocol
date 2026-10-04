@@ -326,6 +326,13 @@ struct CreateCredentialSchema {
     default_expiry_days: u16,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateCredentialSchemaVersion {
+    description: String,
+    default_expiry_days: u16,
+}
+
 #[derive(Serialize)]
 struct CredentialSchemaView {
     id: Uuid,
@@ -336,7 +343,10 @@ struct CredentialSchemaView {
     claim_type: String,
     context: String,
     default_expiry_days: i32,
+    version: i32,
     active: bool,
+    supersedes_schema_id: Option<Uuid>,
+    retired_at: Option<OffsetDateTime>,
     created_at: OffsetDateTime,
 }
 
@@ -2022,6 +2032,106 @@ async fn resolve_public_schema(
     })
 }
 
+async fn create_issuer_schema_version(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(schema_id): Path<Uuid>,
+    Json(input): Json<CreateCredentialSchemaVersion>,
+) -> Result<(StatusCode, Json<CredentialSchemaView>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "credential_schema_version", 20).await?;
+
+    let description = input.description.trim().to_owned();
+    if !valid_short_text(&description, 2, 512) || !(1..=365).contains(&input.default_expiry_days) {
+        return Err(ApiError::Invalid);
+    }
+
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let current = tx
+        .query_opt(
+            "SELECT s.issuer_profile_id, p.issuer_id, p.display_name, s.slug, s.display_name,
+                    s.claim_type, s.context, s.version
+             FROM credential_schemas s
+             JOIN issuer_profiles p ON p.id = s.issuer_profile_id
+             WHERE s.id = $1 AND p.account_id = $2 AND s.active = TRUE
+             FOR UPDATE OF s",
+            &[&schema_id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Conflict)?;
+
+    let version: i32 = current.get(7);
+    let next_version = version.checked_add(1).ok_or(ApiError::Conflict)?;
+    let new_id = Uuid::new_v4();
+    let days = i32::from(input.default_expiry_days);
+    let now = OffsetDateTime::now_utc();
+
+    tx.execute(
+        "UPDATE credential_schemas
+         SET active = FALSE, retired_at = $3, updated_at = $3
+         WHERE id = $1 AND issuer_profile_id = $2 AND active = TRUE",
+        &[&schema_id, &current.get::<_, Uuid>(0), &now],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.execute(
+        "INSERT INTO credential_schemas
+         (id, issuer_profile_id, slug, display_name, description, claim_type, context,
+          default_expiry_days, version, active, supersedes_schema_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE,$10)",
+        &[
+            &new_id,
+            &current.get::<_, Uuid>(0),
+            &current.get::<_, String>(3),
+            &current.get::<_, String>(4),
+            &description,
+            &current.get::<_, String>(5),
+            &current.get::<_, String>(6),
+            &days,
+            &next_version,
+            &schema_id,
+        ],
+    )
+    .await
+    .map_err(|error| {
+        if error
+            .as_db_error()
+            .is_some_and(|db| db.code().code() == "23505")
+        {
+            ApiError::Conflict
+        } else {
+            ApiError::Unavailable
+        }
+    })?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(CredentialSchemaView {
+            id: new_id,
+            issuer_id: current.get(1),
+            issuer_name: current.get(2),
+            display_name: current.get(4),
+            description,
+            claim_type: current.get(5),
+            context: current.get(6),
+            default_expiry_days: days,
+            version: next_version,
+            active: true,
+            supersedes_schema_id: Some(schema_id),
+            retired_at: None,
+            created_at: now,
+        }),
+    ))
+}
+
 async fn deactivate_issuer_schema(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2033,14 +2143,15 @@ async fn deactivate_issuer_schema(
     let row = client
         .query_opt(
             "UPDATE credential_schemas s
-             SET active = FALSE, updated_at = NOW()
+             SET active = FALSE, retired_at = NOW(), updated_at = NOW()
              FROM issuer_profiles p
              WHERE s.issuer_profile_id = p.id
                AND p.account_id = $1
                AND s.id = $2
                AND s.active = TRUE
              RETURNING s.id, p.issuer_id, p.display_name, s.display_name, s.description,
-                       s.claim_type, s.context, s.default_expiry_days, s.active, s.created_at",
+                       s.claim_type, s.context, s.default_expiry_days, s.version, s.active,
+                       s.supersedes_schema_id, s.retired_at, s.created_at",
             &[&account, &schema_id],
         )
         .await
@@ -2056,8 +2167,11 @@ async fn deactivate_issuer_schema(
         claim_type: row.get(5),
         context: row.get(6),
         default_expiry_days: row.get(7),
-        active: row.get(8),
-        created_at: row.get(9),
+        version: row.get(8),
+        active: row.get(9),
+        supersedes_schema_id: row.get(10),
+        retired_at: row.get(11),
+        created_at: row.get(12),
     }))
 }
 
@@ -2070,12 +2184,13 @@ async fn list_issuer_schemas(
     let rows = client
         .query(
             "SELECT s.id, p.issuer_id, p.display_name, s.display_name, s.description,
-                    s.claim_type, s.context, s.default_expiry_days, s.active, s.created_at
+                    s.claim_type, s.context, s.default_expiry_days, s.version, s.active,
+                    s.supersedes_schema_id, s.retired_at, s.created_at
              FROM credential_schemas s
              JOIN issuer_profiles p ON p.id = s.issuer_profile_id
              WHERE p.account_id = $1
-             ORDER BY s.created_at DESC
-             LIMIT 128",
+             ORDER BY s.slug ASC, s.version DESC
+             LIMIT 256",
             &[&account],
         )
         .await
@@ -2091,8 +2206,11 @@ async fn list_issuer_schemas(
                 claim_type: row.get(5),
                 context: row.get(6),
                 default_expiry_days: row.get(7),
-                active: row.get(8),
-                created_at: row.get(9),
+                version: row.get(8),
+                active: row.get(9),
+                supersedes_schema_id: row.get(10),
+                retired_at: row.get(11),
+                created_at: row.get(12),
             })
             .collect(),
     ))
@@ -2186,7 +2304,10 @@ async fn create_issuer_schema(
             claim_type,
             context,
             default_expiry_days: days,
+            version: 1,
             active: true,
+            supersedes_schema_id: None,
+            retired_at: None,
             created_at: row.get(0),
         }),
     ))
@@ -2473,7 +2594,8 @@ async fn issuer_directory(
         .query(
             "SELECT p.display_name, p.issuer_id,
                     s.id, s.display_name, s.description, s.claim_type, s.context,
-                    s.default_expiry_days, s.active, s.created_at
+                    s.default_expiry_days, s.version, s.active, s.supersedes_schema_id,
+                    s.retired_at, s.created_at
              FROM issuer_profiles p
              LEFT JOIN credential_schemas s
                ON s.issuer_profile_id = p.id AND s.active = TRUE
@@ -2510,8 +2632,11 @@ async fn issuer_directory(
                 claim_type: row.get(5),
                 context: row.get(6),
                 default_expiry_days: row.get(7),
-                active: row.get(8),
-                created_at: row.get(9),
+                version: row.get(8),
+                active: row.get(9),
+                supersedes_schema_id: row.get(10),
+                retired_at: row.get(11),
+                created_at: row.get(12),
             });
         }
     }
@@ -3948,6 +4073,10 @@ fn app(state: AppState) -> Router {
             "/v1/issuer/schemas/{schema_id}/deactivate",
             post(deactivate_issuer_schema),
         )
+        .route(
+            "/v1/issuer/schemas/{schema_id}/versions",
+            post(create_issuer_schema_version),
+        )
         .route("/v1/issuers", get(issuer_directory))
         .route(
             "/v1/verifier",
@@ -4016,6 +4145,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0012_issuer_key_lifecycle.sql"),
             include_str!("../migrations/0013_verifier_key_lifecycle.sql"),
             include_str!("../migrations/0014_wallet_message_auth.sql"),
+            include_str!("../migrations/0015_credential_schema_versions.sql"),
         ] {
             client
                 .batch_execute(migration)

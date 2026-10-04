@@ -60,6 +60,8 @@ The cryptographic boundary uses maintained libraries: `josekit 0.10.3` for JOSE/
 
 Account-visible issuance, revocation and verification lifecycle events are captured by append-only database triggers and exposed through bounded cursor pagination. Authenticated write rate limits are stored in PostgreSQL so quotas remain consistent across horizontally scaled service instances.
 
+Credential definitions are immutable once used. Issuers publish a new database row for each version; the previous active version is retired and remains referenced by already-issued credentials and in-flight verification requests. Only one active version per issuer/credential meaning is available for new issuance and new verifier requests.
+
 Protocol-critical logic remains native Rust. Contextual policy evaluation, disclosure v0.2/v0.3, replay persistence, issuer issuance, verifier requests, holder consent, verifier-scoped holder proof keys, audience-bound proof construction, payment-intent/settlement verification, the read-only Z3 transport, protected credential storage, ZecAuth authentication and server sessions are implemented. Production wallet spending, managed KMS/HSM custody, stronger unlinkable credential systems, invoice automation and live FROST signing remain future work.
 
 See [M1B implementation](specs/implementation-m1b.md).

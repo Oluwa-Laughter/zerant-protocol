@@ -19,7 +19,10 @@ export type CredentialSchema = {
   claim_type: string;
   context: string;
   default_expiry_days: number;
+  version: number;
   active: boolean;
+  supersedes_schema_id: string | null;
+  retired_at: string | null;
   created_at: string;
 };
 
@@ -70,6 +73,9 @@ export function IssuerWorkspace({
   const [schemaDescription, setSchemaDescription] = useState("");
   const [schemaContext, setSchemaContext] = useState("");
   const [schemaExpiry, setSchemaExpiry] = useState("90");
+  const [editingSchemaId, setEditingSchemaId] = useState<string | null>(null);
+  const [versionDescription, setVersionDescription] = useState("");
+  const [versionExpiry, setVersionExpiry] = useState("90");
   const [status, setStatus] = useState("");
 
   const activeSchemas = useMemo(
@@ -141,6 +147,65 @@ export function IssuerWorkspace({
     setSchemaContext("");
     setSchemaExpiry("90");
     setStatus("Credential type created. You can issue it immediately.");
+  }
+
+  function beginCredentialTypeVersion(schema: CredentialSchema) {
+    setEditingSchemaId(schema.id);
+    setVersionDescription(schema.description);
+    setVersionExpiry(String(schema.default_expiry_days));
+  }
+
+  async function publishCredentialTypeVersion() {
+    if (!editingSchemaId) return;
+    const days = Number.parseInt(versionExpiry, 10);
+    if (!Number.isInteger(days) || !versionDescription.trim()) {
+      setStatus("Enter a description and valid lifetime for the new version.");
+      return;
+    }
+
+    const response = await fetch(
+      "/api/zerant/issuer/schemas/" + encodeURIComponent(editingSchemaId) + "/versions",
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          description: versionDescription,
+          default_expiry_days: days,
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        setStatus("You’re doing that too quickly. Try again in a minute.");
+        return;
+      }
+      setStatus(
+        response.status === 409
+          ? "This credential type changed while you were editing it. Refresh and try again."
+          : "New credential version could not be published.",
+      );
+      return;
+    }
+
+    const created = (await response.json()) as CredentialSchema;
+    const now = new Date().toISOString();
+    setSchemas((current) => [
+      created,
+      ...current.map((item) =>
+        item.id === editingSchemaId
+          ? { ...item, active: false, retired_at: now }
+          : item,
+      ),
+    ]);
+    setSchemaId(created.id);
+    setEditingSchemaId(null);
+    setVersionDescription("");
+    setVersionExpiry("90");
+    setStatus(
+      "New credential version published. Existing credentials keep their original definition.",
+    );
   }
 
   async function deactivateCredentialType(schemaIdToDeactivate: string) {
@@ -467,22 +532,67 @@ export function IssuerWorkspace({
               schemas.map((schema) => (
                 <article className="schema-card" key={schema.id}>
                   <div className="schema-card-top">
-                    <strong>{schema.display_name}</strong>
+                    <div>
+                      <strong>{schema.display_name}</strong>
+                      <span className="schema-version">v{schema.version}</span>
+                    </div>
                     <span className={schema.active ? "credential-status active" : "credential-status revoked"}>
-                      {schema.active ? "Active" : "Inactive"}
+                      {schema.active ? "Active" : "Retired"}
                     </span>
                   </div>
                   <p>{schema.description}</p>
                   <p className="small muted">
                     {schema.context} · {schema.default_expiry_days} day validity
+                    {schema.retired_at
+                      ? " · retired " + new Date(schema.retired_at).toLocaleDateString()
+                      : ""}
                   </p>
                   {schema.active ? (
-                    <Button
-                      variant="secondary"
-                      onClick={() => deactivateCredentialType(schema.id)}
-                    >
-                      Retire credential type
-                    </Button>
+                    <div className="schema-actions">
+                      <Button
+                        variant="secondary"
+                        onClick={() => beginCredentialTypeVersion(schema)}
+                      >
+                        Publish new version
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => deactivateCredentialType(schema.id)}
+                      >
+                        Retire credential type
+                      </Button>
+                    </div>
+                  ) : null}
+                  {editingSchemaId === schema.id ? (
+                    <div className="schema-version-editor">
+                      <label htmlFor={"version-description-" + schema.id}>Updated description</label>
+                      <textarea
+                        id={"version-description-" + schema.id}
+                        value={versionDescription}
+                        onChange={(event) => setVersionDescription(event.target.value)}
+                        rows={3}
+                      />
+                      <label htmlFor={"version-expiry-" + schema.id}>Default validity</label>
+                      <select
+                        id={"version-expiry-" + schema.id}
+                        value={versionExpiry}
+                        onChange={(event) => setVersionExpiry(event.target.value)}
+                      >
+                        <option value="30">30 days</option>
+                        <option value="90">90 days</option>
+                        <option value="180">180 days</option>
+                        <option value="365">1 year</option>
+                      </select>
+                      <div className="vault-actions wrap">
+                        <Button onClick={publishCredentialTypeVersion}>Publish version</Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => setEditingSchemaId(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
                   ) : null}
                 </article>
               ))
@@ -517,7 +627,7 @@ export function IssuerWorkspace({
             {activeSchemas.length ? (
               activeSchemas.map((schema) => (
                 <option value={schema.id} key={schema.id}>
-                  {schema.display_name} · {schema.context}
+                  {schema.display_name} v{schema.version} · {schema.context}
                 </option>
               ))
             ) : (
