@@ -49,6 +49,7 @@ The product does not seed demo credentials, identities, payments or verification
 - Append-only account activity history with cursor pagination.
 - Database-backed per-account write quotas across Vercel instances, plus a global authentication-challenge circuit breaker.
 - Zcash-native authentication separation from payment authority.
+- Optional passkey account access, attachment and lockout-safe removal without changing a Zerant ID.
 - Wallet-agnostic Zcash connection: portable ZecAuth wallet-app handoff plus capability-based injected wallet adapters.
 - Canonical Zcash address inspection and ZIP-321 payment handoff for compatible wallets, with optional direct browser submission only when an injected adapter advertises the exact capability.
 - Read-only Z3/Zallet capability and settlement-observation boundaries.

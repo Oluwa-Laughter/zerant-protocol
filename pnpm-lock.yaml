@@ -13,6 +13,9 @@ importers:
       '@noir-wallet/sdk':
         specifier: ^0.1.9
         version: 0.1.9
+      '@simplewebauthn/browser':
+        specifier: 14.0.0
+        version: 14.0.0
       '@vercel/queue':
         specifier: ^0.7.0
         version: 0.7.0
@@ -637,6 +640,9 @@ packages:
 
   '@rtsao/scc@1.1.0':
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
+
+  '@simplewebauthn/browser@14.0.0':
+    resolution: {integrity: sha512-1odWVqeEBTl7lJ9zMKLEsmTlnyrDO5iRcTvfMKKk1WThUnp/i8JJdffdj2icP+tty159s4PgwE3BiMoEW9NFow==}
 
   '@swc/helpers@0.5.23':
     resolution: {integrity: sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw==}
@@ -2763,6 +2769,8 @@ snapshots:
   '@nolyfill/is-core-module@1.0.39': {}
 
   '@rtsao/scc@1.1.0': {}
+
+  '@simplewebauthn/browser@14.0.0': {}
 
   '@swc/helpers@0.5.23':
     dependencies:

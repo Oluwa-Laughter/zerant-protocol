@@ -5,6 +5,7 @@ import {
   type AccountSummary,
 } from "@/components/account-settings";
 import { fetchZerantBackend } from "@/lib/server-api";
+import type { PasskeyView } from "@/components/passkey-manager";
 
 export const metadata: Metadata = {
   title: "Account",
@@ -20,6 +21,7 @@ export default async function AccountPage() {
   let backendAvailable = false;
   let authenticated = false;
   let summary: AccountSummary | null = null;
+  let passkeys: PasskeyView[] = [];
 
   try {
     const sessionResponse = await fetchZerantBackend("/v1/session", cookieHeader);
@@ -31,6 +33,10 @@ export default async function AccountPage() {
       if (accountResponse?.ok) {
         summary = (await accountResponse.json()) as AccountSummary;
       }
+      const passkeyResponse = await fetchZerantBackend("/v1/account/passkeys", cookieHeader);
+      if (passkeyResponse?.ok) {
+        passkeys = (await passkeyResponse.json()) as PasskeyView[];
+      }
     }
   } catch {
     backendAvailable = false;
@@ -41,6 +47,7 @@ export default async function AccountPage() {
       authenticated={authenticated}
       backendAvailable={backendAvailable}
       summary={summary}
+      initialPasskeys={passkeys}
     />
   );
 }

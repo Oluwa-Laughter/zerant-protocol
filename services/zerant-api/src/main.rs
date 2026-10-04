@@ -38,6 +38,10 @@ use tokio_postgres::{NoTls, Row, Transaction, config::SslMode};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 use uuid::Uuid;
+use webauthn_rs::prelude::{
+    Passkey, PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential,
+    RegisterPublicKeyCredential, Webauthn, WebauthnBuilder,
+};
 use zerant_core::validate_origin;
 use zerant_credential::{
     CREDENTIAL_SCHEMA, Claim, ClaimValue, CredentialKind, CredentialPayload, HOLDER_LOCAL_AUDIENCE,
@@ -58,11 +62,16 @@ use zerant_zcash::{
 
 const SESSION_COOKIE: &str = "zerant_session";
 const AUTH_ATTEMPT_COOKIE: &str = "zerant_auth_attempt";
+const PASSKEY_ATTEMPT_COOKIE: &str = "zerant_passkey_attempt";
 const MAX_CREDENTIAL_BYTES: usize = 256 * 1024;
 const MAX_ACCOUNT_CREDENTIALS: i64 = 256;
 const MAX_ACCOUNT_EXPORT_EVENTS: i64 = 5_000;
 const SESSION_TTL_DAYS: i64 = 7;
 const ZECAUTH_TTL_MINUTES: i64 = 5;
+const PASSKEY_TTL_MINUTES: i64 = 5;
+const PASSKEY_SECURITY_REAUTH_MINUTES: i64 = 15;
+const MAX_ACCOUNT_PASSKEYS: i64 = 10;
+const MAX_ACTIVE_PASSKEY_CHALLENGES: i64 = 10_000;
 const WRITE_RATE_WINDOW_SECONDS: i64 = 60;
 const MAX_ACTIVE_ZECAUTH_CHALLENGES: i64 = 10_000;
 const MAX_ACTIVE_VERIFIER_API_KEYS: i64 = 20;
@@ -76,6 +85,7 @@ const VERIFIER_WEBHOOK_SECRET_PREFIX: &str = "zrt_whsec_";
 struct AppState {
     db: Pool,
     cipher: Arc<VaultCipher>,
+    webauthn: Arc<Webauthn>,
     public_origin: String,
     zcash_chain: String,
     light_client_endpoint: Option<String>,
@@ -187,6 +197,7 @@ impl CredentialRow {
 struct AccountSummary {
     zerant_id: String,
     credential_count: i64,
+    passkey_count: i64,
     issuer_profile: Option<String>,
     issuer_role: Option<String>,
     verifier_profile: Option<String>,
@@ -275,6 +286,31 @@ struct SessionInfo {
     identity: String,
     zerant_id: String,
     scopes: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct PasskeyRegistrationStart {
+    zerant_id: String,
+    public_key: webauthn_rs::prelude::CreationChallengeResponse,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PasskeyAuthenticationStart {
+    zerant_id: String,
+}
+
+#[derive(Serialize)]
+struct PasskeyAuthenticationStartResponse {
+    public_key: webauthn_rs::prelude::RequestChallengeResponse,
+}
+
+#[derive(Serialize)]
+struct PasskeyView {
+    id: Uuid,
+    last_used_at: Option<OffsetDateTime>,
+    created_at: OffsetDateTime,
+    updated_at: OffsetDateTime,
 }
 
 #[derive(Deserialize)]
@@ -921,6 +957,39 @@ fn session_token(headers: &HeaderMap) -> Result<String, ApiError> {
     cookie_value(headers, SESSION_COOKIE)
 }
 
+async fn create_account_session(
+    tx: &Transaction<'_>,
+    account: Uuid,
+    scopes: &[String],
+) -> Result<String, ApiError> {
+    let mut token_bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut token_bytes);
+    let token = URL_SAFE_NO_PAD.encode(token_bytes);
+    token_bytes.fill(0);
+    let token_hash = Sha256::digest(token.as_bytes()).to_vec();
+    let expires = OffsetDateTime::now_utc() + Duration::days(SESSION_TTL_DAYS);
+    let scopes_json = serde_json::to_value(scopes).map_err(|_| ApiError::Unavailable)?;
+
+    tx.execute(
+        "INSERT INTO sessions(id, account_id, token_hash, scopes, expires_at) VALUES ($1, $2, $3, $4, $5)",
+        &[&Uuid::new_v4(), &account, &token_hash, &scopes_json, &expires],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    Ok(token)
+}
+
+fn session_cookie_header(token: &str) -> String {
+    format!(
+        "{SESSION_COOKIE}={token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age={}",
+        SESSION_TTL_DAYS * 24 * 60 * 60
+    )
+}
+
+fn clear_cookie_header(name: &str) -> String {
+    format!("{name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0")
+}
+
 fn normalize_verifier_api_scopes(mut scopes: Vec<String>) -> Result<Vec<String>, ApiError> {
     if scopes.is_empty() || scopes.len() > 2 {
         return Err(ApiError::Invalid);
@@ -1120,6 +1189,28 @@ async fn account_id(headers: &HeaderMap, db: &Pool) -> Result<Uuid, ApiError> {
         .map_err(|_| ApiError::Unavailable)?
         .map(|row| row.get(0))
         .ok_or(ApiError::Unauthorized)
+}
+
+async fn recent_account_id(headers: &HeaderMap, db: &Pool) -> Result<Uuid, ApiError> {
+    let token = session_token(headers)?;
+    let hash = Sha256::digest(token.as_bytes()).to_vec();
+    let client = db_client(db).await?;
+    let row = client
+        .query_opt(
+            "SELECT account_id,
+                    created_at > NOW() - ($2::bigint * INTERVAL '1 minute') AS recent
+             FROM sessions
+             WHERE token_hash = $1 AND expires_at > NOW()",
+            &[&hash, &PASSKEY_SECURITY_REAUTH_MINUTES],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+    let recent: bool = row.get(1);
+    if !recent {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(row.get(0))
 }
 
 async fn issuer_access(db: &Pool, account: Uuid) -> Result<IssuerAccess, ApiError> {
@@ -1562,7 +1653,7 @@ async fn health() -> Json<Health> {
     Json(Health {
         status: "ok",
         storage: "postgres",
-        authentication: "zecauth",
+        authentication: "zecauth-passkey",
         zcash_boundary: "z3-zallet",
     })
 }
@@ -1711,6 +1802,636 @@ fn canonical_challenge_message(
     format!(
         "{domain} wants you to sign in with your Zcash wallet.\n\nURI: {uri}\nVersion: 1\nChain: {chain}\nNonce: {nonce}\nIssued At: {issued_at}\nExpiration Time: {expiration_time}\nStatement: {statement}"
     )
+}
+
+async fn persist_passkey_challenge(
+    db: &Pool,
+    account: Uuid,
+    kind: &str,
+    state_value: Value,
+) -> Result<(String, OffsetDateTime), ApiError> {
+    if !matches!(kind, "register" | "authenticate" | "attach") {
+        return Err(ApiError::Unavailable);
+    }
+
+    let mut attempt_bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut attempt_bytes);
+    let attempt = URL_SAFE_NO_PAD.encode(attempt_bytes);
+    attempt_bytes.fill(0);
+    let attempt_hash = Sha256::digest(attempt.as_bytes()).to_vec();
+    let expires = OffsetDateTime::now_utc() + Duration::minutes(PASSKEY_TTL_MINUTES);
+
+    const PASSKEY_CHALLENGE_LOCK_ID: i64 = 9_248_177_302;
+    let mut client = db_client(db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    tx.query_one(
+        "SELECT pg_advisory_xact_lock($1)",
+        &[&PASSKEY_CHALLENGE_LOCK_ID],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.execute(
+        "DELETE FROM passkey_challenges
+         WHERE expires_at <= NOW() - INTERVAL '1 day'
+            OR (consumed_at IS NOT NULL AND consumed_at <= NOW() - INTERVAL '1 day')",
+        &[],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    let active: i64 = tx
+        .query_one(
+            "SELECT COUNT(*) FROM passkey_challenges
+             WHERE consumed_at IS NULL AND expires_at > NOW()",
+            &[],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    if active >= MAX_ACTIVE_PASSKEY_CHALLENGES {
+        return Err(ApiError::TooManyRequests);
+    }
+
+    tx.execute(
+        "INSERT INTO passkey_challenges
+         (id, attempt_hash, account_id, kind, state, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6)",
+        &[
+            &Uuid::new_v4(),
+            &attempt_hash,
+            &account,
+            &kind,
+            &state_value,
+            &expires,
+        ],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    Ok((attempt, expires))
+}
+
+fn passkey_attempt_cookie(attempt: &str) -> String {
+    format!(
+        "{PASSKEY_ATTEMPT_COOKIE}={attempt}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age={}",
+        PASSKEY_TTL_MINUTES * 60
+    )
+}
+
+async fn passkey_registration_start(State(state): State<AppState>) -> Result<Response, ApiError> {
+    let account = Uuid::new_v4();
+    let zerant_id = zerant_public_handle(account.as_bytes());
+    let (public_key, registration) = state
+        .webauthn
+        .start_passkey_registration(account, &zerant_id, "Zerant account", None)
+        .map_err(|_| ApiError::Unavailable)?;
+    let registration_state =
+        serde_json::to_value(registration).map_err(|_| ApiError::Unavailable)?;
+
+    let (attempt, _) =
+        persist_passkey_challenge(&state.db, account, "register", registration_state).await?;
+    let cookie = passkey_attempt_cookie(&attempt);
+    let mut response = Json(PasskeyRegistrationStart {
+        zerant_id,
+        public_key,
+    })
+    .into_response();
+    response.headers_mut().append(
+        SET_COOKIE,
+        HeaderValue::from_str(&cookie).map_err(|_| ApiError::Unavailable)?,
+    );
+    Ok(response)
+}
+
+async fn passkey_registration_finish(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<RegisterPublicKeyCredential>,
+) -> Result<Response, ApiError> {
+    let attempt = cookie_value(&headers, PASSKEY_ATTEMPT_COOKIE)?;
+    let attempt_hash = Sha256::digest(attempt.as_bytes()).to_vec();
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let row = tx
+        .query_opt(
+            "SELECT account_id, state
+             FROM passkey_challenges
+             WHERE attempt_hash = $1
+               AND kind = 'register'
+               AND consumed_at IS NULL
+               AND expires_at > NOW()
+             FOR UPDATE",
+            &[&attempt_hash],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+    let account: Uuid = row.get(0);
+    let state_value: Value = row.get(1);
+    let registration: PasskeyRegistration =
+        serde_json::from_value(state_value).map_err(|_| ApiError::Unavailable)?;
+    let passkey = state
+        .webauthn
+        .finish_passkey_registration(&input, &registration)
+        .map_err(|_| ApiError::Unauthorized)?;
+    let credential_id = URL_SAFE_NO_PAD.encode(passkey.cred_id().as_ref());
+
+    if tx
+        .query_opt(
+            "SELECT 1 FROM passkey_credentials WHERE credential_id = $1",
+            &[&credential_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .is_some()
+    {
+        return Err(ApiError::Conflict);
+    }
+
+    let zerant_id = zerant_public_handle(account.as_bytes());
+    tx.execute(
+        "INSERT INTO accounts(id, public_handle) VALUES ($1, $2)",
+        &[&account, &zerant_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    let passkey_value = serde_json::to_value(&passkey).map_err(|_| ApiError::Unavailable)?;
+    tx.execute(
+        "INSERT INTO passkey_credentials(id, account_id, credential_id, passkey)
+         VALUES ($1, $2, $3, $4)",
+        &[&Uuid::new_v4(), &account, &credential_id, &passkey_value],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.execute(
+        "UPDATE passkey_challenges SET consumed_at = NOW() WHERE attempt_hash = $1",
+        &[&attempt_hash],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    let scopes = vec!["auth".to_owned()];
+    let token = create_account_session(&tx, account, &scopes).await?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    let mut response = Json(Authenticated {
+        authenticated: true,
+        identity: zerant_id.clone(),
+        zerant_id,
+        scopes,
+    })
+    .into_response();
+    response.headers_mut().append(
+        SET_COOKIE,
+        HeaderValue::from_str(&session_cookie_header(&token)).map_err(|_| ApiError::Unavailable)?,
+    );
+    response.headers_mut().append(
+        SET_COOKIE,
+        HeaderValue::from_str(&clear_cookie_header(PASSKEY_ATTEMPT_COOKIE))
+            .map_err(|_| ApiError::Unavailable)?,
+    );
+    Ok(response)
+}
+
+async fn passkey_authentication_start(
+    State(state): State<AppState>,
+    Json(input): Json<PasskeyAuthenticationStart>,
+) -> Result<Response, ApiError> {
+    let zerant_id = input.zerant_id.trim().to_owned();
+    if !zerant_id.starts_with("zr_") || !valid_short_text(&zerant_id, 27, 27) {
+        return Err(ApiError::Invalid);
+    }
+
+    let client = db_client(&state.db).await?;
+    let account_row = client
+        .query_opt(
+            "SELECT id FROM accounts WHERE public_handle = $1",
+            &[&zerant_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+    let account: Uuid = account_row.get(0);
+    enforce_account_rate_limit(&state.db, account, "passkey_authenticate", 20).await?;
+
+    let rows = client
+        .query(
+            "SELECT passkey FROM passkey_credentials
+             WHERE account_id = $1
+             ORDER BY created_at ASC",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    if rows.is_empty() {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let mut passkeys = Vec::with_capacity(rows.len());
+    for row in rows {
+        let value: Value = row.get(0);
+        passkeys.push(serde_json::from_value::<Passkey>(value).map_err(|_| ApiError::Unavailable)?);
+    }
+
+    let (public_key, authentication) = state
+        .webauthn
+        .start_passkey_authentication(&passkeys)
+        .map_err(|_| ApiError::Unavailable)?;
+    let authentication_state =
+        serde_json::to_value(authentication).map_err(|_| ApiError::Unavailable)?;
+
+    let (attempt, _) =
+        persist_passkey_challenge(&state.db, account, "authenticate", authentication_state).await?;
+    let cookie = passkey_attempt_cookie(&attempt);
+    let mut response = Json(PasskeyAuthenticationStartResponse { public_key }).into_response();
+    response.headers_mut().append(
+        SET_COOKIE,
+        HeaderValue::from_str(&cookie).map_err(|_| ApiError::Unavailable)?,
+    );
+    Ok(response)
+}
+
+async fn passkey_authentication_finish(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<PublicKeyCredential>,
+) -> Result<Response, ApiError> {
+    let attempt = cookie_value(&headers, PASSKEY_ATTEMPT_COOKIE)?;
+    let attempt_hash = Sha256::digest(attempt.as_bytes()).to_vec();
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let challenge_row = tx
+        .query_opt(
+            "SELECT account_id, state
+             FROM passkey_challenges
+             WHERE attempt_hash = $1
+               AND kind = 'authenticate'
+               AND consumed_at IS NULL
+               AND expires_at > NOW()
+             FOR UPDATE",
+            &[&attempt_hash],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+    let account: Uuid = challenge_row.get(0);
+    let state_value: Value = challenge_row.get(1);
+    let authentication: PasskeyAuthentication =
+        serde_json::from_value(state_value).map_err(|_| ApiError::Unavailable)?;
+
+    let result = state
+        .webauthn
+        .finish_passkey_authentication(&input, &authentication)
+        .map_err(|_| ApiError::Unauthorized)?;
+    let credential_id = URL_SAFE_NO_PAD.encode(result.cred_id().as_ref());
+
+    let credential_row = tx
+        .query_opt(
+            "SELECT id, passkey FROM passkey_credentials
+             WHERE account_id = $1 AND credential_id = $2
+             FOR UPDATE",
+            &[&account, &credential_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+    let passkey_id: Uuid = credential_row.get(0);
+    let passkey_value: Value = credential_row.get(1);
+    let mut passkey: Passkey =
+        serde_json::from_value(passkey_value).map_err(|_| ApiError::Unavailable)?;
+
+    if passkey.update_credential(&result) == Some(true) {
+        let updated = serde_json::to_value(&passkey).map_err(|_| ApiError::Unavailable)?;
+        tx.execute(
+            "UPDATE passkey_credentials
+             SET passkey = $2, last_used_at = NOW(), updated_at = NOW()
+             WHERE id = $1",
+            &[&passkey_id, &updated],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    } else {
+        tx.execute(
+            "UPDATE passkey_credentials SET last_used_at = NOW() WHERE id = $1",
+            &[&passkey_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    }
+
+    tx.execute(
+        "UPDATE passkey_challenges SET consumed_at = NOW() WHERE attempt_hash = $1",
+        &[&attempt_hash],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    let scopes = vec!["auth".to_owned()];
+    let token = create_account_session(&tx, account, &scopes).await?;
+    let row = tx
+        .query_one(
+            "SELECT public_handle FROM accounts WHERE id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let zerant_id: Option<String> = row.get(0);
+    let zerant_id = zerant_id.ok_or(ApiError::Unavailable)?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    let mut response = Json(Authenticated {
+        authenticated: true,
+        identity: zerant_id.clone(),
+        zerant_id,
+        scopes,
+    })
+    .into_response();
+    response.headers_mut().append(
+        SET_COOKIE,
+        HeaderValue::from_str(&session_cookie_header(&token)).map_err(|_| ApiError::Unavailable)?,
+    );
+    response.headers_mut().append(
+        SET_COOKIE,
+        HeaderValue::from_str(&clear_cookie_header(PASSKEY_ATTEMPT_COOKIE))
+            .map_err(|_| ApiError::Unavailable)?,
+    );
+    Ok(response)
+}
+
+async fn list_account_passkeys(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<PasskeyView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let rows = client
+        .query(
+            "SELECT id, last_used_at, created_at, updated_at
+             FROM passkey_credentials
+             WHERE account_id = $1
+             ORDER BY created_at ASC",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|row| PasskeyView {
+                id: row.get(0),
+                last_used_at: row.get(1),
+                created_at: row.get(2),
+                updated_at: row.get(3),
+            })
+            .collect(),
+    ))
+}
+
+async fn account_passkey_registration_start(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let account = recent_account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "passkey_attach_start", 10).await?;
+    let client = db_client(&state.db).await?;
+    let passkey_count: i64 = client
+        .query_one(
+            "SELECT COUNT(*) FROM passkey_credentials WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    if passkey_count >= MAX_ACCOUNT_PASSKEYS {
+        return Err(ApiError::Conflict);
+    }
+    let row = client
+        .query_one(
+            "SELECT public_handle FROM accounts WHERE id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let zerant_id: Option<String> = row.get(0);
+    let zerant_id = zerant_id.ok_or(ApiError::Unavailable)?;
+
+    let rows = client
+        .query(
+            "SELECT passkey FROM passkey_credentials
+             WHERE account_id = $1
+             ORDER BY created_at ASC",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let mut excluded = Vec::with_capacity(rows.len());
+    for row in rows {
+        let value: Value = row.get(0);
+        let passkey: Passkey = serde_json::from_value(value).map_err(|_| ApiError::Unavailable)?;
+        excluded.push(passkey.cred_id().clone());
+    }
+    let exclude_credentials = if excluded.is_empty() {
+        None
+    } else {
+        Some(excluded)
+    };
+
+    let (public_key, registration) = state
+        .webauthn
+        .start_passkey_registration(account, &zerant_id, "Zerant account", exclude_credentials)
+        .map_err(|_| ApiError::Unavailable)?;
+    let registration_state =
+        serde_json::to_value(registration).map_err(|_| ApiError::Unavailable)?;
+    let (attempt, _) =
+        persist_passkey_challenge(&state.db, account, "attach", registration_state).await?;
+
+    let mut response = Json(PasskeyRegistrationStart {
+        zerant_id,
+        public_key,
+    })
+    .into_response();
+    response.headers_mut().append(
+        SET_COOKIE,
+        HeaderValue::from_str(&passkey_attempt_cookie(&attempt))
+            .map_err(|_| ApiError::Unavailable)?,
+    );
+    Ok(response)
+}
+
+async fn account_passkey_registration_finish(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<RegisterPublicKeyCredential>,
+) -> Result<(StatusCode, Json<PasskeyView>), ApiError> {
+    let account = recent_account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "passkey_attach_finish", 10).await?;
+    let attempt = cookie_value(&headers, PASSKEY_ATTEMPT_COOKIE)?;
+    let attempt_hash = Sha256::digest(attempt.as_bytes()).to_vec();
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let row = tx
+        .query_opt(
+            "SELECT account_id, state
+             FROM passkey_challenges
+             WHERE attempt_hash = $1
+               AND kind = 'attach'
+               AND consumed_at IS NULL
+               AND expires_at > NOW()
+             FOR UPDATE",
+            &[&attempt_hash],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+    let challenge_account: Uuid = row.get(0);
+    if challenge_account != account {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let state_value: Value = row.get(1);
+    let registration: PasskeyRegistration =
+        serde_json::from_value(state_value).map_err(|_| ApiError::Unavailable)?;
+    let passkey = state
+        .webauthn
+        .finish_passkey_registration(&input, &registration)
+        .map_err(|_| ApiError::Unauthorized)?;
+    let credential_id = URL_SAFE_NO_PAD.encode(passkey.cred_id().as_ref());
+
+    let passkey_count: i64 = tx
+        .query_one(
+            "SELECT COUNT(*) FROM passkey_credentials WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    if passkey_count >= MAX_ACCOUNT_PASSKEYS {
+        return Err(ApiError::Conflict);
+    }
+
+    if tx
+        .query_opt(
+            "SELECT 1 FROM passkey_credentials WHERE credential_id = $1",
+            &[&credential_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .is_some()
+    {
+        return Err(ApiError::Conflict);
+    }
+
+    let id = Uuid::new_v4();
+    let passkey_value = serde_json::to_value(&passkey).map_err(|_| ApiError::Unavailable)?;
+    let created = tx
+        .query_one(
+            "INSERT INTO passkey_credentials(id, account_id, credential_id, passkey)
+             VALUES ($1, $2, $3, $4)
+             RETURNING created_at, updated_at",
+            &[&id, &account, &credential_id, &passkey_value],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    tx.execute(
+        "UPDATE passkey_challenges SET consumed_at = NOW() WHERE attempt_hash = $1",
+        &[&attempt_hash],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(PasskeyView {
+            id,
+            last_used_at: None,
+            created_at: created.get(0),
+            updated_at: created.get(1),
+        }),
+    ))
+}
+
+fn can_remove_passkey(passkey_count: i64, alternative_access: bool) -> bool {
+    passkey_count > 1 || alternative_access
+}
+
+async fn delete_account_passkey(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let account = recent_account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "passkey_remove", 20).await?;
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let target = tx
+        .query_opt(
+            "SELECT id FROM passkey_credentials
+             WHERE id = $1 AND account_id = $2
+             FOR UPDATE",
+            &[&id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+
+    let _target_id: Uuid = target.get(0);
+    let passkey_count: i64 = tx
+        .query_one(
+            "SELECT COUNT(*) FROM passkey_credentials WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    let alternative_access: bool = tx
+        .query_one(
+            "SELECT EXISTS(
+                 SELECT 1 FROM zecauth_identities WHERE account_id = $1
+             ) OR EXISTS(
+                 SELECT 1 FROM wallet_message_identities WHERE account_id = $1
+             )",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+
+    if !can_remove_passkey(passkey_count, alternative_access) {
+        return Err(ApiError::Conflict);
+    }
+
+    tx.execute(
+        "DELETE FROM passkey_credentials WHERE id = $1 AND account_id = $2",
+        &[&id, &account],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn zecauth_challenge(
@@ -2207,12 +2928,13 @@ async fn account_summary(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<AccountSummary>, ApiError> {
-    let account = account_id(&headers, &state.db).await?;
+    let account = recent_account_id(&headers, &state.db).await?;
     let client = db_client(&state.db).await?;
     let row = client
         .query_one(
             "SELECT a.public_handle,
                     (SELECT COUNT(*) FROM credential_envelopes e WHERE e.account_id = a.id),
+                    (SELECT COUNT(*) FROM passkey_credentials pk WHERE pk.account_id = a.id),
                     (SELECT p.display_name
                        FROM issuer_profiles p
                        LEFT JOIN issuer_members m
@@ -2235,13 +2957,14 @@ async fn account_summary(
         .map_err(|_| ApiError::Unavailable)?;
 
     let zerant_id: Option<String> = row.get(0);
-    let issuer_profile: Option<String> = row.get(2);
-    let issuer_role: Option<String> = row.get(3);
-    let verifier_profile: Option<String> = row.get(4);
-    let owns_issuer: bool = row.get(5);
+    let issuer_profile: Option<String> = row.get(3);
+    let issuer_role: Option<String> = row.get(4);
+    let verifier_profile: Option<String> = row.get(5);
+    let owns_issuer: bool = row.get(6);
     Ok(Json(AccountSummary {
         zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
         credential_count: row.get(1),
+        passkey_count: row.get(2),
         can_delete: !owns_issuer && verifier_profile.is_none(),
         issuer_profile,
         issuer_role,
@@ -2253,7 +2976,7 @@ async fn export_account(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<AccountExport>, ApiError> {
-    let account = account_id(&headers, &state.db).await?;
+    let account = recent_account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, account, "account_export", 10).await?;
     let client = db_client(&state.db).await?;
 
@@ -2347,7 +3070,7 @@ async fn delete_account(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let account = account_id(&headers, &state.db).await?;
+    let account = recent_account_id(&headers, &state.db).await?;
     let mut client = db_client(&state.db).await?;
     let tx = client
         .transaction()
@@ -7016,6 +7739,22 @@ fn app(state: AppState) -> Router {
             "/v1/public/issuers/{issuer_id}/revocation",
             get(public_issuer_revocation),
         )
+        .route(
+            "/v1/auth/passkey/register/start",
+            post(passkey_registration_start),
+        )
+        .route(
+            "/v1/auth/passkey/register/finish",
+            post(passkey_registration_finish),
+        )
+        .route(
+            "/v1/auth/passkey/authenticate/start",
+            post(passkey_authentication_start),
+        )
+        .route(
+            "/v1/auth/passkey/authenticate/finish",
+            post(passkey_authentication_finish),
+        )
         .route("/v1/auth/zecauth/challenge", get(zecauth_challenge))
         .route("/v1/auth/zecauth/verify", post(zecauth_verify))
         .route("/v1/auth/wallet/verify", post(wallet_message_verify))
@@ -7024,6 +7763,19 @@ fn app(state: AppState) -> Router {
         .route("/v1/session", get(session_info).delete(logout))
         .route("/v1/account", get(account_summary).delete(delete_account))
         .route("/v1/account/export", get(export_account))
+        .route("/v1/account/passkeys", get(list_account_passkeys))
+        .route(
+            "/v1/account/passkeys/register/start",
+            post(account_passkey_registration_start),
+        )
+        .route(
+            "/v1/account/passkeys/register/finish",
+            post(account_passkey_registration_finish),
+        )
+        .route(
+            "/v1/account/passkeys/{id}",
+            axum::routing::delete(delete_account_passkey),
+        )
         .route("/v1/activity", get(list_activity))
         .route("/v1/issuer", get(get_issuer_profile).post(register_issuer))
         .route("/v1/issuer/team", get(list_issuer_team))
@@ -7182,6 +7934,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0019_issuer_audit.sql"),
             include_str!("../migrations/0020_verifier_webhooks.sql"),
             include_str!("../migrations/0021_verification_policies.sql"),
+            include_str!("../migrations/0022_passkeys.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -7291,9 +8044,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .map_err(|error| error.to_string())?;
 
+    let rp_origin = url::Url::parse(&public_origin)?;
+    let rp_id = rp_origin
+        .domain()
+        .ok_or_else(|| ApiError::Unavailable.to_string())?
+        .to_owned();
+    let webauthn = WebauthnBuilder::new(&rp_id, &rp_origin)?
+        .rp_name("Zerant")
+        .build()?;
+
     let state = AppState {
         db,
         cipher: Arc::new(VaultCipher::from_env().map_err(|error| error.to_string())?),
+        webauthn: Arc::new(webauthn),
         public_origin,
         zcash_chain,
         light_client_endpoint,
@@ -7422,6 +8185,13 @@ mod tests {
         assert_eq!(scope_alias("sign-transaction"), Some("request_payment"));
         assert_eq!(scope_alias("view-full"), Some("view_full"));
         assert_eq!(scope_alias("unknown"), None);
+    }
+
+    #[test]
+    fn passkey_removal_preserves_at_least_one_access_method() {
+        assert!(!can_remove_passkey(1, false));
+        assert!(can_remove_passkey(2, false));
+        assert!(can_remove_passkey(1, true));
     }
 
     #[test]

@@ -9,8 +9,14 @@
     "test": "pnpm --filter @zerant/web test"
   },
   "engines": {
-    "node": ">=22.13.0",
-    "pnpm": ">=10"
+    "node": ">=22.13.0 <23",
+    "pnpm": ">=10 <11"
   },
-  "packageManager": "pnpm@10.34.6"
+  "packageManager": "pnpm@10.34.6",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "unrs-resolver"
+    ]
+  }
 }

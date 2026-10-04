@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZcashConnect } from "@/components/zcash-connect";
+import { PasskeyAccess } from "@/components/passkey-access";
 
 export type ServerVaultSession = {
   authenticated: boolean;
@@ -111,11 +112,15 @@ export function ServerCredentialVault({
           <p className="eyebrow">Private credentials</p>
           <h1>Build trust without building a public profile.</h1>
           <p>
-            Connect your Zcash identity to receive trusted credentials and prove only what a
-            verifier actually needs to know.
+            Enter Zerant with a passkey or a compatible Zcash wallet to receive trusted
+            credentials and prove only what a verifier actually needs to know.
           </p>
         </section>
-        <ZcashConnect onConnected={() => window.location.reload()} />
+        <section className="account-access-options" aria-label="Choose how to enter Zerant">
+          <PasskeyAccess onConnected={() => window.location.reload()} />
+          <div className="account-access-divider"><span>or</span></div>
+          <ZcashConnect onConnected={() => window.location.reload()} />
+        </section>
       </main>
     );
   }

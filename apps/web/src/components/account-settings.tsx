@@ -4,10 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { PasskeyManager, type PasskeyView } from "@/components/passkey-manager";
 
 export type AccountSummary = {
   zerant_id: string;
   credential_count: number;
+  passkey_count: number;
   issuer_profile: string | null;
   issuer_role: string | null;
   verifier_profile: string | null;
@@ -18,10 +20,12 @@ export function AccountSettings({
   authenticated,
   backendAvailable,
   summary,
+  initialPasskeys,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
   summary: AccountSummary | null;
+  initialPasskeys: PasskeyView[];
 }) {
   const router = useRouter();
   const [confirmText, setConfirmText] = useState("");
@@ -140,6 +144,9 @@ export function AccountSettings({
             </Link>
           </article>
         ) : null}
+
+
+        <PasskeyManager initialPasskeys={initialPasskeys} />
 
         <article className="account-card">
           <p className="eyebrow">Export</p>
