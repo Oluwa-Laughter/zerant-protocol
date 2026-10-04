@@ -60,6 +60,8 @@ use zerant_zcash::{
     },
 };
 
+mod vault_rotation;
+
 const SESSION_COOKIE: &str = "zerant_session";
 const AUTH_ATTEMPT_COOKIE: &str = "zerant_auth_attempt";
 const PASSKEY_ATTEMPT_COOKIE: &str = "zerant_passkey_attempt";
@@ -819,11 +821,15 @@ impl VaultCipher {
     }
 
     fn from_env() -> Result<Self, ApiError> {
-        let key_version = env::var("ZERANT_VAULT_KEY_VERSION")
-            .ok()
-            .and_then(|value| value.parse::<i32>().ok())
-            .filter(|value| *value > 0)
-            .unwrap_or(1);
+        let key_version = match env::var("ZERANT_VAULT_KEY_VERSION") {
+            Ok(value) => value
+                .parse::<i32>()
+                .ok()
+                .filter(|value| *value > 0)
+                .ok_or(ApiError::Unavailable)?,
+            Err(env::VarError::NotPresent) => 1,
+            Err(_) => return Err(ApiError::Unavailable),
+        };
 
         let mut keks = BTreeMap::new();
 
@@ -8191,17 +8197,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let database_url = env_required("DATABASE_URL").map_err(|error| error.to_string())?;
-    let public_origin = env::var("ZERANT_PUBLIC_ORIGIN")
-        .or_else(|_| {
-            env::var("VERCEL_URL").map(|host| {
-                if host.starts_with("http://") || host.starts_with("https://") {
-                    host
-                } else {
-                    format!("https://{host}")
-                }
-            })
-        })
-        .map_err(|_| ApiError::Unavailable.to_string())?;
     let zcash_chain = env::var("ZERANT_ZCASH_CHAIN").unwrap_or_else(|_| "zcash:testnet".into());
     if !matches!(zcash_chain.as_str(), "zcash:testnet" | "zcash:mainnet") {
         return Err(ApiError::Unavailable.to_string().into());
@@ -8257,6 +8252,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     run_migrations(&db)
         .await
         .map_err(|error| error.to_string())?;
+
+    let args: Vec<String> = env::args().collect();
+    if args.len() > 1 {
+        if args[1] != "vault-rotation" {
+            return Err(ApiError::Invalid.to_string().into());
+        }
+        vault_rotation::run(&db, &args[1..])
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    let public_origin = env::var("ZERANT_PUBLIC_ORIGIN")
+        .or_else(|_| {
+            env::var("VERCEL_URL").map(|host| {
+                if host.starts_with("http://") || host.starts_with("https://") {
+                    host
+                } else {
+                    format!("https://{host}")
+                }
+            })
+        })
+        .map_err(|_| ApiError::Unavailable.to_string())?;
 
     let rp_origin = url::Url::parse(&public_origin)?;
     let rp_id = rp_origin

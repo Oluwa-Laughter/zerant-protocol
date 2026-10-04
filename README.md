@@ -100,6 +100,8 @@ The web service reaches the Rust service through a private Vercel service bindin
 
 Required project variables are documented in [docs/VERCEL_DEPLOYMENT.md](docs/VERCEL_DEPLOYMENT.md). Production requires a generated vault encryption key and the Neon-provided `DATABASE_URL`.
 
+Service vault KEK rotation uses an operator-only bounded maintenance command. Follow the [rotation procedure](docs/VERCEL_DEPLOYMENT.md#vault-key-rotation) before retiring a historical key.
+
 ## Product integration surface
 
 The web product is backed by real authenticated state and contains no seeded user data. /issuer delivers signed source credentials into a holder account. /verifier creates short-lived signed requests bound to the verifier website and trusted issuer set. /requests lets the holder approve or deny. Approval re-verifies the stored source credential, creates a fresh verifier-specific attestation, signs the holder response, verifies that response internally, and only then marks the request verified.

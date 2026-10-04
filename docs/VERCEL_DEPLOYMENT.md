@@ -51,18 +51,18 @@ Do not expose any of these with a `NEXT_PUBLIC_` prefix.
 
 ## Vault key rotation
 
-Zerant supports multiple decryption-key versions. New records use `ZERANT_VAULT_KEY_VERSION`; older records select the historical key recorded with their ciphertext.
+Zerant supports multiple decryption-key versions. New records use `ZERANT_VAULT_KEY_VERSION`; existing records keep their recorded version until migrated. Rotation is an operator maintenance task. It has no HTTP endpoint or customer setting.
 
-For the first rotation:
+For an old version `1` and new version `2`:
 
-1. Keep the current version-1 key.
-2. Generate a new 32-byte URL-safe base64 key.
-3. Set `ZERANT_VAULT_KEYS_B64` to a JSON object containing both versions, for example `{"1":"<current>","2":"<new>"}`.
-4. Set `ZERANT_VAULT_KEY_VERSION=2`.
-5. Redeploy and verify that both old and newly-created credentials remain readable.
-6. Once the versioned keyring is confirmed, `ZERANT_VAULT_KEK_B64` can be removed because the JSON keyring contains the active and historical keys.
+1. Preserve a secure backup of the database and current key material under the existing secret-management policy. Generate a new independent 32-byte key as described below. Do not print keys in maintenance output.
+2. Set `ZERANT_VAULT_KEYS_B64` to a JSON object containing both versions, for example `{"1":"<old>","2":"<new>"}`. Keep the old key unchanged. Set `ZERANT_VAULT_KEY_VERSION=2`, deploy, and ensure **all** backend instances use version 2 before migrating. Confirm an old credential and a newly stored credential are readable.
+3. From a trusted maintenance environment with the deployed backend binary, a TLS `DATABASE_URL`, and exactly the same `ZERANT_VAULT_KEYS_B64` and `ZERANT_VAULT_KEY_VERSION`, run `zerant-api vault-rotation status 1`. Restrict shell, process environment and database access to operators; do not run this through a public web route. The command prints counts only.
+4. Run `zerant-api vault-rotation batch 1 100` repeatedly. Each invocation migrates at most 100 rows in one encrypted record family and commits one transaction. A smaller limit from 1 to 100 is allowed. If any invocation fails, preserve both keys, investigate the affected row without dumping its contents, and retry after repair. A failed batch rolls back; completed batches remain committed. Concurrent writers or a stopped command are safe to resume by repeating the command.
+5. Run `zerant-api vault-rotation status 1` after the final batch. Verify **every** family reports zero, including `verification_responses` and retired signing keys. Repeat after a normal write interval to catch a stale backend still writing version 1. If a count rises, update the stale instance and resume batches.
+6. Only after zero references remain and no old-version writer exists, remove version `1` from `ZERANT_VAULT_KEYS_B64` and redeploy. The active version must remain present. `ZERANT_VAULT_KEK_B64` may be removed once the versioned keyring contains the active key. Keep the secure backup according to retention policy.
 
-Do not delete a historical key from `ZERANT_VAULT_KEYS_B64` while database rows still reference that key version. Missing historical keys fail closed instead of guessing or silently corrupting data.
+The migration decrypts and re-encrypts each payload with a fresh DEK and nonces because v1 data authentication binds the old version. It covers credential envelopes, account credential keys, issuer profiles, issuer signing keys, verifier profiles, verifier signing keys, holder pairwise keys, webhook secrets, and encrypted verification responses. Missing historical keys or tampered records fail closed. There is no partial-row update: each batch is transactional. Counts are an operational retirement check; a stale instance can create new old-version rows after a check.
 
 This keyring is an interim production-hardening mechanism. Managed KMS/HSM custody remains the target for stronger operational isolation.
 
