@@ -32,7 +32,7 @@ Set these in Vercel Project Settings -> Environment Variables.
 
 Production only:
 
-- `ZERANT_PUBLIC_ORIGIN`: `https://zerant-protocol.vercel.app` or the final custom production origin.
+- `ZERANT_PUBLIC_ORIGIN`: `https://zerant.vercel.app` or the final custom production origin.
 
 If `ZERANT_PUBLIC_ORIGIN` is absent, preview deployments use Vercel's deployment URL automatically.
 
