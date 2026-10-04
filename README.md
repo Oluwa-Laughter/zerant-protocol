@@ -33,13 +33,13 @@ The product does not seed demo credentials, identities, payments or verification
 ## Implemented
 
 - Strict canonical encoding, IDs, timestamps, origin binding and safe-integer rules.
-- Signed issuer credentials with audience, expiry, trust scope and revocation support.
+- Signed issuer credentials with audience, expiry, trust scope and an issuer-controlled revocation lifecycle.
 - Contextual deterministic policy evaluation without a universal reputation score.
 - Signed verifier requests with domain, purpose, challenge, nonce, expiry and replay binding.
 - Holder consent with denial producing no credential response.
 - Verifier-specific audience-bound attestations derived from private source credentials.
 - Protected account credential storage and opaque authenticated sessions.
-- Issuer registration, private credential issuance and recipient delivery by Zerant ID.
+- Issuer registration, private credential issuance, recipient delivery by Zerant ID, and immediate credential revocation.
 - Verifier registration, trusted-issuer selection, short-lived requests and verified status.
 - Zcash-native authentication separation from payment authority.
 - Canonical Zcash address inspection and ZIP-321 payment-request review.

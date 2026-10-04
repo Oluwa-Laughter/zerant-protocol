@@ -36,8 +36,8 @@ use zerant_core::validate_origin;
 use zerant_credential::{
     CREDENTIAL_SCHEMA, Claim, ClaimValue, CredentialKind, CredentialPayload, HOLDER_LOCAL_AUDIENCE,
     IssuerTrustManifest, OrdinaryClaim, PublicJwk, REVOCATION_SCHEMA, RevocationSnapshot,
-    SourceEventClaim, SourceSchemaAuthorization, TrustedIssuer, TrustedIssuerKey, sign_credential,
-    sign_revocation_snapshot, verify_credential,
+    SourceEventClaim, SourceSchemaAuthorization, TrustedIssuer, TrustedIssuerKey,
+    revocation_digest, sign_credential, sign_revocation_snapshot, verify_credential,
 };
 use zerant_disclosure::{
     Context as DisclosureContext, Decision, Evidence, REQUEST_SCHEMA, Request, VerifierPin,
@@ -115,6 +115,7 @@ struct StoreCredential {
 struct StoredCredential {
     id: Uuid,
     credential: Value,
+    revoked: bool,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
 }
@@ -982,10 +983,13 @@ async fn list_credentials(
     let client = db_client(&state.db).await?;
     let rows = client
         .query(
-            "SELECT id, ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version, created_at, updated_at
-             FROM credential_envelopes
-             WHERE account_id = $1
-             ORDER BY created_at DESC
+            "SELECT e.id, e.ciphertext, e.data_nonce, e.wrapped_dek, e.wrap_nonce,
+                    e.key_version, e.created_at, e.updated_at,
+                    COALESCE(c.revoked_at IS NOT NULL, false) AS revoked
+             FROM credential_envelopes e
+             LEFT JOIN issued_credentials c ON c.vault_record_id = e.id
+             WHERE e.account_id = $1
+             ORDER BY e.created_at DESC
              LIMIT 256",
             &[&account],
         )
@@ -994,6 +998,7 @@ async fn list_credentials(
 
     let mut credentials = Vec::with_capacity(rows.len());
     for row in rows {
+        let revoked: bool = row.get("revoked");
         let row = CredentialRow::from_row(row);
         let mut plaintext = state.cipher.decrypt(account, &row)?;
         let credential = serde_json::from_slice(&plaintext).map_err(|_| ApiError::Unavailable)?;
@@ -1001,6 +1006,7 @@ async fn list_credentials(
         credentials.push(StoredCredential {
             id: row.id,
             credential,
+            revoked,
             created_at: row.created_at,
             updated_at: row.updated_at,
         });
@@ -1054,6 +1060,7 @@ async fn store_credential(
         Json(StoredCredential {
             id: row.id,
             credential,
+            revoked: false,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }),
@@ -1078,6 +1085,64 @@ async fn delete_credential(
         return Err(ApiError::NotFound);
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn signed_issuer_revocation_snapshot(
+    state: &AppState,
+    issuer_profile_id: Uuid,
+    issuer_id: &str,
+    issuer_key_id: &str,
+    issuer_private: &Jwk,
+    issued_at: u64,
+    next_update: u64,
+) -> Result<String, ApiError> {
+    let client = db_client(&state.db).await?;
+    let version_row = client
+        .query_opt(
+            "SELECT version FROM issuer_revocation_state WHERE issuer_profile_id = $1",
+            &[&issuer_profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let version_i64 = version_row.map(|row| row.get::<_, i64>(0)).unwrap_or(1);
+    if version_i64 <= 0 {
+        return Err(ApiError::Unavailable);
+    }
+    let version = u64::try_from(version_i64).map_err(|_| ApiError::Unavailable)?;
+
+    let rows = client
+        .query(
+            "SELECT revocation_digest
+             FROM issued_credentials
+             WHERE issuer_profile_id = $1
+               AND revoked_at IS NOT NULL
+               AND revocation_digest IS NOT NULL
+             ORDER BY revocation_digest ASC",
+            &[&issuer_profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let mut revoked_digests = Vec::with_capacity(rows.len());
+    for row in rows {
+        let digest: String = row.get(0);
+        if revoked_digests.last() != Some(&digest) {
+            revoked_digests.push(digest);
+        }
+    }
+
+    let snapshot = RevocationSnapshot {
+        schema: REVOCATION_SCHEMA.into(),
+        issuer_id: issuer_id.to_owned(),
+        issuer_key_id: issuer_key_id.to_owned(),
+        version,
+        issued_at,
+        next_update,
+        revoked_digests,
+    };
+
+    sign_revocation_snapshot(&snapshot, issuer_private).map_err(|_| ApiError::Invalid)
 }
 
 async fn get_verifier_profile(
@@ -1615,17 +1680,16 @@ async fn decide_holder_request(
         }],
     };
 
-    let snapshot = RevocationSnapshot {
-        schema: REVOCATION_SCHEMA.into(),
-        issuer_id: issuer_id.clone(),
-        issuer_key_id: issuer_key_id.clone(),
-        version: now_u64,
-        issued_at: now_u64,
-        next_update: proof_expiry,
-        revoked_digests: vec![],
-    };
-    let revocation_jws =
-        sign_revocation_snapshot(&snapshot, &issuer_private).map_err(|_| ApiError::Invalid)?;
+    let revocation_jws = signed_issuer_revocation_snapshot(
+        &state,
+        issuer_profile_id,
+        &issuer_id,
+        &issuer_key_id,
+        &issuer_private,
+        now_u64,
+        proof_expiry,
+    )
+    .await?;
 
     let verified_source = verify_credential(
         &source_jws,
@@ -1971,6 +2035,8 @@ async fn issue_private_credential(
         }),
     };
     let token = sign_credential(&payload, &private).map_err(|_| ApiError::Invalid)?;
+    let source_revocation_digest =
+        revocation_digest(&payload.revocation_handle).map_err(|_| ApiError::Invalid)?;
 
     let holder_record = serde_json::json!({
         "type": "zerant.private-credential",
@@ -2021,8 +2087,8 @@ async fn issue_private_credential(
     tx.execute(
         "INSERT INTO issued_credentials
          (id, issuer_profile_id, subject_account_id, credential_id, claim_type, context,
-          issued_at, expires_at, vault_record_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+          issued_at, expires_at, vault_record_id, revocation_digest)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         &[
             &Uuid::new_v4(),
             &profile_id,
@@ -2033,7 +2099,17 @@ async fn issue_private_credential(
             &issued_time,
             &expiry_time,
             &vault_record_id,
+            &source_revocation_digest,
         ],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.execute(
+        "INSERT INTO issuer_revocation_state(issuer_profile_id)
+         VALUES ($1)
+         ON CONFLICT (issuer_profile_id) DO NOTHING",
+        &[&profile_id],
     )
     .await
     .map_err(|_| ApiError::Unavailable)?;
@@ -2052,6 +2128,65 @@ async fn issue_private_credential(
             revoked: false,
         }),
     ))
+}
+
+async fn revoke_issued_credential(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(credential_id): Path<String>,
+) -> Result<Json<IssuedCredentialView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    if credential_id.is_empty() || credential_id.len() > 128 {
+        return Err(ApiError::Invalid);
+    }
+
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let row = tx
+        .query_opt(
+            "UPDATE issued_credentials c
+             SET revoked_at = NOW()
+             FROM issuer_profiles p, accounts a
+             WHERE c.issuer_profile_id = p.id
+               AND p.account_id = $1
+               AND c.credential_id = $2
+               AND c.subject_account_id = a.id
+               AND c.revoked_at IS NULL
+             RETURNING c.issuer_profile_id, c.credential_id, a.public_handle,
+                       c.claim_type, c.context, c.issued_at, c.expires_at",
+            &[&account, &credential_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Conflict)?;
+
+    let issuer_profile_id: Uuid = row.get(0);
+    tx.execute(
+        "INSERT INTO issuer_revocation_state(issuer_profile_id, version, updated_at)
+         VALUES ($1, 2, NOW())
+         ON CONFLICT (issuer_profile_id)
+         DO UPDATE SET version = issuer_revocation_state.version + 1, updated_at = NOW()",
+        &[&issuer_profile_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    let holder: Option<String> = row.get(2);
+    Ok(Json(IssuedCredentialView {
+        credential_id: row.get(1),
+        holder_zerant_id: holder.ok_or(ApiError::Unavailable)?,
+        claim_type: row.get(3),
+        context: row.get(4),
+        issued_at: row.get(5),
+        expires_at: row.get(6),
+        revoked: true,
+    }))
 }
 
 async fn list_issued_credentials(
@@ -2228,6 +2363,10 @@ fn app(state: AppState) -> Router {
             get(list_issued_credentials).post(issue_private_credential),
         )
         .route(
+            "/v1/issuer/credentials/{credential_id}/revoke",
+            post(revoke_issued_credential),
+        )
+        .route(
             "/v1/credentials",
             get(list_credentials).post(store_credential),
         )
@@ -2261,6 +2400,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0003_zecauth_browser_redeem.sql"),
             include_str!("../migrations/0004_trust_network.sql"),
             include_str!("../migrations/0005_verification_network.sql"),
+            include_str!("../migrations/0006_revocation_lifecycle.sql"),
         ] {
             client
                 .batch_execute(migration)

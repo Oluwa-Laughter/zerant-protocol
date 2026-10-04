@@ -57,3 +57,5 @@ The Rust API stores durable credential state in PostgreSQL. Each credential is e
 Authentication follows the ZecAuth v1 draft model: a purpose-specific RedPallas authentication key signs a short-lived domain/chain/nonce challenge. The auth key is distinct from Zcash spending authority. Session and authentication-attempt tokens are only delivered as HttpOnly, Secure, SameSite=Lax cookies.
 
 Production deployment should place the KEK in a managed KMS/HSM rather than a long-lived raw environment value. Z3/Zallet credentials, FROST shares, Zcash seed phrases and spending keys remain outside the credential store.
+
+Revocation status is visible to the credential holder and issuing organization. A verifier learns only whether an approved proof is valid; Zerant does not expose a holder-wide revocation inventory to generic verifiers.

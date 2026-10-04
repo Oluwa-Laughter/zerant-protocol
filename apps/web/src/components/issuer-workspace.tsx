@@ -57,6 +57,22 @@ export function IssuerWorkspace({
     setStatus("Issuer profile is active.");
   }
 
+  async function revokeCredential(credentialId: string) {
+    const response = await fetch(
+      "/api/zerant/issuer/credentials/" + encodeURIComponent(credentialId) + "/revoke",
+      { method: "POST", credentials: "same-origin" },
+    );
+    if (!response.ok) {
+      setStatus("Credential could not be revoked. It may already be revoked.");
+      return;
+    }
+    const updated = (await response.json()) as IssuedCredential;
+    setIssued((current) =>
+      current.map((item) => item.credential_id === updated.credential_id ? updated : item),
+    );
+    setStatus("Credential revoked. It can no longer be used for new proofs.");
+  }
+
   async function issueCredential() {
     const days = Number.parseInt(expiresInDays, 10);
     if (!Number.isInteger(days)) {
@@ -240,6 +256,16 @@ export function IssuerWorkspace({
                     Issued {new Date(item.issued_at).toLocaleDateString()} · valid until{" "}
                     {new Date(item.expires_at).toLocaleDateString()}
                   </p>
+                  <div className="issued-card-actions">
+                    <span className={item.revoked ? "credential-status revoked" : "credential-status active"}>
+                      {item.revoked ? "Revoked" : "Active"}
+                    </span>
+                    {!item.revoked ? (
+                      <Button variant="secondary" onClick={() => revokeCredential(item.credential_id)}>
+                        Revoke
+                      </Button>
+                    ) : null}
+                  </div>
                 </article>
               ))
             ) : (

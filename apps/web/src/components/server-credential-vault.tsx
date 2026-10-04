@@ -14,6 +14,7 @@ export type ServerVaultSession = {
 export type ServerVaultCredential = {
   id: string;
   credential: unknown;
+  revoked: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -188,9 +189,14 @@ export function ServerCredentialVault({
                       <span className="eyebrow">{credential.issuer}</span>
                       <h3>{credential.claim_type}</h3>
                     </div>
-                    <span className="pill">{credential.context}</span>
+                    <span className={item.revoked ? "credential-status revoked" : "pill"}>
+                      {item.revoked ? "Revoked" : credential.context}
+                    </span>
                   </div>
-                  <p className="credential-value">{credential.value}</p>
+                  <p className={item.revoked ? "credential-value revoked-value" : "credential-value"}>{credential.value}</p>
+                  {item.revoked ? (
+                    <p className="small revoked-note">This credential was revoked by its issuer and cannot be used for new proofs.</p>
+                  ) : null}
                   <p className="small muted">
                     Valid until {new Date(credential.expires_at * 1000).toLocaleDateString()}
                   </p>
