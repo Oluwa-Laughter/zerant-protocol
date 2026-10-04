@@ -23,6 +23,15 @@ export type CredentialSchema = {
   created_at: string;
 };
 
+
+
+export type IssuerKeyView = {
+  active: boolean;
+  compromised: boolean;
+  valid_from: string;
+  retired_at: string | null;
+};
+
 export type IssuedCredential = {
   credential_id: string;
   holder_zerant_id: string;
@@ -40,16 +49,19 @@ export function IssuerWorkspace({
   initialProfile,
   initialIssued,
   initialSchemas,
+  initialKeys,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
   initialProfile: IssuerProfile | null;
   initialIssued: IssuedCredential[];
   initialSchemas: CredentialSchema[];
+  initialKeys: IssuerKeyView[];
 }) {
   const [profile, setProfile] = useState<IssuerProfile | null>(initialProfile);
   const [issued, setIssued] = useState<IssuedCredential[]>(initialIssued);
   const [schemas, setSchemas] = useState<CredentialSchema[]>(initialSchemas);
+  const [keys, setKeys] = useState<IssuerKeyView[]>(initialKeys);
   const [displayName, setDisplayName] = useState("");
   const [holderId, setHolderId] = useState("");
   const [schemaId, setSchemaId] = useState(initialSchemas.find((item) => item.active)?.id ?? "");
@@ -154,6 +166,55 @@ export function IssuerWorkspace({
       setSchemaId(next?.id ?? "");
     }
     setStatus("Credential type retired. Existing credentials remain visible, but no new credentials or requests can use it.");
+  }
+
+  async function rotateIssuerKey(compromiseCurrent: boolean) {
+    const response = await fetch("/api/zerant/issuer/keys/rotate", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ compromise_current: compromiseCurrent }),
+    });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        setStatus("You’re doing that too quickly. Try again in a minute.");
+        return;
+      }
+      setStatus("Security key could not be replaced.");
+      return;
+    }
+
+    const created = (await response.json()) as IssuerKeyView;
+    const now = new Date().toISOString();
+    setKeys((current) => [
+      created,
+      ...current.map((item) =>
+        item.active
+          ? {
+              ...item,
+              active: false,
+              compromised: compromiseCurrent || item.compromised,
+              retired_at: now,
+            }
+          : item,
+      ),
+    ]);
+    if (compromiseCurrent) {
+      const issuedResponse = await fetch("/api/zerant/issuer/credentials", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (issuedResponse.ok) {
+        setIssued((await issuedResponse.json()) as IssuedCredential[]);
+      }
+    }
+
+    setStatus(
+      compromiseCurrent
+        ? "Compromised key replaced. Credentials signed by that key are no longer valid."
+        : "Security key rotated. Existing credentials remain valid.",
+    );
   }
 
   async function revokeCredential(credentialId: string) {
@@ -286,6 +347,62 @@ export function IssuerWorkspace({
           </p>
         </div>
         <span className="pill">Issuer active</span>
+      </section>
+
+      <section className="issuer-security-section">
+        <article className="issuer-panel">
+          <p className="eyebrow">Issuer security</p>
+          <h2>Keep your issuing authority healthy.</h2>
+          <p className="muted">
+            Routine rotation changes the key used for new credentials while preserving credentials
+            you already issued.
+          </p>
+          <div className="vault-actions wrap">
+            <Button variant="secondary" onClick={() => rotateIssuerKey(false)}>
+              Rotate security key
+            </Button>
+            <Button variant="secondary" onClick={() => rotateIssuerKey(true)}>
+              Replace compromised key
+            </Button>
+          </div>
+        </article>
+
+        <article className="issuer-panel">
+          <p className="eyebrow">Key history</p>
+          <h2>{keys.length} key{keys.length === 1 ? "" : "s"}</h2>
+          <div className="key-history-list">
+            {keys.length ? (
+              keys.map((key, index) => (
+                <article className="key-history-card" key={key.valid_from + String(index)}>
+                  <div>
+                    <strong>
+                      {key.active ? "Current security key" : "Previous security key"}
+                    </strong>
+                    <span
+                      className={
+                        key.compromised
+                          ? "credential-status revoked"
+                          : key.active
+                            ? "credential-status active"
+                            : "request-status"
+                      }
+                    >
+                      {key.compromised ? "Compromised" : key.active ? "Active" : "Retired"}
+                    </span>
+                  </div>
+                  <p className="small muted">
+                    Active since {new Date(key.valid_from).toLocaleDateString()}
+                    {key.retired_at
+                      ? " · retired " + new Date(key.retired_at).toLocaleDateString()
+                      : ""}
+                  </p>
+                </article>
+              ))
+            ) : (
+              <p className="muted">Security-key history will appear here.</p>
+            )}
+          </div>
+        </article>
       </section>
 
       <section className="issuer-schema-section">

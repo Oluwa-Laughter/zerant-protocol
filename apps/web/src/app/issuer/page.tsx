@@ -4,6 +4,7 @@ import {
   IssuerWorkspace,
   type CredentialSchema,
   type IssuedCredential,
+  type IssuerKeyView,
   type IssuerProfile,
 } from "@/components/issuer-workspace";
 import { fetchZerantBackend } from "@/lib/server-api";
@@ -24,6 +25,7 @@ export default async function IssuerPage() {
   let profile: IssuerProfile | null = null;
   let issued: IssuedCredential[] = [];
   let schemas: CredentialSchema[] = [];
+  let keys: IssuerKeyView[] = [];
 
   try {
     const sessionResponse = await fetchZerantBackend("/v1/session", cookieHeader);
@@ -35,9 +37,10 @@ export default async function IssuerPage() {
       if (profileResponse?.ok) {
         profile = (await profileResponse.json()) as IssuerProfile;
 
-        const [issuedResponse, schemasResponse] = await Promise.all([
+        const [issuedResponse, schemasResponse, keysResponse] = await Promise.all([
           fetchZerantBackend("/v1/issuer/credentials", cookieHeader),
           fetchZerantBackend("/v1/issuer/schemas", cookieHeader),
+          fetchZerantBackend("/v1/issuer/keys", cookieHeader),
         ]);
 
         if (issuedResponse?.ok) {
@@ -45,6 +48,9 @@ export default async function IssuerPage() {
         }
         if (schemasResponse?.ok) {
           schemas = (await schemasResponse.json()) as CredentialSchema[];
+        }
+        if (keysResponse?.ok) {
+          keys = (await keysResponse.json()) as IssuerKeyView[];
         }
       }
     }
@@ -59,6 +65,7 @@ export default async function IssuerPage() {
       initialProfile={profile}
       initialIssued={issued}
       initialSchemas={schemas}
+      initialKeys={keys}
     />
   );
 }

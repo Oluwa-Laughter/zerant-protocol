@@ -258,6 +258,20 @@ struct IssuerProfileView {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct RotateIssuerKey {
+    compromise_current: bool,
+}
+
+#[derive(Serialize)]
+struct IssuerKeyView {
+    active: bool,
+    compromised: bool,
+    valid_from: OffsetDateTime,
+    retired_at: Option<OffsetDateTime>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct IssueCredential {
     holder_zerant_id: String,
     credential_schema_id: Option<Uuid>,
@@ -676,6 +690,25 @@ fn random_challenge() -> String {
     let encoded = URL_SAFE_NO_PAD.encode(bytes);
     bytes.fill(0);
     encoded
+}
+
+fn bounded_proof_expiry(
+    now: u64,
+    request_expiry: u64,
+    source_expiry: u64,
+) -> Result<u64, ApiError> {
+    if request_expiry <= now || source_expiry <= now {
+        return Err(ApiError::Conflict);
+    }
+    let expiry = now
+        .checked_add(300)
+        .ok_or(ApiError::Unavailable)?
+        .min(request_expiry)
+        .min(source_expiry);
+    if expiry <= now {
+        return Err(ApiError::Conflict);
+    }
+    Ok(expiry)
 }
 
 fn public_jwk(private: &Jwk) -> Result<PublicJwk, ApiError> {
@@ -2440,11 +2473,15 @@ async fn decide_holder_request(
     let candidates = client
         .query(
             "SELECT c.vault_record_id,
-                    p.id, p.account_id, p.issuer_id, p.issuer_key_id, p.public_jwk,
-                    p.ciphertext, p.data_nonce, p.wrapped_dek, p.wrap_nonce, p.key_version,
-                    p.created_at
+                    p.id, p.account_id, p.issuer_id,
+                    k.id, k.issuer_key_id, k.public_jwk,
+                    k.ciphertext, k.data_nonce, k.wrapped_dek, k.wrap_nonce, k.key_version,
+                    k.valid_from, k.compromised_at, c.expires_at
              FROM issued_credentials c
              JOIN issuer_profiles p ON p.id = c.issuer_profile_id
+             JOIN issuer_signing_keys k
+               ON k.issuer_profile_id = p.id
+              AND k.issuer_key_id = c.issuer_key_id
              WHERE c.subject_account_id = $1
                AND c.claim_type = $2
                AND c.context = $3
@@ -2504,13 +2541,16 @@ async fn decide_holder_request(
     let issuer_profile_id: Uuid = candidate.get(1);
     let issuer_account: Uuid = candidate.get(2);
     let issuer_id: String = candidate.get(3);
-    let issuer_key_id: String = candidate.get(4);
-    let issuer_public_value: Value = candidate.get(5);
+    let issuer_signing_key_id: Uuid = candidate.get(4);
+    let issuer_key_id: String = candidate.get(5);
+    let issuer_public_value: Value = candidate.get(6);
     let issuer_public: PublicJwk =
         serde_json::from_value(issuer_public_value).map_err(|_| ApiError::Unavailable)?;
-    let issuer_secret = secret_row(&candidate, issuer_profile_id, 6);
+    let issuer_secret = secret_row(&candidate, issuer_signing_key_id, 7);
     let issuer_private = decrypt_stored_jwk(&state, issuer_account, &issuer_secret)?;
-    let issuer_created: OffsetDateTime = candidate.get(11);
+    let issuer_valid_from_time: OffsetDateTime = candidate.get(12);
+    let issuer_compromised_at: Option<OffsetDateTime> = candidate.get(13);
+    let source_expires_at: OffsetDateTime = candidate.get(14);
 
     let now_i64 = now.unix_timestamp();
     let request_expiry_i64 = request_expires.unix_timestamp();
@@ -2518,18 +2558,18 @@ async fn decide_holder_request(
         return Err(ApiError::Conflict);
     }
     let now_u64 = now_i64 as u64;
-    let proof_expiry = (now_u64 + 300).min(request_expiry_i64 as u64);
-    if proof_expiry <= now_u64 {
+    let source_expiry_i64 = source_expires_at.unix_timestamp();
+    if source_expiry_i64 <= now_i64 {
         return Err(ApiError::Conflict);
     }
+    let proof_expiry =
+        bounded_proof_expiry(now_u64, request_expiry_i64 as u64, source_expiry_i64 as u64)?;
 
-    let issuer_valid_from = issuer_created.unix_timestamp();
+    let issuer_valid_from = issuer_valid_from_time.unix_timestamp();
     if issuer_valid_from < 0 {
         return Err(ApiError::Unavailable);
     }
-    let key_valid_until = proof_expiry
-        .checked_add(86_400)
-        .ok_or(ApiError::Unavailable)?;
+    let key_valid_until = source_expiry_i64 as u64;
     let trust = IssuerTrustManifest {
         issuers: vec![TrustedIssuer {
             issuer_id: issuer_id.clone(),
@@ -2538,7 +2578,7 @@ async fn decide_holder_request(
                 public_key: issuer_public.clone(),
                 valid_from: issuer_valid_from as u64,
                 valid_until: key_valid_until,
-                compromised: false,
+                compromised: issuer_compromised_at.is_some(),
             }],
             allowed_claim_types: vec![claim_type.clone()],
             allowed_contexts: vec![context.clone()],
@@ -2731,6 +2771,162 @@ async fn get_issuer_profile(
     }))
 }
 
+async fn list_issuer_keys(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<IssuerKeyView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let rows = client
+        .query(
+            "SELECT k.valid_from, k.retired_at, k.compromised_at
+             FROM issuer_signing_keys k
+             JOIN issuer_profiles p ON p.id = k.issuer_profile_id
+             WHERE p.account_id = $1
+             ORDER BY k.valid_from DESC
+             LIMIT 32",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|row| {
+                let retired_at: Option<OffsetDateTime> = row.get(1);
+                let compromised_at: Option<OffsetDateTime> = row.get(2);
+                IssuerKeyView {
+                    active: retired_at.is_none() && compromised_at.is_none(),
+                    compromised: compromised_at.is_some(),
+                    valid_from: row.get(0),
+                    retired_at,
+                }
+            })
+            .collect(),
+    ))
+}
+
+async fn rotate_issuer_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<RotateIssuerKey>,
+) -> Result<Json<IssuerKeyView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "issuer_key_rotate", 3).await?;
+
+    let new_key_row_id = Uuid::new_v4();
+    let new_key_id = format!("key-{}", Uuid::new_v4().simple());
+    let mut new_private =
+        Jwk::generate_ed_key(EdCurve::Ed25519).map_err(|_| ApiError::Unavailable)?;
+    new_private.set_key_id(new_key_id.clone());
+    let new_public = public_jwk(&new_private)?;
+    let public_value = serde_json::to_value(&new_public).map_err(|_| ApiError::Unavailable)?;
+    let mut plaintext = serde_json::to_vec(&new_private).map_err(|_| ApiError::Unavailable)?;
+    let encrypted = state.cipher.encrypt(account, new_key_row_id, &plaintext)?;
+    plaintext.fill(0);
+
+    let now = OffsetDateTime::now_utc();
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let current = tx
+        .query_opt(
+            "SELECT p.id, k.id, k.issuer_key_id
+             FROM issuer_profiles p
+             JOIN issuer_signing_keys k ON k.issuer_profile_id = p.id
+             WHERE p.account_id = $1
+               AND k.retired_at IS NULL
+               AND k.compromised_at IS NULL
+             FOR UPDATE OF k",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Conflict)?;
+
+    let profile_id: Uuid = current.get(0);
+    let current_key_row_id: Uuid = current.get(1);
+    let current_key_id: String = current.get(2);
+
+    let affected = tx
+        .execute(
+            "UPDATE issuer_signing_keys
+             SET retired_at = $3,
+                 compromised_at = CASE WHEN $4 THEN $3 ELSE compromised_at END
+             WHERE id = $1
+               AND issuer_profile_id = $2
+               AND retired_at IS NULL
+               AND compromised_at IS NULL",
+            &[
+                &current_key_row_id,
+                &profile_id,
+                &now,
+                &input.compromise_current,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    if affected != 1 {
+        return Err(ApiError::Conflict);
+    }
+
+    if input.compromise_current {
+        tx.execute(
+            "UPDATE issued_credentials
+             SET revoked_at = COALESCE(revoked_at, $3)
+             WHERE issuer_profile_id = $1
+               AND issuer_key_id = $2
+               AND revoked_at IS NULL",
+            &[&profile_id, &current_key_id, &now],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+        tx.execute(
+            "INSERT INTO issuer_revocation_state(issuer_profile_id, version, updated_at)
+             VALUES ($1, 2, $2)
+             ON CONFLICT (issuer_profile_id)
+             DO UPDATE SET version = issuer_revocation_state.version + 1, updated_at = $2",
+            &[&profile_id, &now],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    }
+
+    tx.execute(
+        "INSERT INTO issuer_signing_keys
+         (id, issuer_profile_id, issuer_key_id, public_jwk, ciphertext, data_nonce,
+          wrapped_dek, wrap_nonce, key_version, valid_from)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        &[
+            &new_key_row_id,
+            &profile_id,
+            &new_key_id,
+            &public_value,
+            &encrypted.ciphertext,
+            &encrypted.data_nonce,
+            &encrypted.wrapped_dek,
+            &encrypted.wrap_nonce,
+            &encrypted.key_version,
+            &now,
+        ],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(IssuerKeyView {
+        active: true,
+        compromised: false,
+        valid_from: now,
+        retired_at: None,
+    }))
+}
+
 async fn register_issuer(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2770,7 +2966,13 @@ async fn register_issuer(
     plaintext.fill(0);
     let public_value = serde_json::to_value(&public).map_err(|_| ApiError::Unavailable)?;
 
-    let row = client
+    let mut tx_client = db_client(&state.db).await?;
+    let tx = tx_client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let row = tx
         .query_one(
             "INSERT INTO issuer_profiles
              (id, account_id, display_name, issuer_id, issuer_key_id, public_jwk,
@@ -2794,12 +2996,35 @@ async fn register_issuer(
         .await
         .map_err(|_| ApiError::Unavailable)?;
 
+    let created_at: OffsetDateTime = row.get(2);
+    tx.execute(
+        "INSERT INTO issuer_signing_keys
+         (id, issuer_profile_id, issuer_key_id, public_jwk, ciphertext, data_nonce,
+          wrapped_dek, wrap_nonce, key_version, valid_from)
+         VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        &[
+            &profile_id,
+            &issuer_key_id,
+            &public_value,
+            &encrypted.ciphertext,
+            &encrypted.data_nonce,
+            &encrypted.wrapped_dek,
+            &encrypted.wrap_nonce,
+            &encrypted.key_version,
+            &created_at,
+        ],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
     Ok((
         StatusCode::CREATED,
         Json(IssuerProfileView {
             display_name: row.get(0),
             issuer_id: row.get(1),
-            created_at: row.get(2),
+            created_at,
         }),
     ))
 }
@@ -2828,10 +3053,14 @@ async fn issue_private_credential(
     let client = db_client(&state.db).await?;
     let issuer = client
         .query_opt(
-            "SELECT id, display_name, issuer_id, issuer_key_id,
-                    ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version
-             FROM issuer_profiles
-             WHERE account_id = $1",
+            "SELECT p.id, p.display_name, p.issuer_id,
+                    k.id, k.issuer_key_id, k.ciphertext, k.data_nonce,
+                    k.wrapped_dek, k.wrap_nonce, k.key_version
+             FROM issuer_profiles p
+             JOIN issuer_signing_keys k ON k.issuer_profile_id = p.id
+             WHERE p.account_id = $1
+               AND k.retired_at IS NULL
+               AND k.compromised_at IS NULL",
             &[&account],
         )
         .await
@@ -2885,15 +3114,16 @@ async fn issue_private_credential(
     let profile_id: Uuid = issuer.get(0);
     let issuer_name: String = issuer.get(1);
     let issuer_id: String = issuer.get(2);
-    let issuer_key_id: String = issuer.get(3);
+    let signing_key_id: Uuid = issuer.get(3);
+    let issuer_key_id: String = issuer.get(4);
     let now = OffsetDateTime::now_utc();
     let secret_row = CredentialRow {
-        id: profile_id,
-        ciphertext: issuer.get(4),
-        data_nonce: issuer.get(5),
-        wrapped_dek: issuer.get(6),
-        wrap_nonce: issuer.get(7),
-        key_version: issuer.get(8),
+        id: signing_key_id,
+        ciphertext: issuer.get(5),
+        data_nonce: issuer.get(6),
+        wrapped_dek: issuer.get(7),
+        wrap_nonce: issuer.get(8),
+        key_version: issuer.get(9),
         created_at: now,
         updated_at: now,
     };
@@ -2920,7 +3150,7 @@ async fn issue_private_credential(
         kind: CredentialKind::Source,
         credential_id: credential_id.clone(),
         issuer_id,
-        issuer_key_id,
+        issuer_key_id: issuer_key_id.clone(),
         subject_key,
         audience: HOLDER_LOCAL_AUDIENCE.into(),
         issued_at,
@@ -2989,8 +3219,9 @@ async fn issue_private_credential(
     tx.execute(
         "INSERT INTO issued_credentials
          (id, issuer_profile_id, subject_account_id, credential_id, claim_type, context,
-          issued_at, expires_at, vault_record_id, revocation_digest, credential_schema_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+          issued_at, expires_at, vault_record_id, revocation_digest, credential_schema_id,
+          issuer_key_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
         &[
             &Uuid::new_v4(),
             &profile_id,
@@ -3003,6 +3234,7 @@ async fn issue_private_credential(
             &vault_record_id,
             &source_revocation_digest,
             &credential_schema_id,
+            &issuer_key_id,
         ],
     )
     .await
@@ -3256,6 +3488,8 @@ fn app(state: AppState) -> Router {
         .route("/v1/account/export", get(export_account))
         .route("/v1/activity", get(list_activity))
         .route("/v1/issuer", get(get_issuer_profile).post(register_issuer))
+        .route("/v1/issuer/keys", get(list_issuer_keys))
+        .route("/v1/issuer/keys/rotate", post(rotate_issuer_key))
         .route(
             "/v1/issuer/schemas",
             get(list_issuer_schemas).post(create_issuer_schema),
@@ -3326,6 +3560,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0009_credential_schemas.sql"),
             include_str!("../migrations/0010_account_controls.sql"),
             include_str!("../migrations/0011_pairwise_holder_keys.sql"),
+            include_str!("../migrations/0012_issuer_key_lifecycle.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -3451,6 +3686,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn proof_expiry_is_bounded_by_request_and_source() {
+        assert_eq!(bounded_proof_expiry(1_000, 1_500, 2_000).unwrap(), 1_300);
+        assert_eq!(bounded_proof_expiry(1_000, 1_100, 2_000).unwrap(), 1_100);
+        assert_eq!(bounded_proof_expiry(1_000, 1_500, 1_050).unwrap(), 1_050);
+        assert!(bounded_proof_expiry(1_000, 1_000, 2_000).is_err());
+        assert!(bounded_proof_expiry(1_000, 1_500, 1_000).is_err());
+    }
 
     #[test]
     fn pairwise_holder_keys_are_distinct() {

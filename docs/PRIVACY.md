@@ -66,3 +66,8 @@ Authentication follows the ZecAuth v1 draft model: a purpose-specific RedPallas 
 Production deployment should place the KEK in a managed KMS/HSM rather than a long-lived raw environment value. Z3/Zallet credentials, FROST shares, Zcash seed phrases and spending keys remain outside the credential store.
 
 Revocation status is visible to the credential holder and issuing organization. A verifier learns only whether an approved proof is valid; Zerant does not expose a holder-wide revocation inventory to generic verifiers.
+
+
+## Issuer compromise recovery
+
+Routine issuer-key rotation does not change holder identifiers or expose additional holder data. If an issuer reports its current key compromised, credentials signed by that key are invalidated and can no longer satisfy new proof requests. This is a trust-safety response, not an anonymity feature.

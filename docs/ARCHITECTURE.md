@@ -36,6 +36,12 @@ Any future wallet-identity or payment authorization feature must separately defi
 
 Validate maintained JOSE/JCS and server envelope-encryption compatibility, finalize exact public metadata contracts, and record KEK rotation/KMS and storage implementation choices here. Preserve the contracts below or explicitly version a change; unresolved library choices are not permission to weaken disclosure or replay rules.
 
+## Issuer key lifecycle
+
+Issuer signing authority is versioned instead of being replaced in place. Every issued credential records the issuer key that signed it. Routine rotation retires the current key for new issuance while retaining it only for validating and revoking credentials it already signed until those credentials expire. A compromise replacement marks the affected key compromised, invalidates credentials signed by it, and activates a fresh key for future issuance.
+
+Historical signing keys remain encrypted under the issuer account boundary and participate in the same vault-key versioning model as other protected records.
+
 ## Product application (implemented)
 
 The web application now uses authenticated service state for real credentials, issuer profiles, verifier profiles and consent requests. It contains no seeded credential or verification data. A holder can receive issuer-created private credentials, review short-lived verifier requests, approve or deny them, and use Zcash-native identity/payment review surfaces.
