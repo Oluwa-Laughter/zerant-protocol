@@ -6,7 +6,7 @@ Status: active implementation architecture. The Rust protocol crates and public 
 
 | Boundary | Responsibility |
 | --- | --- |
-| `apps/web` | Next.js / React / TypeScript / Tailwind / shadcn/ui; holder vault and consent, distinct local issuer/verifier demo roles |
+| `apps/web` | Next.js / React / TypeScript / Tailwind / shadcn/ui; encrypted local holder vault, consent console, distinct issuer/verifier demo roles |
 | `crates/zerant-core` | Types, strict parsing, origin/time rules, canonicalization and library-backed crypto interfaces |
 | `crates/zerant-credential` | Credential signing/validation, issuer trust and revocation snapshots |
 | `crates/zerant-reputation` | Deterministic context policies and local audit trace |
@@ -23,7 +23,7 @@ Axum/PostgreSQL are optional later choices only if public issuer keys, schemas, 
 1. **Minimal disclosure through atomic attestations.** A normal signature cannot survive deleting signed claims. Private source credentials stay local. Separately signed audience-bound attestations carry one result. This is signed selection, not cryptographic selective disclosure or ZK.
 2. **Threshold trust.** A trusted issuer evaluates its own evidence under the same pinned policy and signs a boolean. Holder computation gives transparency, not a verifiable hidden-input predicate. No issuer receives a complete holder portfolio. Supporting other issuers' aggregation requires a new trust/privacy design.
 3. **Pairwise subject binding.** Holder creates an independent Ed25519 key per verifier origin. Each attestation uses fresh IDs and that key. Private source credentials use a separate local holder key never presented. Issuer authenticates enrollment and binds the audience key to its subject; holder self-assertion alone is insufficient.
-4. **Local encrypted vault.** Use browser Web Crypto AES-256-GCM with fresh random 96-bit IVs per encryption and authenticated vault version/record ID. Persist ciphertext in IndexedDB; no server sync by default. Derive the wrapping key from a holder passphrase using PBKDF2-HMAC-SHA-256 with a random 128-bit salt and at least 600,000 iterations; store KDF parameters, benchmark usability, and review strength before implementation. Encrypt random vault data keys and signing-key bytes, never persist plaintext passphrases/keys. Auto-lock clears accessible secrets on a best-effort basis; JS memory erasure is not guaranteed. Weak passphrases, compromised devices and malicious same-origin code remain risks. Encrypted manual export is optional; loss without backup means loss/reissuance. No server recovery escrow.
+4. **Local encrypted vault.** Implemented in `/vault` with browser Web Crypto AES-256-GCM, fresh random 96-bit IVs, authenticated opaque record IDs, a random AES-256 data key wrapped by a PBKDF2-HMAC-SHA-256 key derived from the holder passphrase, a random 128-bit salt, and 600,000 PBKDF2 iterations. Ciphertext is persisted in IndexedDB only; no server sync exists. The tab auto-locks after five minutes of inactivity and whenever it becomes hidden. Passphrases are never persisted. JavaScript memory erasure is best-effort only, so compromised devices or malicious same-origin code remain explicit risks. Zcash seeds, spending keys, PCZT artifacts and FROST shares are intentionally outside this vault.
 5. **Offline public revocation.** Issuer-signed snapshots expire within 24 hours. Missing or stale status fails closed. No credential-specific online lookups in M1. See credential spec for identifiers and validity.
 6. **Durable replay state.** Verifier owns pending requests and atomically consumes them after full verification; expiry and restart rules are in disclosure spec.
 7. **No generic wallet identity.** No wallet addresses, balances or transactions enter generic schemas.
@@ -50,7 +50,7 @@ The first protocol-critical implementation now lives in Rust. `zerant-core` owns
 
 The cryptographic boundary uses maintained libraries: `josekit 0.10.3` for JOSE/JWS EdDSA and `serde_json_canonicalizer 0.3.2` for RFC 8785 payload canonicalization. Zerant does not implement Ed25519 or JWS itself. Protected JOSE headers are restricted to `alg=EdDSA`, exact `kid`, and exact message-specific `typ`; signed Zerant payloads are JCS canonical.
 
-Protocol-critical logic remains native Rust. Contextual policy evaluation, disclosure v0.2/v0.3, replay persistence, payment-intent/settlement verification, and the read-only Z3 transport are implemented and covered by tests. Browser/WASM protocol execution, holder vault storage, enrollment/key-possession UX, authenticated browser transport, wallet spending, production invoice lifecycle automation, and live FROST wiring remain unimplemented.
+Protocol-critical logic remains native Rust. Contextual policy evaluation, disclosure v0.2/v0.3, replay persistence, payment-intent/settlement verification, the read-only Z3 transport, and browser-local encrypted holder storage are implemented and covered by tests. Browser/WASM protocol execution, enrollment/key-possession issuance UX, authenticated browser transport, wallet spending, production invoice lifecycle automation, and live FROST wiring remain unimplemented.
 
 See [M1B implementation](specs/implementation-m1b.md).
 

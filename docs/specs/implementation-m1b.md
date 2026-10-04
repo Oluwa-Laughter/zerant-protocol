@@ -53,7 +53,7 @@ Revocation snapshot version equal to the caller's persisted minimum is accepted 
 M1B does **not** implement:
 
 - holder key generation or proof-of-possession enrollment
-- encrypted holder vault/storage
+- encrypted holder vault/storage (implemented later in `/vault`; enrollment/key issuance remains separate)
 - reputation-policy evaluation
 - disclosure requests or holder response signing
 - verifier replay-state persistence

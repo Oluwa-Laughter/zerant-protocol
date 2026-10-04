@@ -30,4 +30,4 @@ Mainnet, payments, tokens, NFTs, governance, AI features, mobile apps, custom ZK
 - Inspect outbound payloads, logs, browser storage and any metadata service to confirm no backend can reconstruct the holder's complete credential profile from protocol data.
 - Verify keyboard use, focus, reduced motion and accessible consent states against DESIGN.md.
 
-Runtime protocol tests now exist across credential, policy, disclosure, replay, payment, and Zcash adapter crates. Remaining acceptance items—especially holder vault/key lifecycle and authenticated browser integration—must still be satisfied before treating this historical scope as complete.
+Runtime protocol tests now exist across credential, policy, disclosure, replay, payment, and Zcash adapter crates. Remaining acceptance items—especially holder key enrollment/lifecycle and authenticated browser protocol integration—must still be satisfied before treating this historical scope as complete. Browser-local encrypted vault storage now exists.

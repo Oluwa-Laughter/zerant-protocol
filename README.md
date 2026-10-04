@@ -18,11 +18,13 @@ example. Contextual rules never create a universal reputation score.
   holder signature, exact bindings, denial without response, SQLite replay state.
 - `zerant-zcash`: read-only regtest RPC capability/readiness adapter and minimal payment-claim
   constructor. Live local discovery/readiness and a synthetic coinbase-shielding payment were exercised, including recipient/amount/confirmation checks. Fully shielded `z_sendmany` spending remains unavailable.
-- `/demo`: public fixture playground across eight scenarios, with consent and honest
-  integration status. Browser simulation does not execute native cryptography.
+- `/demo`: public integration console across reusable trust/payment templates, with consent and honest
+  integration status. Browser simulation does not execute native Rust protocol verification.
+- `/vault`: real local encrypted holder storage using Web Crypto AES-256-GCM, PBKDF2-HMAC-SHA-256,
+  opaque record IDs, IndexedDB persistence and automatic locking. It stores no wallet authority.
 
-Encrypted holder vault, enrollment, authenticated browser transport, fully shielded
-transfers, production invoice settlement and live FROST signing remain unimplemented.
+Enrollment/key-possession issuance, authenticated browser protocol transport, fully shielded
+wallet spending, production invoice settlement and live FROST signing remain unimplemented.
 No ZK, anonymity or unlinkability is claimed. Pairwise keys and metadata remain
 potentially correlatable. Applications own key custody, origin authentication,
 revocation watermarks, trusted clocks and issuer evidence quality.
@@ -91,7 +93,7 @@ The demo remains a public simulation with a compound request builder, consent an
 settlement failure previews. Native signatures/replay and payment observations run
 in Rust; the browser does not invoke a wallet or cryptographic verifier. PCZT and
 FROST review/coordination interfaces are implemented and tested; live spend/signing
-adapters and browser origin/vault integration remain unimplemented. Current live
+adapters and browser origin/protocol integration remains unimplemented; the local encrypted holder vault is implemented. Current live
 reads succeeded; the latest synthetic shielding attempt failed closed. The prior
 confirmed coinbase-shielding record is historical evidence, not a new fully shielded
 send. Broad [composable templates](docs/examples/README.md) reuse the same primitives.

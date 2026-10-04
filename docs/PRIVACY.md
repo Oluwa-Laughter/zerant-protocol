@@ -47,3 +47,11 @@ A compound request is one explicit all-of consent decision across 2–8 ordered 
 For payment conditions, the verifier receives an issuer-backed `payment.invoice_paid=true` attestation whose context binds the immutable payment-intent digest. The native recipient, amount, transaction ID, memo, account metadata, and wallet history remain outside the compound response. The intent digest is still a correlatable application identifier within the parties that know the underlying intent; it is not an anonymity mechanism.
 
 The browser integration console uses public fixtures and transient state only. Its settlement choices are simulations. Native Rust verification and previously recorded Z3 regtest evidence are labeled separately. No browser code receives wallet secrets, PCZT bytes, FROST shares, or native RPC credentials.
+
+## Local holder vault
+
+`/vault` is a real browser-local encrypted storage boundary, not a server-backed account. It persists only a strict versioned envelope and ciphertext records in IndexedDB. Each record uses a fresh AES-256-GCM IV and an opaque random 128-bit record ID that is authenticated as additional data, so claim names and contexts are not stored in plaintext record identifiers.
+
+The random vault data key is wrapped with AES-256-GCM under a PBKDF2-HMAC-SHA-256 key derived from the holder passphrase with a random 128-bit salt and 600,000 iterations. The passphrase is never persisted. Unlocking holds only a non-exportable CryptoKey reference in memory; locking releases that reference on a best-effort basis. The UI auto-locks after five minutes of inactivity and when the tab becomes hidden.
+
+This does **not** protect an unlocked vault from a compromised browser, extension, operating system, or malicious same-origin script. JavaScript cannot guarantee physical memory erasure. The vault therefore excludes Zcash seed phrases, spending keys, wallet passwords, PCZT artifacts and FROST shares by design. There is no server backup, recovery escrow, analytics event, or synchronization path.

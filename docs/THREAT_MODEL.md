@@ -57,3 +57,15 @@ memos must never be logged or included in generic attestations.
 | Shared-control secret leakage | Zerant stores no FROST/private-share material | External coordinator/tooling becomes its own trust boundary |
 
 No generic Zerant verifier is entitled to whole-wallet RPC output. Reorg detection, downstream attestation revocation, invoice retention/deletion, and operational monitoring remain responsibilities of the payment issuer/application.
+
+## Holder-vault threats
+
+| Threat | Mitigation | Residual risk |
+| --- | --- | --- |
+| IndexedDB theft | AES-256-GCM ciphertext only; random wrapped data key; strict envelope validation | Weak passphrases can still be guessed offline |
+| Record-name metadata leakage | random opaque 128-bit record IDs; semantic labels stay inside ciphertext | record count and ciphertext sizes remain observable locally |
+| Ciphertext/record-ID tampering | AES-GCM authentication plus record ID as additional authenticated data | deletion or rollback of local IndexedDB state is still possible |
+| Passphrase persistence | passphrase is never written to IndexedDB or retained in React state after create/unlock completes | browser/password-manager behavior is outside protocol control |
+| Unlocked-tab exposure | five-minute inactivity lock plus immediate lock when tab becomes hidden | malicious same-origin code or device compromise can read an unlocked session |
+| Wallet-secret cross-contamination | UI explicitly rejects the vault as a wallet-secret store; no wallet RPC integration exists on `/vault` | users can still manually paste inappropriate secrets into arbitrary application data |
+| Recovery expectations | no server copy or recovery escrow is claimed | local deletion/device loss without export means permanent loss |
