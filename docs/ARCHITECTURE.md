@@ -123,3 +123,16 @@ and 1 MiB response limit, and allowlists three read-only RPCs: rpc.discover,
 getblockchaininfo and getwalletinfo. Authentication stays
 inside the client and errors omit raw wallet responses. No remote endpoint or spending
 method is exposed. A missing Zebra IBD field is unknown, never inferred ready/false.
+
+
+## Observed payment condition boundary (2026-10-04)
+
+Live discovery supports `z_viewtransaction`. The adapter now checks a single named
+transaction against a caller-pinned recipient, minimum integer zatoshis and minimum
+confirmations, rejects change/transparent/unknown outputs, and returns only success
+or unavailable/error. This is local issuer evidence, not a signed receipt by itself.
+The issuer must bind receipts to invoices, prevent double credit, and revoke/reissue
+on reorgs. The explicit regtest helper exposes transparent coinbase funding and
+shielded receipt; it does not weaken `FullPrivacy` to make fully shielded sends work.
+No wallet seeds/keys, transaction IDs, addresses or memos are written to public
+fixtures. Generic credentials do not acquire wallet dependencies.

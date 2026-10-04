@@ -133,7 +133,7 @@ export function DemoDashboard() {
         <div className="status-grid">
           <div><strong>Implemented</strong><span>rpc.discover, getblockchaininfo, getwalletinfo projections</span></div>
           <div><strong>Detected capability</strong><span>z_sendmany can be recognized when current Z3 advertises it</span></div>
-          <div><strong>Not claimed</strong><span>Recorded local regtest discovery, chain and wallet RPC checks succeeded. No shielded payment settlement has been demonstrated.</span></div>
+          <div><strong>Not claimed</strong><span>Recorded local regtest discovery, chain and wallet RPC checks succeeded. A synthetic coinbase-shielding payment was confirmed locally; fully shielded sends and production settlement remain unavailable.</span></div>
         </div>
       </section>
     </div>

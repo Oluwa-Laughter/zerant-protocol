@@ -1,6 +1,6 @@
 # Zcash integration
 
-Status: read-only adapter implemented and exercised against the official local Z3 regtest router. No ZEC payment send/settlement flow has been exercised.
+Status: read-only adapter implemented and exercised against the official local Z3 regtest router. A synthetic coinbase-shielding payment was confirmed locally. Fully shielded `z_sendmany` and production settlement remain unimplemented.
 
 ## Workshop-derived architecture
 
@@ -23,17 +23,51 @@ Primary references:
 
 ## Zerant boundary
 
-zerant-zcash currently provides a transport-independent, regtest-oriented adapter for rpc.discover capability discovery, getblockchaininfo minimal chain status, getwalletinfo minimal readiness projection, detection of whether z_sendmany appears in the live discovered method set, and construction of a minimal payment.invoice_paid=true claim shape after an authorized issuer has performed its own business/payment verification.
+zerant-zcash currently provides a transport-independent, regtest-oriented adapter for rpc.discover capability discovery, getblockchaininfo minimal chain status, getwalletinfo minimal readiness projection, detection of whether z_sendmany appears in the live discovered method set, named-transaction confirmation and exact payment-condition checks, and construction of a minimal payment.invoice_paid=true claim shape after an authorized issuer has performed its own business/payment verification.
 
 The adapter deliberately does not return wallet balances, addresses, seed fingerprints, transaction history or memos to generic credential code. No seed phrase/private spending key is accepted by the adapter.
 
 ## Payment status
 
-A discovered z_sendmany method is only a capability flag. Zerant does not call it yet.
+A discovered `z_sendmany` method is only a capability flag. The native adapter does not send funds. Explicit local exploratory calls were rejected; no successful fully shielded send is claimed.
 
-The official Z3 regtest stack was started during this implementation run using a temporary Compose provider over the local Podman API. That temporary Compose helper is no longer installed, while the resulting Z3 regtest containers remain available for inspection. Read-only calls to rpc.discover, getblockchaininfo and getwalletinfo succeeded through the local router. A legacy z_viewtransaction assumption was removed because it is not present in the current Z3 contract/source inspection.
+The official Z3 regtest stack was started using a temporary Compose provider over
+Podman. Read-only discovery, chain and wallet calls succeeded through the router.
+`z_viewtransaction` is present in the **live merged OpenRPC** and was exercised
+successfully against the confirmed synthetic transaction; it is also described by
+[current Zallet source documentation](https://github.com/zcash/zallet/blob/main/book/src/zcashd/json_rpc.md).
+It is not inferred from retired zcashd documentation.
 
-No payment was sent. Before Zerant enables a payment-send path, it must use only the currently discovered/documented Zallet methods and validate recipient, amount, network, transaction binding and reorg/confirmation policy before an issuer signs a payment attestation. Captured fixtures must remain sanitized so no mnemonic/private wallet material is committed.
+The local coinbase-shielding path was exercised through `z_getnewaccount`,
+`z_getaddressforaccount`, `z_listunifiedreceivers`, `generatetoaddress`,
+`z_shieldcoinbase`, `z_getoperationstatus` and `z_viewtransaction`. The transaction
+was mined with three confirmations. Its shielded output matched the expected
+recipient and a minimum of 100,000,000 zatoshis, and was not wallet-internal change.
+Only this named transaction was inspected. The sanitized fixture omits addresses,
+transaction IDs, memos and account identifiers. Native `matches_payment` and
+`confirmations` were exercised against it through the real HTTP router.
+
+This path reveals the transparent coinbase sender; it is **not a fully shielded
+send**. Regtest activates upgrades through NU6.3 at height 2. The shipped wallet
+reported the shielded output pool as `ironwood`. A subsequent `z_sendmany` with
+`FullPrivacy` was rejected with insufficient selectable balance for derived
+Unified Addresses, despite the wallet reporting shielded pools. No weakened
+privacy fallback or fully shielded transfer success is claimed. Receiver API accepts
+p2pkh/sapling/orchard; asking for an ironwood receiver was explicitly rejected.
+These are observed version-specific results, not general Zcash guarantees.
+
+`matches_payment` validates one recipient, minimum amount, non-change shielded
+output and confirmation count. The issuer still owns invoice/receipt binding,
+double-credit prevention, reorg handling and credential revocation. It must not sign
+paid-invoice claims solely from confirmation count. The generic claim carries only
+a contextual boolean and verification metadata, never wallet-wide evidence.
+
+Reproduce after official regtest initialization with
+`Z3_REGTEST_RPC_ROUTER_PASSWORD=<local value> python3 scripts/z3-payment-demo.py --execute-regtest`.
+This explicit helper proves regtest-only `generate` succeeds before wallet changes,
+mines synthetic funds, shields one coinbase and checks the exact condition. It prints
+only sanitized status. Failures report no successful condition. Wallet seeds stay in
+Zallet; no real funds or private key export is involved.
 
 ## FROST
 
@@ -55,3 +89,7 @@ The concrete Rust transport uses maintained reqwest 0.13.5 with no TLS feature f
 the fixed loopback HTTP endpoint. [Client builder documentation](https://docs.rs/reqwest/0.13.5/reqwest/blocking/struct.ClientBuilder.html)
 covers timeout, redirect and proxy configuration. It rejects unallowlisted methods,
 non-success HTTP, RPC errors, mismatched IDs and oversized responses.
+
+Official Z3 checkout inspected at `e84ce9fd8e864ff0b2a8a62f6ce14392145db0fb`.
+Method names and parameter order are recorded from live discovery in
+`fixtures/z3-regtest-discovery.json`, not generated from guessed legacy RPCs.

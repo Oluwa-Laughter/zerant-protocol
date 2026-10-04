@@ -17,12 +17,12 @@ example. Contextual rules never create a universal reputation score.
 - `zerant-disclosure`: v0.2 signed verifier requests, one approved atomic attestation,
   holder signature, exact bindings, denial without response, SQLite replay state.
 - `zerant-zcash`: read-only regtest RPC capability/readiness adapter and minimal payment-claim
-  constructor. The official local Z3 regtest router has been exercised for read-only discovery/status; payment execution remains intentionally disabled.
+  constructor. Live local discovery/readiness and a synthetic coinbase-shielding payment were exercised, including recipient/amount/confirmation checks. Fully shielded `z_sendmany` spending remains unavailable.
 - `/demo`: public fixture playground across eight scenarios, with consent and honest
   integration status. Browser simulation does not execute native cryptography.
 
-Encrypted holder vault, enrollment, authenticated browser transport, live shielded
-payments, production invoice settlement and live FROST signing remain unimplemented.
+Encrypted holder vault, enrollment, authenticated browser transport, fully shielded
+transfers, production invoice settlement and live FROST signing remain unimplemented.
 No ZK, anonymity or unlinkability is claimed. Pairwise keys and metadata remain
 potentially correlatable. Applications own key custody, origin authentication,
 revocation watermarks, trusted clocks and issuer evidence quality.

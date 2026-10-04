@@ -15,9 +15,21 @@ fn run() -> zerant_core::Result<()> {
     let status = adapter.chain_status()?;
     let wallet = adapter.wallet_readiness()?;
     println!(
-        "regtest blocks={} wallet={wallet:?}; no payment exercised",
+        "regtest blocks={} wallet={wallet:?}; read-only readiness",
         status.blocks
     );
+    if let Ok(txid) = std::env::var("Z3_REGTEST_TXID") {
+        println!(
+            "selected regtest transaction confirmations={}",
+            adapter.confirmations(&txid)?
+        );
+        if let Ok(recipient) = std::env::var("Z3_REGTEST_RECIPIENT") {
+            adapter.matches_payment(&txid, &recipient, 100_000_000, 3)?;
+            println!(
+                "selected regtest recipient and minimum amount matched; invoice ledger remains caller responsibility"
+            );
+        }
+    }
     Ok(())
 }
 fn main() {

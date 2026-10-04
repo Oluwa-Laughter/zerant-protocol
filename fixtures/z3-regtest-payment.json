@@ -1,0 +1,16 @@
+{
+  "source": "live sanitized specific Zallet transaction projection",
+  "date": "2026-10-04",
+  "network": "regtest",
+  "path": "coinbase-shielding",
+  "confirmations": 3,
+  "status": "mined",
+  "recipient_matched": true,
+  "minimum_amount_zat": 100000000,
+  "minimum_amount_matched": true,
+  "output_pool": "ironwood",
+  "wallet_internal": false,
+  "fully_shielded_send_demonstrated": false,
+  "sendmany_result": "rejected: insufficient selectable balance",
+  "txid_address_memo_omitted": true
+}

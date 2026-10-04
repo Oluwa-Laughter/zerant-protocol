@@ -122,6 +122,46 @@
         }
       ],
       "server": "zallet"
+    },
+    {
+      "name": "generate",
+      "server": "zebra",
+      "params": [
+        {
+          "name": "num_blocks",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "z_shieldcoinbase",
+      "server": "zallet",
+      "params": [
+        {
+          "name": "fromaddress",
+          "required": true
+        },
+        {
+          "name": "toaddress",
+          "required": true
+        },
+        {
+          "name": "fee",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "required": false
+        },
+        {
+          "name": "memo",
+          "required": false
+        },
+        {
+          "name": "privacy_policy",
+          "required": false
+        }
+      ]
     }
   ],
   "source": "live rpc.discover at local official Z3 regtest router",

@@ -40,6 +40,12 @@ pub enum WalletReadiness {
 }
 
 pub struct Adapter<T>(pub T);
+fn validate_txid(txid: &str) -> Result<()> {
+    if txid.len() != 64 || !txid.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(Error::Encoding);
+    }
+    Ok(())
+}
 
 fn bounded(value: &Value) -> Result<()> {
     if serde_json::to_vec(value).map_err(|_| Error::Json)?.len() > MAX_JSON_BYTES {
@@ -107,6 +113,68 @@ impl<T: RegtestTransport> Adapter<T> {
             blocks,
             initial_block_download,
         })
+    }
+
+    /// Current Zallet method verified from live Z3 OpenRPC discovery. One named
+    /// transaction only; raw outputs, memos and account metadata are discarded.
+    pub fn confirmations(&self, txid: &str) -> Result<u64> {
+        validate_txid(txid)?;
+        let response = self.0.call("z_viewtransaction", json!([txid]))?;
+        bounded(&response)?;
+        response
+            .get("confirmations")
+            .and_then(Value::as_u64)
+            .filter(|n| *n <= MAX_SAFE_INTEGER)
+            .ok_or(Error::Json)
+    }
+
+    /// Checks a preconfigured payment condition against one transaction. An issuer
+    /// must additionally bind it to its invoice ledger and handle reorg/revocation.
+    /// This does not sign a credential or establish global wallet/payment history.
+    pub fn matches_payment(
+        &self,
+        txid: &str,
+        recipient: &str,
+        minimum_zat: u64,
+        minimum_confirmations: u64,
+    ) -> Result<()> {
+        validate_txid(txid)?;
+        if recipient.is_empty()
+            || recipient.len() > 1024
+            || minimum_zat == 0
+            || minimum_zat > MAX_SAFE_INTEGER
+            || minimum_confirmations == 0
+            || minimum_confirmations > MAX_SAFE_INTEGER
+        {
+            return Err(Error::Credential);
+        }
+        let response = self.0.call("z_viewtransaction", json!([txid]))?;
+        bounded(&response)?;
+        let confirmations = response
+            .get("confirmations")
+            .and_then(Value::as_u64)
+            .filter(|n| *n <= MAX_SAFE_INTEGER)
+            .ok_or(Error::Json)?;
+        let outputs = response
+            .get("outputs")
+            .and_then(Value::as_array)
+            .ok_or(Error::Json)?;
+        let matched = outputs.iter().any(|output| {
+            output.get("address").and_then(Value::as_str) == Some(recipient)
+                && output
+                    .get("valueZat")
+                    .and_then(Value::as_u64)
+                    .is_some_and(|n| n >= minimum_zat && n <= MAX_SAFE_INTEGER)
+                && output.get("walletInternal").and_then(Value::as_bool) == Some(false)
+                && matches!(
+                    output.get("pool").and_then(Value::as_str),
+                    Some("sapling" | "orchard" | "ironwood")
+                )
+        });
+        if confirmations < minimum_confirmations || !matched {
+            return Err(Error::Credential);
+        }
+        Ok(())
     }
 
     pub fn wallet_readiness(&self) -> Result<WalletReadiness> {
@@ -186,13 +254,21 @@ impl RegtestTransport for HttpRegtestTransport {
         use std::io::Read;
         if !matches!(
             method,
-            "rpc.discover" | "getblockchaininfo" | "getwalletinfo"
+            "rpc.discover" | "getblockchaininfo" | "getwalletinfo" | "z_viewtransaction"
         ) {
             return Err(Error::Trust);
         }
-        if params != json!([]) {
+        if method == "z_viewtransaction" {
+            let txid = params
+                .as_array()
+                .filter(|a| a.len() == 1)
+                .and_then(|a| a[0].as_str())
+                .ok_or(Error::Encoding)?;
+            validate_txid(txid)?;
+        } else if params != json!([]) {
             return Err(Error::Encoding);
         }
+
         let response = self
             .client
             .post("http://127.0.0.1:8181")
@@ -296,5 +372,93 @@ mod tests {
             }
         }
         assert!(Adapter(WrongNetwork).chain_status().is_err());
+    }
+}
+
+#[cfg(test)]
+mod payment_tests {
+    use super::*;
+    struct Fixed(Value);
+    impl RegtestTransport for Fixed {
+        fn call(&self, method: &str, params: Value) -> Result<Value> {
+            assert_eq!(method, "z_viewtransaction");
+            assert_eq!(params, json!(["a".repeat(64)]));
+            Ok(self.0.clone())
+        }
+    }
+    fn transaction() -> Value {
+        json!({"confirmations":3,"outputs":[{"address":"specific-recipient","valueZat":100000000,"walletInternal":false,"pool":"ironwood","memo":"unrelated-private-memo","account_uuid":"private-account"}]})
+    }
+    #[test]
+    fn exact_named_transaction_projects_only_condition() {
+        let adapter = Adapter(Fixed(transaction()));
+        assert_eq!(adapter.confirmations(&"a".repeat(64)).unwrap(), 3);
+        adapter
+            .matches_payment(&"a".repeat(64), "specific-recipient", 100000000, 3)
+            .unwrap();
+        assert!(
+            adapter
+                .matches_payment(&"a".repeat(64), "wrong-recipient", 100000000, 3)
+                .is_err()
+        );
+        assert!(
+            adapter
+                .matches_payment(&"a".repeat(64), "specific-recipient", 100000001, 3)
+                .is_err()
+        );
+        assert!(
+            adapter
+                .matches_payment(&"a".repeat(64), "specific-recipient", 100000000, 4)
+                .is_err()
+        );
+        assert!(adapter.confirmations("bad-id").is_err());
+        assert!(
+            adapter
+                .matches_payment(&"a".repeat(64), "specific-recipient", 0, 3)
+                .is_err()
+        );
+        let claim = paid_invoice_claim("invoice:one-audience").unwrap();
+        let wire = serde_json::to_string(&claim).unwrap();
+        for private in [
+            "specific-recipient",
+            "memo",
+            "account_uuid",
+            "txid",
+            "valueZat",
+        ] {
+            assert!(!wire.contains(private));
+        }
+    }
+    #[test]
+    fn malformed_unconfirmed_transparent_and_internal_outputs_fail() {
+        for (field, value) in [
+            ("valueZat", json!(100000000.5)),
+            ("valueZat", json!(MAX_SAFE_INTEGER + 1)),
+            ("pool", json!("transparent")),
+            ("pool", json!("unknown")),
+            ("walletInternal", json!(true)),
+            ("walletInternal", Value::Null),
+        ] {
+            let mut response = transaction();
+            response["outputs"][0][field] = value;
+            assert!(
+                Adapter(Fixed(response))
+                    .matches_payment(&"a".repeat(64), "specific-recipient", 100000000, 3)
+                    .is_err(),
+                "{field}"
+            );
+        }
+        let mut response = transaction();
+        response["confirmations"] = json!(0);
+        assert!(
+            Adapter(Fixed(response))
+                .matches_payment(&"a".repeat(64), "specific-recipient", 100000000, 3)
+                .is_err()
+        );
+        assert!(
+            Adapter(Fixed(json!({"confirmations":3})))
+                .matches_payment(&"a".repeat(64), "specific-recipient", 100000000, 3)
+                .is_err()
+        );
     }
 }
