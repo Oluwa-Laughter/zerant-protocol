@@ -379,6 +379,24 @@ struct IssuerInvitationView {
     expires_at: OffsetDateTime,
 }
 
+#[derive(Clone, Serialize)]
+struct IssuerActivityEventView {
+    id: i64,
+    event_type: String,
+    actor_zerant_id: String,
+    object_id: String,
+    label: String,
+    context: Option<String>,
+    counterparty: Option<String>,
+    created_at: OffsetDateTime,
+}
+
+#[derive(Serialize)]
+struct IssuerActivityPage {
+    items: Vec<IssuerActivityEventView>,
+    next_cursor: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct InviteIssuerMember {
@@ -959,6 +977,120 @@ fn require_issuer_role(access: &IssuerAccess, allowed: &[&str]) -> Result<(), Ap
 
 fn valid_issuer_member_role(role: &str) -> bool {
     matches!(role, "admin" | "issuer" | "auditor")
+}
+
+struct IssuerEvent<'a> {
+    event_type: &'a str,
+    object_id: &'a str,
+    label: &'a str,
+    context: Option<&'a str>,
+    counterparty: Option<&'a str>,
+}
+
+async fn record_issuer_event(
+    tx: &Transaction<'_>,
+    issuer_profile_id: Uuid,
+    actor_account_id: Uuid,
+    event: IssuerEvent<'_>,
+) -> Result<(), ApiError> {
+    let actor_row = tx
+        .query_one(
+            "SELECT public_handle FROM accounts WHERE id = $1",
+            &[&actor_account_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let actor_handle: Option<String> = actor_row.get(0);
+    let actor_handle = actor_handle.ok_or(ApiError::Unavailable)?;
+    let context = event.context.map(str::to_owned);
+    let counterparty = event.counterparty.map(str::to_owned);
+
+    tx.execute(
+        "INSERT INTO issuer_events
+         (issuer_profile_id, actor_account_id, actor_zerant_id, event_type,
+          object_id, label, context, counterparty)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        &[
+            &issuer_profile_id,
+            &actor_account_id,
+            &actor_handle,
+            &event.event_type,
+            &event.object_id,
+            &event.label,
+            &context,
+            &counterparty,
+        ],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    Ok(())
+}
+
+async fn list_issuer_activity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ActivityQuery>,
+) -> Result<Json<IssuerActivityPage>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let access = issuer_access(&state.db, account).await?;
+    let limit = usize::from(query.limit.unwrap_or(20).clamp(1, 100));
+    let fetch_limit = i64::try_from(limit + 1).map_err(|_| ApiError::Invalid)?;
+    let client = db_client(&state.db).await?;
+
+    let rows = if let Some(cursor) = query.cursor.as_deref() {
+        let (created_at, id) = parse_activity_cursor(cursor)?;
+        client
+            .query(
+                "SELECT id, event_type, actor_zerant_id, object_id, label,
+                        context, counterparty, created_at
+                 FROM issuer_events
+                 WHERE issuer_profile_id = $1
+                   AND (created_at, id) < ($2, $3)
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT $4",
+                &[&access.profile_id, &created_at, &id, &fetch_limit],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?
+    } else {
+        client
+            .query(
+                "SELECT id, event_type, actor_zerant_id, object_id, label,
+                        context, counterparty, created_at
+                 FROM issuer_events
+                 WHERE issuer_profile_id = $1
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT $2",
+                &[&access.profile_id, &fetch_limit],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?
+    };
+
+    let has_more = rows.len() > limit;
+    let mut items = Vec::with_capacity(limit.min(rows.len()));
+    for row in rows.into_iter().take(limit) {
+        items.push(IssuerActivityEventView {
+            id: row.get(0),
+            event_type: row.get(1),
+            actor_zerant_id: row.get(2),
+            object_id: row.get(3),
+            label: row.get(4),
+            context: row.get(5),
+            counterparty: row.get(6),
+            created_at: row.get(7),
+        });
+    }
+
+    let next_cursor = if has_more {
+        items
+            .last()
+            .map(|item| activity_cursor(item.created_at, item.id))
+    } else {
+        None
+    };
+
+    Ok(Json(IssuerActivityPage { items, next_cursor }))
 }
 
 async fn enforce_account_rate_limit(
@@ -2403,6 +2535,22 @@ async fn create_issuer_schema_version(
         }
     })?;
 
+    let schema_label: String = current.get(4);
+    let schema_context: String = current.get(6);
+    record_issuer_event(
+        &tx,
+        access.profile_id,
+        account,
+        IssuerEvent {
+            event_type: "credential_schema_versioned",
+            object_id: &new_id.to_string(),
+            label: &schema_label,
+            context: Some(&schema_context),
+            counterparty: None,
+        },
+    )
+    .await?;
+
     tx.commit().await.map_err(|_| ApiError::Unavailable)?;
 
     Ok((
@@ -2434,8 +2582,12 @@ async fn deactivate_issuer_schema(
     enforce_account_rate_limit(&state.db, account, "credential_schema_deactivate", 20).await?;
     let access = issuer_access(&state.db, account).await?;
     require_issuer_role(&access, &["owner", "admin"])?;
-    let client = db_client(&state.db).await?;
-    let row = client
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let row = tx
         .query_opt(
             "UPDATE credential_schemas s
              SET active = FALSE, retired_at = NOW(), updated_at = NOW()
@@ -2452,6 +2604,24 @@ async fn deactivate_issuer_schema(
         .await
         .map_err(|_| ApiError::Unavailable)?
         .ok_or(ApiError::Conflict)?;
+
+    let display_name: String = row.get(3);
+    let schema_context: String = row.get(6);
+    record_issuer_event(
+        &tx,
+        access.profile_id,
+        account,
+        IssuerEvent {
+            event_type: "credential_schema_retired",
+            object_id: &schema_id.to_string(),
+            label: &display_name,
+            context: Some(&schema_context),
+            counterparty: None,
+        },
+    )
+    .await?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
 
     Ok(Json(CredentialSchemaView {
         id: row.get(0),
@@ -2546,7 +2716,7 @@ async fn create_issuer_schema(
         return Err(ApiError::Invalid);
     }
 
-    let client = db_client(&state.db).await?;
+    let mut client = db_client(&state.db).await?;
     let issuer = client
         .query_opt(
             "SELECT id, issuer_id, display_name FROM issuer_profiles WHERE id = $1",
@@ -2561,7 +2731,11 @@ async fn create_issuer_schema(
     let days = i32::from(input.default_expiry_days);
     let id = Uuid::new_v4();
 
-    let row = client
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let row = tx
         .query_one(
             "INSERT INTO credential_schemas
              (id, issuer_profile_id, slug, display_name, description, claim_type, context,
@@ -2590,6 +2764,21 @@ async fn create_issuer_schema(
                 ApiError::Unavailable
             }
         })?;
+
+    record_issuer_event(
+        &tx,
+        profile_id,
+        account,
+        IssuerEvent {
+            event_type: "credential_schema_created",
+            object_id: &id.to_string(),
+            label: &display_name,
+            context: Some(&context),
+            counterparty: None,
+        },
+    )
+    .await?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
 
     Ok((
         StatusCode::CREATED,
@@ -4290,7 +4479,7 @@ async fn invite_issuer_member(
         return Err(ApiError::Invalid);
     }
 
-    let client = db_client(&state.db).await?;
+    let mut client = db_client(&state.db).await?;
     let target = client
         .query_opt(
             "SELECT id FROM accounts WHERE public_handle = $1",
@@ -4320,7 +4509,11 @@ async fn invite_issuer_member(
 
     let id = Uuid::new_v4();
     let expires_at = OffsetDateTime::now_utc() + Duration::days(7);
-    let row = client
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let row = tx
         .query_one(
             "INSERT INTO issuer_invitations
              (id, issuer_profile_id, invited_account_id, invited_by_account_id, role, expires_at)
@@ -4344,13 +4537,29 @@ async fn invite_issuer_member(
         .await
         .map_err(|_| ApiError::Unavailable)?;
 
-    let profile = client
+    let profile = tx
         .query_one(
             "SELECT display_name, issuer_id FROM issuer_profiles WHERE id = $1",
             &[&access.profile_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?;
+
+    let invitation_id: Uuid = row.get(0);
+    record_issuer_event(
+        &tx,
+        access.profile_id,
+        account,
+        IssuerEvent {
+            event_type: "team_invited",
+            object_id: &invitation_id.to_string(),
+            label: &role,
+            context: None,
+            counterparty: Some(&zerant_id),
+        },
+    )
+    .await?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
 
     Ok((
         StatusCode::CREATED,
@@ -4495,13 +4704,33 @@ async fn decide_issuer_invitation(
         .map_err(|_| ApiError::Unavailable)?;
     }
 
-    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
     let handle: Option<String> = row.get(7);
+    let handle_ref = handle.as_deref().ok_or(ApiError::Unavailable)?;
+    let event_type = if input.decision == "accept" {
+        "team_joined"
+    } else {
+        "team_declined"
+    };
+    let role: String = row.get(1);
+    record_issuer_event(
+        &tx,
+        row.get(0),
+        account,
+        IssuerEvent {
+            event_type,
+            object_id: &id.to_string(),
+            label: &role,
+            context: None,
+            counterparty: Some(handle_ref),
+        },
+    )
+    .await?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
     Ok(Json(IssuerInvitationView {
         id,
         issuer_name: row.get(5),
         issuer_id: row.get(6),
-        invited_zerant_id: handle.ok_or(ApiError::Unavailable)?,
+        invited_zerant_id: handle_ref.to_owned(),
         role: row.get(1),
         status: if input.decision == "accept" {
             "accepted".into()
@@ -4521,8 +4750,12 @@ async fn remove_issuer_member(
     let account = account_id(&headers, &state.db).await?;
     let access = issuer_access(&state.db, account).await?;
     require_issuer_role(&access, &["owner", "admin"])?;
-    let client = db_client(&state.db).await?;
-    let row = client
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let row = tx
         .query_opt(
             "SELECT m.account_id, m.role
              FROM issuer_members m
@@ -4538,7 +4771,7 @@ async fn remove_issuer_member(
         return Err(ApiError::Forbidden);
     }
 
-    let affected = client
+    let affected = tx
         .execute(
             "DELETE FROM issuer_members
              WHERE issuer_profile_id = $1 AND account_id = $2",
@@ -4549,6 +4782,20 @@ async fn remove_issuer_member(
     if affected != 1 {
         return Err(ApiError::Conflict);
     }
+    record_issuer_event(
+        &tx,
+        access.profile_id,
+        account,
+        IssuerEvent {
+            event_type: "team_member_removed",
+            object_id: &zerant_id,
+            label: &target_role,
+            context: None,
+            counterparty: Some(&zerant_id),
+        },
+    )
+    .await?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -4728,6 +4975,20 @@ async fn transfer_issuer_ownership(
     )
     .await
     .map_err(|_| ApiError::Unavailable)?;
+
+    record_issuer_event(
+        &tx,
+        access.profile_id,
+        account,
+        IssuerEvent {
+            event_type: "ownership_transferred",
+            object_id: &access.profile_id.to_string(),
+            label: "Ownership transferred",
+            context: None,
+            counterparty: Some(&zerant_id),
+        },
+    )
+    .await?;
 
     tx.commit().await.map_err(|_| ApiError::Unavailable)?;
 
@@ -4913,6 +5174,35 @@ async fn rotate_issuer_key(
     )
     .await
     .map_err(|_| ApiError::Unavailable)?;
+
+    if input.compromise_current {
+        record_issuer_event(
+            &tx,
+            profile_id,
+            account,
+            IssuerEvent {
+                event_type: "issuer_key_compromised",
+                object_id: &current_key_id,
+                label: "Signing key marked compromised",
+                context: None,
+                counterparty: None,
+            },
+        )
+        .await?;
+    }
+    record_issuer_event(
+        &tx,
+        profile_id,
+        account,
+        IssuerEvent {
+            event_type: "issuer_key_rotated",
+            object_id: &new_key_id,
+            label: "Signing key rotated",
+            context: None,
+            counterparty: None,
+        },
+    )
+    .await?;
 
     tx.commit().await.map_err(|_| ApiError::Unavailable)?;
 
@@ -5248,6 +5538,21 @@ async fn issue_private_credential(
     .await
     .map_err(|_| ApiError::Unavailable)?;
 
+    let audit_label = schema_display_name.as_deref().unwrap_or(&claim_type);
+    record_issuer_event(
+        &tx,
+        profile_id,
+        account,
+        IssuerEvent {
+            event_type: "credential_issued",
+            object_id: &payload.credential_id,
+            label: audit_label,
+            context: Some(&context),
+            counterparty: Some(&holder_zerant_id),
+        },
+    )
+    .await?;
+
     tx.commit().await.map_err(|_| ApiError::Unavailable)?;
 
     Ok((
@@ -5312,12 +5617,28 @@ async fn revoke_issued_credential(
     .await
     .map_err(|_| ApiError::Unavailable)?;
 
-    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
-
     let holder: Option<String> = row.get(2);
+    let holder_ref = holder.as_deref().ok_or(ApiError::Unavailable)?;
+    let claim_type: String = row.get(4);
+    let claim_context: String = row.get(5);
+    record_issuer_event(
+        &tx,
+        issuer_profile_id,
+        account,
+        IssuerEvent {
+            event_type: "credential_revoked",
+            object_id: &credential_id,
+            label: &claim_type,
+            context: Some(&claim_context),
+            counterparty: Some(holder_ref),
+        },
+    )
+    .await?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
     Ok(Json(IssuedCredentialView {
         credential_id: row.get(1),
-        holder_zerant_id: holder.ok_or(ApiError::Unavailable)?,
+        holder_zerant_id: holder_ref.to_owned(),
         credential_schema_id: row.get(3),
         claim_type: row.get(4),
         context: row.get(5),
@@ -5544,6 +5865,7 @@ fn app(state: AppState) -> Router {
         .route("/v1/activity", get(list_activity))
         .route("/v1/issuer", get(get_issuer_profile).post(register_issuer))
         .route("/v1/issuer/team", get(list_issuer_team))
+        .route("/v1/issuer/activity", get(list_issuer_activity))
         .route(
             "/v1/issuer/team/invitations",
             get(list_issuer_team_invitations).post(invite_issuer_member),
@@ -5663,6 +5985,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0016_public_trust_metadata.sql"),
             include_str!("../migrations/0017_verifier_api_keys.sql"),
             include_str!("../migrations/0018_issuer_teams.sql"),
+            include_str!("../migrations/0019_issuer_audit.sql"),
         ] {
             client
                 .batch_execute(migration)

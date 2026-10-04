@@ -71,3 +71,8 @@ No generic Zerant verifier is entitled to whole-wallet RPC output. Reorg detecti
 | ZecAuth replay | short-lived server challenge, exact message match, one-time consumption and one-time browser redemption | ZecAuth v1 capability grants remain server-authoritative |
 | KEK compromise | per-record wrapped DEKs and key versioning | managed KMS/HSM integration is still required for production |
 | Zcash operator compromise | browser never receives RPC credentials; API returns bounded projections only | compromised Z3/Zallet can lie about its own state |
+
+
+## Issuer governance audit
+
+Sensitive issuer actions are recorded atomically in `issuer_events`. PostgreSQL rejects UPDATE and DELETE operations on this table through an append-only trigger. The history records the acting Zerant ID, action, affected object, related counterparty and timestamp. Database-superuser compromise remains a residual risk and requires infrastructure-level logging and backup controls.

@@ -64,6 +64,40 @@ export type IssuedCredential = {
   revoked: boolean;
 };
 
+export type IssuerActivityEvent = {
+  id: number;
+  event_type: string;
+  actor_zerant_id: string;
+  object_id: string;
+  label: string;
+  context: string | null;
+  counterparty: string | null;
+  created_at: string;
+};
+
+export type IssuerActivityPage = {
+  items: IssuerActivityEvent[];
+  next_cursor: string | null;
+};
+
+function activityTitle(type: string): string {
+  const labels: Record<string, string> = {
+    team_invited: "Team invitation sent",
+    team_joined: "Team member joined",
+    team_declined: "Team invitation declined",
+    team_member_removed: "Team member removed",
+    ownership_transferred: "Ownership transferred",
+    issuer_key_rotated: "Security key rotated",
+    issuer_key_compromised: "Security key marked compromised",
+    credential_schema_created: "Credential type created",
+    credential_schema_versioned: "Credential type version published",
+    credential_schema_retired: "Credential type retired",
+    credential_issued: "Credential issued",
+    credential_revoked: "Credential revoked",
+  };
+  return labels[type] ?? "Organization activity";
+}
+
 export function IssuerWorkspace({
   authenticated,
   backendAvailable,
@@ -75,6 +109,7 @@ export function IssuerWorkspace({
   initialTeam,
   initialTeamInvitations,
   initialMyInvitations,
+  initialActivity,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
@@ -86,6 +121,7 @@ export function IssuerWorkspace({
   initialTeam: IssuerMember[];
   initialTeamInvitations: IssuerInvitation[];
   initialMyInvitations: IssuerInvitation[];
+  initialActivity: IssuerActivityPage;
 }) {
   const [profile, setProfile] = useState<IssuerProfile | null>(initialProfile);
   const [issued, setIssued] = useState<IssuedCredential[]>(initialIssued);
@@ -96,6 +132,13 @@ export function IssuerWorkspace({
     useState<IssuerInvitation[]>(initialTeamInvitations);
   const [myInvitations, setMyInvitations] =
     useState<IssuerInvitation[]>(initialMyInvitations);
+  const [activity, setActivity] = useState<IssuerActivityEvent[]>(
+    initialActivity.items,
+  );
+  const [activityCursor, setActivityCursor] = useState<string | null>(
+    initialActivity.next_cursor,
+  );
+  const [activityLoading, setActivityLoading] = useState(false);
   const [inviteZerantId, setInviteZerantId] = useState("");
   const [inviteRole, setInviteRole] =
     useState<"admin" | "issuer" | "auditor">("issuer");
@@ -128,6 +171,30 @@ export function IssuerWorkspace({
   const canManageSchemas = currentRole === "owner" || currentRole === "admin";
   const canIssue =
     currentRole === "owner" || currentRole === "admin" || currentRole === "issuer";
+
+  async function loadMoreActivity() {
+    if (!activityCursor || activityLoading) return;
+    setActivityLoading(true);
+    try {
+      const response = await fetch(
+        "/api/zerant/issuer/activity?limit=20&cursor=" +
+          encodeURIComponent(activityCursor),
+        {
+          credentials: "same-origin",
+          cache: "no-store",
+        },
+      );
+      if (!response.ok) {
+        setStatus("Organization history could not be loaded.");
+        return;
+      }
+      const page = (await response.json()) as IssuerActivityPage;
+      setActivity((current) => [...current, ...page.items]);
+      setActivityCursor(page.next_cursor);
+    } finally {
+      setActivityLoading(false);
+    }
+  }
 
   async function activateIssuer() {
     const response = await fetch("/api/zerant/issuer", {
@@ -923,6 +990,62 @@ export function IssuerWorkspace({
             )}
           </div>
         </article>
+      </section>
+
+      <section className="issuer-activity-section">
+        <div className="section-heading">
+          <p className="eyebrow">Organization history</p>
+          <h2>See the important changes made by your team.</h2>
+          <p className="muted">
+            Sensitive issuer actions are recorded in an append-only history so owners, admins and
+            auditors can review who changed what and when.
+          </p>
+        </div>
+
+        <div className="issuer-activity-list">
+          {activity.length ? (
+            activity.map((event) => (
+              <article className="issuer-activity-card" key={event.id}>
+                <div className="issuer-activity-card-top">
+                  <div>
+                    <strong>{activityTitle(event.event_type)}</strong>
+                    <p className="small muted">{event.label}</p>
+                  </div>
+                  <time className="small muted" dateTime={event.created_at}>
+                    {new Date(event.created_at).toLocaleString()}
+                  </time>
+                </div>
+                <div className="issuer-activity-meta">
+                  <span>
+                    By <span className="mono">{event.actor_zerant_id}</span>
+                  </span>
+                  {event.context ? <span>{event.context}</span> : null}
+                  {event.counterparty ? (
+                    <span>
+                      Related <span className="mono">{event.counterparty}</span>
+                    </span>
+                  ) : null}
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="issuer-activity-empty">
+              <p className="muted">
+                New issuer actions will appear here as your organization operates.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {activityCursor ? (
+          <Button
+            variant="secondary"
+            disabled={activityLoading}
+            onClick={loadMoreActivity}
+          >
+            {activityLoading ? "Loading…" : "Load older activity"}
+          </Button>
+        ) : null}
       </section>
 
       <section className="issuer-grid">

@@ -33,6 +33,7 @@ test("auditor workspace is read-only", () => {
       initialTeam={[auditor]}
       initialTeamInvitations={[]}
       initialMyInvitations={[]}
+      initialActivity={{ items: [], next_cursor: null }}
     />,
   );
 

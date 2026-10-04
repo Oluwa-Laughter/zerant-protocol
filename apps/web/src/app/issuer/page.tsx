@@ -4,6 +4,7 @@ import {
   IssuerWorkspace,
   type CredentialSchema,
   type IssuedCredential,
+  type IssuerActivityPage,
   type IssuerInvitation,
   type IssuerKeyView,
   type IssuerMember,
@@ -36,6 +37,7 @@ export default async function IssuerPage() {
   let team: IssuerMember[] = [];
   let teamInvitations: IssuerInvitation[] = [];
   let myInvitations: IssuerInvitation[] = [];
+  let activity: IssuerActivityPage = { items: [], next_cursor: null };
 
   try {
     const sessionResponse = await fetchZerantBackend("/v1/session", cookieHeader);
@@ -64,12 +66,14 @@ export default async function IssuerPage() {
           keysResponse,
           teamResponse,
           teamInvitationsResponse,
+          activityResponse,
         ] = await Promise.all([
           fetchZerantBackend("/v1/issuer/credentials", cookieHeader),
           fetchZerantBackend("/v1/issuer/schemas", cookieHeader),
           fetchZerantBackend("/v1/issuer/keys", cookieHeader),
           fetchZerantBackend("/v1/issuer/team", cookieHeader),
           fetchZerantBackend("/v1/issuer/team/invitations", cookieHeader),
+          fetchZerantBackend("/v1/issuer/activity?limit=20", cookieHeader),
         ]);
 
         if (issuedResponse?.ok) {
@@ -86,6 +90,9 @@ export default async function IssuerPage() {
         }
         if (teamInvitationsResponse?.ok) {
           teamInvitations = (await teamInvitationsResponse.json()) as IssuerInvitation[];
+        }
+        if (activityResponse?.ok) {
+          activity = (await activityResponse.json()) as IssuerActivityPage;
         }
       }
     }
@@ -105,6 +112,7 @@ export default async function IssuerPage() {
       initialTeam={team}
       initialTeamInvitations={teamInvitations}
       initialMyInvitations={myInvitations}
+      initialActivity={activity}
     />
   );
 }
