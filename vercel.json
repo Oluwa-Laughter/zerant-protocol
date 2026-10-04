@@ -16,9 +16,7 @@
     "backend": {
       "root": ".",
       "runtime": "container",
-      "entrypoint": "services/zerant-api/Dockerfile.vercel",
-      "memory": 1024,
-      "maxDuration": 60
+      "entrypoint": "services/zerant-api/Dockerfile.vercel"
     }
   },
   "rewrites": [
