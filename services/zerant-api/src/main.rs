@@ -315,6 +315,30 @@ struct DecideRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct ActivityQuery {
+    limit: Option<u16>,
+    cursor: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+struct ActivityEventView {
+    id: i64,
+    event_type: String,
+    object_id: String,
+    label: String,
+    context: Option<String>,
+    counterparty: Option<String>,
+    created_at: OffsetDateTime,
+}
+
+#[derive(Serialize)]
+struct ActivityPage {
+    items: Vec<ActivityEventView>,
+    next_cursor: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct InspectPaymentRequest {
     uri: String,
 }
@@ -629,6 +653,92 @@ async fn health() -> Json<Health> {
         authentication: "zecauth",
         zcash_boundary: "z3-zallet",
     })
+}
+
+fn activity_cursor(created_at: OffsetDateTime, id: i64) -> String {
+    URL_SAFE_NO_PAD.encode(format!("{}:{id}", created_at.unix_timestamp_nanos()))
+}
+
+fn parse_activity_cursor(value: &str) -> Result<(OffsetDateTime, i64), ApiError> {
+    if value.len() > 256 {
+        return Err(ApiError::Invalid);
+    }
+    let decoded = URL_SAFE_NO_PAD
+        .decode(value.as_bytes())
+        .map_err(|_| ApiError::Invalid)?;
+    let text = std::str::from_utf8(&decoded).map_err(|_| ApiError::Invalid)?;
+    let (nanos, id) = text.split_once(':').ok_or(ApiError::Invalid)?;
+    let nanos = nanos.parse::<i128>().map_err(|_| ApiError::Invalid)?;
+    let id = id.parse::<i64>().map_err(|_| ApiError::Invalid)?;
+    if id <= 0 {
+        return Err(ApiError::Invalid);
+    }
+    let created_at =
+        OffsetDateTime::from_unix_timestamp_nanos(nanos).map_err(|_| ApiError::Invalid)?;
+    Ok((created_at, id))
+}
+
+async fn list_activity(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ActivityQuery>,
+) -> Result<Json<ActivityPage>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let limit = usize::from(query.limit.unwrap_or(20).clamp(1, 100));
+    let fetch_limit = i64::try_from(limit + 1).map_err(|_| ApiError::Invalid)?;
+    let client = db_client(&state.db).await?;
+
+    let rows = if let Some(cursor) = query.cursor.as_deref() {
+        let (created_at, id) = parse_activity_cursor(cursor)?;
+        client
+            .query(
+                "SELECT id, event_type, object_id, label, context, counterparty, created_at
+                 FROM trust_events
+                 WHERE account_id = $1
+                   AND (created_at, id) < ($2, $3)
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT $4",
+                &[&account, &created_at, &id, &fetch_limit],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?
+    } else {
+        client
+            .query(
+                "SELECT id, event_type, object_id, label, context, counterparty, created_at
+                 FROM trust_events
+                 WHERE account_id = $1
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT $2",
+                &[&account, &fetch_limit],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?
+    };
+
+    let has_more = rows.len() > limit;
+    let mut items = Vec::with_capacity(limit.min(rows.len()));
+    for row in rows.into_iter().take(limit) {
+        items.push(ActivityEventView {
+            id: row.get(0),
+            event_type: row.get(1),
+            object_id: row.get(2),
+            label: row.get(3),
+            context: row.get(4),
+            counterparty: row.get(5),
+            created_at: row.get(6),
+        });
+    }
+
+    let next_cursor = if has_more {
+        items
+            .last()
+            .map(|item| activity_cursor(item.created_at, item.id))
+    } else {
+        None
+    };
+
+    Ok(Json(ActivityPage { items, next_cursor }))
 }
 
 fn scope_alias(value: &str) -> Option<&'static str> {
@@ -2343,6 +2453,7 @@ fn app(state: AppState) -> Router {
         .route("/v1/auth/zecauth/verify", post(zecauth_verify))
         .route("/v1/auth/zecauth/session", get(redeem_zecauth_session))
         .route("/v1/session", get(session_info).delete(logout))
+        .route("/v1/activity", get(list_activity))
         .route("/v1/issuer", get(get_issuer_profile).post(register_issuer))
         .route("/v1/issuers", get(issuer_directory))
         .route(
@@ -2401,6 +2512,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0004_trust_network.sql"),
             include_str!("../migrations/0005_verification_network.sql"),
             include_str!("../migrations/0006_revocation_lifecycle.sql"),
+            include_str!("../migrations/0007_trust_activity.sql"),
         ] {
             client
                 .batch_execute(migration)
