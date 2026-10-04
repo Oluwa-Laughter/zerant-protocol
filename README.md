@@ -54,7 +54,7 @@ The current server-first product encrypts credential records at rest with per-re
 
 This is **not end-to-end holder-only encryption**: an authorized Zerant service runtime can decrypt a holder record in order to serve the holder and construct an approved proof. Production deployment therefore requires strict service isolation, managed KMS/HSM custody, audit controls and careful backup access. Verifiers and other Zerant users do not receive the holder's private credential portfolio.
 
-No zero-knowledge, anonymity or unlinkability claim is made yet. Pairwise verifier identity, stronger unlinkable credentials, managed KMS/HSM deployment, production revocation distribution, production Zcash spending and live FROST signing remain future work.
+No zero-knowledge, anonymity or full unlinkability claim is made. Zerant now uses a distinct protected holder key for each verifier relationship so proofs do not expose one stable holder key across verifiers, but service metadata, issuers and surrounding context can still correlate activity. Managed KMS/HSM deployment, stronger unlinkable credentials, production Zcash spending and live FROST signing remain future work.
 
 Read architecture, disclosure profile, privacy limits, examples, Zcash integration, Zcash resource map and security documentation in docs/.
 

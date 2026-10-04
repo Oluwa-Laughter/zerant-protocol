@@ -2,6 +2,13 @@
 
 Status: privacy contract and implementation limits. Native credential/disclosure code enforces several data-minimization and binding rules, while vault/browser transport and Zcash settlement privacy remain outside the implemented boundary. Zerant is signed minimal disclosure, not zero knowledge, anonymity or cryptographic unlinkability.
 
+## Pairwise verifier proof keys
+
+Approved proofs now use a protected holder key scoped to the verifier relationship instead of exposing the holder account credential key. Repeated proofs to the same verifier reuse that relationship key, while a different verifier receives a different holder proof key. This reduces direct cross-verifier correlation from a stable cryptographic identifier.
+
+This is not full unlinkability. The Zerant service can associate pairwise keys with the same account, issuers know their own issuance records, and network/timing/application metadata can still correlate activity. No anonymity or zero-knowledge claim follows from pairwise keys alone.
+
+
 ## Required M1 invariants
 
 - Unrequested credentials are never returned. Private source credentials remain in the encrypted vault; a response contains one matching minimal attestation only.

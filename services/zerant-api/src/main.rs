@@ -760,35 +760,118 @@ async fn ensure_account_credential_key(
     }
 }
 
-async fn load_account_credential_keypair(
+fn generate_pairwise_holder_key() -> Result<(Jwk, PublicJwk), ApiError> {
+    let private = Jwk::generate_ed_key(EdCurve::Ed25519).map_err(|_| ApiError::Unavailable)?;
+    let public = public_jwk(&private)?;
+    Ok((private, public))
+}
+
+async fn load_or_create_pairwise_holder_key(
     state: &AppState,
-    account: Uuid,
+    holder_account: Uuid,
+    verifier_profile_id: Uuid,
 ) -> Result<(Jwk, PublicJwk), ApiError> {
-    let public = ensure_account_credential_key(state, account).await?;
     let client = db_client(&state.db).await?;
-    let row = client
-        .query_one(
-            "SELECT ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version
-             FROM account_credential_keys WHERE account_id = $1",
-            &[&account],
+
+    if let Some(row) = client
+        .query_opt(
+            "SELECT id, public_jwk, ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version
+             FROM holder_pairwise_keys
+             WHERE holder_account_id = $1 AND verifier_profile_id = $2",
+            &[&holder_account, &verifier_profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+    {
+        let id: Uuid = row.get(0);
+        let public_value: Value = row.get(1);
+        let public: PublicJwk =
+            serde_json::from_value(public_value).map_err(|_| ApiError::Unavailable)?;
+        public.validate().map_err(|_| ApiError::Unavailable)?;
+
+        let now = OffsetDateTime::now_utc();
+        let secret = CredentialRow {
+            id,
+            ciphertext: row.get(2),
+            data_nonce: row.get(3),
+            wrapped_dek: row.get(4),
+            wrap_nonce: row.get(5),
+            key_version: row.get(6),
+            created_at: now,
+            updated_at: now,
+        };
+        let mut plaintext = state.cipher.decrypt(holder_account, &secret)?;
+        let private: Jwk = serde_json::from_slice(&plaintext).map_err(|_| ApiError::Unavailable)?;
+        plaintext.fill(0);
+        return Ok((private, public));
+    }
+
+    let id = Uuid::new_v4();
+    let (private, public) = generate_pairwise_holder_key()?;
+    let public_value = serde_json::to_value(&public).map_err(|_| ApiError::Unavailable)?;
+    let mut plaintext = serde_json::to_vec(&private).map_err(|_| ApiError::Unavailable)?;
+    let encrypted = state.cipher.encrypt(holder_account, id, &plaintext)?;
+    plaintext.fill(0);
+
+    let inserted = client
+        .execute(
+            "INSERT INTO holder_pairwise_keys
+             (id, holder_account_id, verifier_profile_id, public_jwk, ciphertext,
+              data_nonce, wrapped_dek, wrap_nonce, key_version)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             ON CONFLICT (holder_account_id, verifier_profile_id) DO NOTHING",
+            &[
+                &id,
+                &holder_account,
+                &verifier_profile_id,
+                &public_value,
+                &encrypted.ciphertext,
+                &encrypted.data_nonce,
+                &encrypted.wrapped_dek,
+                &encrypted.wrap_nonce,
+                &encrypted.key_version,
+            ],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?;
+
+    if inserted == 1 {
+        return Ok((private, public));
+    }
+
+    let row = client
+        .query_one(
+            "SELECT id, public_jwk, ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version
+             FROM holder_pairwise_keys
+             WHERE holder_account_id = $1 AND verifier_profile_id = $2",
+            &[&holder_account, &verifier_profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let existing_id: Uuid = row.get(0);
+    let public_value: Value = row.get(1);
+    let existing_public: PublicJwk =
+        serde_json::from_value(public_value).map_err(|_| ApiError::Unavailable)?;
+    existing_public
+        .validate()
+        .map_err(|_| ApiError::Unavailable)?;
+
     let now = OffsetDateTime::now_utc();
     let secret = CredentialRow {
-        id: account,
-        ciphertext: row.get(0),
-        data_nonce: row.get(1),
-        wrapped_dek: row.get(2),
-        wrap_nonce: row.get(3),
-        key_version: row.get(4),
+        id: existing_id,
+        ciphertext: row.get(2),
+        data_nonce: row.get(3),
+        wrapped_dek: row.get(4),
+        wrap_nonce: row.get(5),
+        key_version: row.get(6),
         created_at: now,
         updated_at: now,
     };
-    let mut bytes = state.cipher.decrypt(account, &secret)?;
-    let private = serde_json::from_slice(&bytes).map_err(|_| ApiError::Unavailable)?;
+    let mut bytes = state.cipher.decrypt(holder_account, &secret)?;
+    let existing_private: Jwk =
+        serde_json::from_slice(&bytes).map_err(|_| ApiError::Unavailable)?;
     bytes.fill(0);
-    Ok((private, public))
+    Ok((existing_private, existing_public))
 }
 
 async fn health() -> Json<Health> {
@@ -2492,11 +2575,14 @@ async fn decide_holder_request(
     )
     .map_err(|_| ApiError::Invalid)?;
 
-    let (holder_private, holder_public) =
-        load_account_credential_keypair(&state, holder_account).await?;
+    let holder_public = ensure_account_credential_key(&state, holder_account).await?;
     if verified_source.payload.subject_key != holder_public {
         return Err(ApiError::Unauthorized);
     }
+
+    let verifier_profile_id: Uuid = request_row.get(6);
+    let (pairwise_private, pairwise_public) =
+        load_or_create_pairwise_holder_key(&state, holder_account, verifier_profile_id).await?;
 
     let verifier_origin: String = request_row.get(8);
     let attestation = CredentialPayload {
@@ -2505,7 +2591,7 @@ async fn decide_holder_request(
         credential_id: random_id(),
         issuer_id: issuer_id.clone(),
         issuer_key_id: issuer_key_id.clone(),
-        subject_key: holder_public,
+        subject_key: pairwise_public,
         audience: verifier_origin.clone(),
         issued_at: now_u64,
         expires_at: proof_expiry,
@@ -2554,7 +2640,7 @@ async fn decide_holder_request(
         &disclosure_context,
         Decision::Approve,
         Some(&evidence),
-        &holder_private,
+        &pairwise_private,
     )
     .map_err(|_| ApiError::Invalid)?
     .ok_or(ApiError::Invalid)?;
@@ -3237,6 +3323,9 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0006_revocation_lifecycle.sql"),
             include_str!("../migrations/0007_trust_activity.sql"),
             include_str!("../migrations/0008_rate_limits.sql"),
+            include_str!("../migrations/0009_credential_schemas.sql"),
+            include_str!("../migrations/0010_account_controls.sql"),
+            include_str!("../migrations/0011_pairwise_holder_keys.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -3362,6 +3451,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pairwise_holder_keys_are_distinct() {
+        let (_, first) = generate_pairwise_holder_key().unwrap();
+        let (_, second) = generate_pairwise_holder_key().unwrap();
+        assert_ne!(first, second);
+        assert_ne!(first.x, second.x);
+    }
 
     #[test]
     fn zecauth_scope_aliases_are_explicit() {

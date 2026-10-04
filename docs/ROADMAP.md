@@ -48,6 +48,6 @@ Research established, reviewed anonymous credential/selective-disclosure/ZK syst
 - hidden-input predicates
 - reduced issuer/verifier linkability
 - threshold proofs without exact score disclosure
-- stronger pairwise identity guarantees
+- stronger unlinkable credential and presentation guarantees beyond pairwise proof keys
 
 No custom cryptography or unsupported privacy claims.
