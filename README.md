@@ -16,12 +16,11 @@ example. Contextual rules never create a universal reputation score.
   deduplication/windows and contextual evidence checks.
 - `zerant-disclosure`: v0.2 signed verifier requests, one approved atomic attestation,
   holder signature, exact bindings, denial without response, SQLite replay state.
-- `zerant-zcash`: read-only regtest RPC capability/readiness adapter and minimal payment-claim
-  constructor. Live local discovery/readiness and a synthetic coinbase-shielding payment were exercised, including recipient/amount/confirmation checks. Fully shielded `z_sendmany` spending remains unavailable.
+- `zerant-zcash`: native Zcash boundary with canonical ZIP-316 address inspection, ZIP-321 payment-request parsing, read-only Z3/Zallet capability/readiness discovery, bounded named-transaction verification, PCZT capability planning and minimal payment claims. Production spending remains capability-gated and is not exposed through the browser.
 - `/app`: production workspace with empty integration states for holder, issuer, verifier and Zcash boundaries.
   It does not pre-populate credentials, identities, payments or verification results.
-- `/vault`: real local encrypted holder storage using Web Crypto AES-256-GCM, PBKDF2-HMAC-SHA-256,
-  opaque record IDs, IndexedDB persistence and automatic locking. It stores no wallet authority.
+- `zerant-api`: Rust/Axum service with PostgreSQL persistence, envelope-encrypted credentials, ZecAuth RedPallas verification, HttpOnly sessions and server-only Z3/Zallet access.
+- `/vault`: server-backed credential vault authenticated through ZecAuth. The browser is not the credential or session source of truth.
 
 Enrollment/key-possession issuance, authenticated browser protocol transport, fully shielded
 wallet spending, production invoice settlement and live FROST signing remain unimplemented.
@@ -31,7 +30,7 @@ revocation watermarks, trusted clocks and issuer evidence quality.
 
 Read [architecture](docs/ARCHITECTURE.md), [disclosure profile](docs/specs/disclosure-v0.2.md),
 [privacy limits](docs/PRIVACY.md), [examples](docs/examples/README.md),
-[Zcash integration](docs/ZCASH-INTEGRATION.md) and [security](SECURITY.md).
+[Zcash integration](docs/ZCASH-INTEGRATION.md), [Zcash resource map](docs/ZCASH-RESOURCES.md) and [security](SECURITY.md).
 
 ## Local setup
 
@@ -54,6 +53,26 @@ source secret-pattern scan. `make integration` runs native integration/test targ
 `make z3-check` probes an already running official **local regtest** router; it never
 sends funds or prints raw wallet data. CI runs Rust and web gates independently.
 
+
+### Rust API environment
+
+`zerant-api` is a separate server deployment. Required production configuration:
+
+```text
+DATABASE_URL
+ZERANT_PUBLIC_ORIGIN
+ZERANT_VAULT_KEK_B64
+ZERANT_VAULT_KEY_VERSION
+ZERANT_ZCASH_CHAIN
+ZERANT_ZECAUTH_SCOPES
+Z3_REGTEST_RPC_ROUTER_USER
+Z3_REGTEST_RPC_ROUTER_PASSWORD
+```
+
+`ZERANT_VAULT_KEK_B64` is the bootstrap key-encryption key for envelope encryption. Production custody should move behind a managed KMS/HSM. `Z3_REGTEST_*` currently drives the exercised local Z3 adapter; the current concrete router transport is intentionally regtest/read-only and is not a mainnet spending backend.
+
+The Vercel project needs only the server-side `ZERANT_API_ORIGIN` pointing at the deployed Rust API. Do not expose it with a `NEXT_PUBLIC_` prefix.
+
 ### Vercel deployment
 
 The deployable Next.js project lives in `apps/web`. In Vercel, set **Root Directory**
@@ -69,9 +88,7 @@ Public RFC test key material is labeled under credential fixtures. Never reuse i
 
 The web product starts empty. `/app` exposes holder, issuer, verifier and Zcash
 integration states without seeded credentials, identities, payments, request origins or
-verification outcomes. `/vault` encrypts only holder-provided JSON locally. Signed
-request transport and native protocol execution will populate these surfaces when those
-integrations are connected.
+verification outcomes. `/vault` reads and writes encrypted credential records through the Rust API. Durable credentials, sessions and Zcash RPC state remain server-side.
 
 The native v0.3 compound profile still supports one consent decision for up to eight
 ordered credential, threshold and invoice-bound paid-boolean requirements; v0.2 remains

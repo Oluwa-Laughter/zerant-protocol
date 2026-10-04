@@ -15,7 +15,7 @@ Trust boundaries separate issuer, holder browser/vault, verifier session/state, 
 | Stale/revoked evidence | Signed whole snapshots, 24-hour maximum freshness, sequence persistence, dependency revocation | Up to 24-hour revocation lag; stale/rollback/source-revoke tests |
 | Issuer compromise/rotation | Explicit compromise flags, old-key history, fail-closed reissuance | Attack before compromise known; key lifecycle tests |
 | Cross-application correlation | Independent audience keys and IDs, minimal result, no global holder ID | Issuer collusion, rare metadata, IP and account correlation remain |
-| Vault theft/weak password | Reviewed Web Crypto profile, encrypted manual backup, auto-lock | Offline guessing and backup loss remain; storage inspection/unlock tests |
+| Credential-store compromise | Envelope encryption, PostgreSQL access control, KEK separation and server sessions | KEK/runtime compromise remains; encryption and session tests |
 | XSS, dependency or browser compromise | No credential HTML rendering, CSP review, dependency pinning, secrets outside SSR/logs | Same-origin malicious code can read unlocked data; implementation security review |
 | Status lookup tracking or central profiles | Local full snapshots, no individual lookups or portfolio endpoint | Future metadata hosting exposes access patterns; network/log inspection |
 | DoS/resource exhaustion | Size limits, bounded event lists, no untrusted URL fetches, request timeout | Future hosting needs rate limits; oversize parser tests |
@@ -58,14 +58,13 @@ memos must never be logged or included in generic attestations.
 
 No generic Zerant verifier is entitled to whole-wallet RPC output. Reorg detection, downstream attestation revocation, invoice retention/deletion, and operational monitoring remain responsibilities of the payment issuer/application.
 
-## Holder-vault threats
+## Server credential-vault threats
 
 | Threat | Mitigation | Residual risk |
 | --- | --- | --- |
-| IndexedDB theft | AES-256-GCM ciphertext only; random wrapped data key; strict envelope validation | Weak passphrases can still be guessed offline |
-| Record-name metadata leakage | random opaque 128-bit record IDs; semantic labels stay inside ciphertext | record count and ciphertext sizes remain observable locally |
-| Ciphertext/record-ID tampering | AES-GCM authentication plus record ID as additional authenticated data | deletion or rollback of local IndexedDB state is still possible |
-| Passphrase persistence | passphrase is never written to IndexedDB or retained in React state after create/unlock completes | browser/password-manager behavior is outside protocol control |
-| Unlocked-tab exposure | five-minute inactivity lock plus immediate lock when tab becomes hidden | malicious same-origin code or device compromise can read an unlocked session |
-| Wallet-secret cross-contamination | UI explicitly rejects the vault as a wallet-secret store; no wallet RPC integration exists on `/vault` | users can still manually paste inappropriate secrets into arbitrary application data |
-| Recovery expectations | no server copy or recovery escrow is claimed | local deletion/device loss without export means permanent loss |
+| Database theft | per-record AES-256-GCM DEK; DEK separately wrapped by server KEK | ciphertext length/timing metadata remains observable |
+| Record substitution | account ID, credential ID and key version are authenticated as AAD | application/database compromise can still delete or roll back rows |
+| Session theft | 256-bit random token, DB stores only token hash, HttpOnly secure cookie | compromised device/browser can still act as the signed-in user |
+| ZecAuth replay | short-lived server challenge, exact message match, one-time consumption and one-time browser redemption | ZecAuth v1 capability grants remain server-authoritative |
+| KEK compromise | per-record wrapped DEKs and key versioning | managed KMS/HSM integration is still required for production |
+| Zcash operator compromise | browser never receives RPC credentials; API returns bounded projections only | compromised Z3/Zallet can lie about its own state |

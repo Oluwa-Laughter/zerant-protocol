@@ -6,8 +6,10 @@
 //! live supported regtest contract is exercised.
 #![forbid(unsafe_code)]
 
+pub mod address;
 pub mod payment;
 pub mod pczt;
+pub mod zip321;
 
 use serde_json::{Value, json};
 use zerant_core::{Error, MAX_JSON_BYTES, MAX_SAFE_INTEGER, Result};

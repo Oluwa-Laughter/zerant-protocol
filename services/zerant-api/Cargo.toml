@@ -1,0 +1,28 @@
+[package]
+name = "zerant-api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { version = "1", features = ["serde", "v4"] }
+time = { version = "0.3", features = ["serde", "formatting"] }
+thiserror = { workspace = true }
+tower-http = { version = "0.6", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+base64 = { workspace = true }
+aes-gcm = "0.10"
+sha2 = { workspace = true }
+zerant-zcash = { path = "../../crates/zerant-zcash" }
+reddsa = "0.5.2"
+hex = "0.4"
+rand = "0.8"
+url = { workspace = true }
+deadpool-postgres = "0.14"
+tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-time-0_3", "with-serde_json-1"] }
+native-tls = "0.2"
+postgres-native-tls = "0.5"

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/zerant-core", "crates/zerant-credential", "crates/zerant-policy", "crates/zerant-disclosure", "crates/zerant-zcash"]
+members = ["crates/zerant-core", "crates/zerant-credential", "crates/zerant-policy", "crates/zerant-disclosure", "crates/zerant-zcash", "services/zerant-api"]
 resolver = "2"
 
 [workspace.dependencies]

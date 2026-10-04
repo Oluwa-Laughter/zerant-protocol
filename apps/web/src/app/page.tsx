@@ -171,12 +171,12 @@ export default function Home() {
 
       <section className="section live-now">
         <div className="section-heading">
-          <p className="eyebrow">What is live today</p>
-          <h2>Real foundations, clearly labeled.</h2>
+          <p className="eyebrow">Implementation status</p>
+          <h2>Built, deployed, and still being connected — clearly labeled.</h2>
         </div>
         <div className="live-grid">
-          <article><span className="status-badge live">Live</span><h3>Encrypted holder vault</h3><p>Local Web Crypto encryption and IndexedDB storage for holder-provided records.</p><Link href="/vault" className="text-link">Open vault →</Link></article>
-          <article><span className="status-badge live">Live</span><h3>Native protocol core</h3><p>Credential, policy, disclosure, replay and payment verification implemented in Rust.</p></article>
+          <article><span className="status-badge ready">Built</span><h3>Server credential vault</h3><p>ZecAuth-authenticated credentials encrypted by the Rust API and persisted in PostgreSQL. A deployed API and database are required.</p><Link href="/vault" className="text-link">Open vault →</Link></article>
+          <article><span className="status-badge ready">Built</span><h3>Native protocol core</h3><p>Credential, policy, disclosure, replay and payment verification implemented in Rust.</p></article>
           <article><span className="status-badge building">Building</span><h3>Authenticated browser transport</h3><p>The web product will receive and respond to real verifier requests through the native protocol boundary.</p></article>
           <article><span className="status-badge building">Building</span><h3>Production issuer and Zcash connections</h3><p>Issuer services, wallet operations and live threshold signing remain explicit integrations, not simulated browser state.</p></article>
         </div>

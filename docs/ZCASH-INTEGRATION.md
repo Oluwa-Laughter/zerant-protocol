@@ -146,3 +146,11 @@ All concrete repository RPC helpers require authentication and use the fixed loo
 router. CI uses deterministic fixtures and never starts a node or sends funds. Runtime
 `rpc.discover` remains authoritative for whether `z_sendmany`, `z_sendfromaccount`, or
 individual PCZT methods are available on the operator's current Zallet build.
+
+## ZecAuth server authentication
+
+`zerant-api` implements the server-verification side of the ZecAuth v1 draft profile. It issues five-minute domain/chain/nonce challenges, verifies RedPallas public keys and signatures with `reddsa`, consumes each challenge once, and creates opaque HttpOnly sessions only after the browser redeems its completed server-side authentication attempt.
+
+The default capability allow-list is `auth` plus `request_payment`. Broader viewing capabilities must be explicitly enabled by the operator. The authentication key is a pseudonymous login identity only and is never interpreted as a Zcash address or spending key.
+
+Authenticated users can query bounded Z3/Zallet capability, chain-readiness and wallet-readiness state through the Rust API. Raw balances, seed fingerprints, address inventories and wallet history are not returned to the browser.

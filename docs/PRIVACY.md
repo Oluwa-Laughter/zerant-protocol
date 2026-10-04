@@ -48,10 +48,12 @@ For payment conditions, the verifier receives an issuer-backed `payment.invoice_
 
 The browser integration console uses public fixtures and transient state only. Its settlement choices are simulations. Native Rust verification and previously recorded Z3 regtest evidence are labeled separately. No browser code receives wallet secrets, PCZT bytes, FROST shares, or native RPC credentials.
 
-## Local holder vault
+## Server credential vault
 
-`/vault` is a real browser-local encrypted storage boundary, not a server-backed account. It persists only a strict versioned envelope and ciphertext records in IndexedDB. Each record uses a fresh AES-256-GCM IV and an opaque random 128-bit record ID that is authenticated as additional data, so claim names and contexts are not stored in plaintext record identifiers.
+`/vault` is server-backed. The browser does not persist credentials, passphrases, wallet secrets, or bearer tokens. It renders server state and submits user actions through same-origin Next.js routes.
 
-The random vault data key is wrapped with AES-256-GCM under a PBKDF2-HMAC-SHA-256 key derived from the holder passphrase with a random 128-bit salt and 600,000 iterations. The passphrase is never persisted. Unlocking holds only a non-exportable CryptoKey reference in memory; locking releases that reference on a best-effort basis. The UI auto-locks after five minutes of inactivity and when the tab becomes hidden.
+The Rust API stores durable credential state in PostgreSQL. Each credential is encrypted with a fresh random AES-256-GCM data key; that data key is wrapped under a versioned server key-encryption key. The database therefore stores credential ciphertext plus a wrapped DEK, not plaintext credentials or the KEK.
 
-This does **not** protect an unlocked vault from a compromised browser, extension, operating system, or malicious same-origin script. JavaScript cannot guarantee physical memory erasure. The vault therefore excludes Zcash seed phrases, spending keys, wallet passwords, PCZT artifacts and FROST shares by design. There is no server backup, recovery escrow, analytics event, or synchronization path.
+Authentication follows the ZecAuth v1 draft model: a purpose-specific RedPallas authentication key signs a short-lived domain/chain/nonce challenge. The auth key is distinct from Zcash spending authority. Session and authentication-attempt tokens are only delivered as HttpOnly, Secure, SameSite=Lax cookies.
+
+Production deployment should place the KEK in a managed KMS/HSM rather than a long-lived raw environment value. Z3/Zallet credentials, FROST shares, Zcash seed phrases and spending keys remain outside the credential store.
