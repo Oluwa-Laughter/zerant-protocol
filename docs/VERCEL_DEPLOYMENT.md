@@ -40,6 +40,25 @@ Do not create `ZERANT_API_ORIGIN` manually. Vercel injects it from the `web -> b
 
 Do not expose any of these with a `NEXT_PUBLIC_` prefix.
 
+
+
+## Vault key rotation
+
+Zerant supports multiple decryption-key versions. New records use `ZERANT_VAULT_KEY_VERSION`; older records select the historical key recorded with their ciphertext.
+
+For the first rotation:
+
+1. Keep the current version-1 key.
+2. Generate a new 32-byte URL-safe base64 key.
+3. Set `ZERANT_VAULT_KEYS_B64` to a JSON object containing both versions, for example `{"1":"<current>","2":"<new>"}`.
+4. Set `ZERANT_VAULT_KEY_VERSION=2`.
+5. Redeploy and verify that both old and newly-created credentials remain readable.
+6. Once the versioned keyring is confirmed, `ZERANT_VAULT_KEK_B64` can be removed because the JSON keyring contains the active and historical keys.
+
+Do not delete a historical key from `ZERANT_VAULT_KEYS_B64` while database rows still reference that key version. Missing historical keys fail closed instead of guessing or silently corrupting data.
+
+This keyring is an interim production-hardening mechanism. Managed KMS/HSM custody remains the target for stronger operational isolation.
+
 ## Not required yet
 
 Do not configure `Z3_REGTEST_RPC_ROUTER_USER` or `Z3_REGTEST_RPC_ROUTER_PASSWORD` in production yet. They belong to the currently exercised local/regtest Z3 boundary, not a production Zcash operator.

@@ -39,8 +39,8 @@ The product does not seed demo credentials, identities, payments or verification
 - Holder consent with denial producing no credential response.
 - Verifier-specific audience-bound attestations derived from private source credentials.
 - Protected account credential storage and opaque authenticated sessions.
-- Issuer registration, private credential issuance, recipient delivery by Zerant ID, and immediate credential revocation.
-- Verifier registration, trusted-issuer selection, short-lived requests and verified status.
+- Issuer registration, reusable credential types, private issuance, recipient delivery by Zerant ID, credential-type retirement and immediate credential revocation.
+- Verifier registration, issuer-defined credential selection, short-lived requests and verified status.
 - Append-only account activity history with cursor pagination.
 - Database-backed per-account write quotas across Vercel instances, plus a global authentication-challenge circuit breaker.
 - Zcash-native authentication separation from payment authority.
@@ -50,7 +50,7 @@ The product does not seed demo credentials, identities, payments or verification
 
 ## Security and privacy status
 
-The current server-first product encrypts credential records at rest with per-record data keys wrapped by a versioned service key. The browser is not the credential or session source of truth.
+The current server-first product encrypts credential records at rest with per-record data keys wrapped by a versioned service keyring. Key rotation preserves access to records encrypted under retained historical versions. The browser is not the credential or session source of truth.
 
 This is **not end-to-end holder-only encryption**: an authorized Zerant service runtime can decrypt a holder record in order to serve the holder and construct an approved proof. Production deployment therefore requires strict service isolation, managed KMS/HSM custody, audit controls and careful backup access. Verifiers and other Zerant users do not receive the holder's private credential portfolio.
 

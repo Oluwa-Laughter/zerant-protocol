@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     convert::TryFrom,
     env,
     net::{IpAddr, SocketAddr},
@@ -64,7 +64,7 @@ struct AppState {
 
 #[derive(Clone)]
 struct VaultCipher {
-    kek: Aes256Gcm,
+    keks: BTreeMap<i32, Aes256Gcm>,
     key_version: i32,
 }
 
@@ -406,22 +406,61 @@ struct ZcashStatus {
 }
 
 impl VaultCipher {
-    fn from_env() -> Result<Self, ApiError> {
-        let encoded = env::var("ZERANT_VAULT_KEK_B64").map_err(|_| ApiError::Unavailable)?;
+    fn decode_kek(encoded: &str) -> Result<Aes256Gcm, ApiError> {
         let mut bytes = URL_SAFE_NO_PAD
             .decode(encoded.as_bytes())
             .map_err(|_| ApiError::Unavailable)?;
         if bytes.len() != 32 {
+            bytes.fill(0);
             return Err(ApiError::Unavailable);
         }
         let kek = Aes256Gcm::new_from_slice(&bytes).map_err(|_| ApiError::Unavailable)?;
         bytes.fill(0);
+        Ok(kek)
+    }
+
+    fn from_env() -> Result<Self, ApiError> {
         let key_version = env::var("ZERANT_VAULT_KEY_VERSION")
             .ok()
             .and_then(|value| value.parse::<i32>().ok())
             .filter(|value| *value > 0)
             .unwrap_or(1);
-        Ok(Self { kek, key_version })
+
+        let mut keks = BTreeMap::new();
+
+        if let Ok(raw) = env::var("ZERANT_VAULT_KEYS_B64") {
+            let encoded_keys: BTreeMap<String, String> =
+                serde_json::from_str(&raw).map_err(|_| ApiError::Unavailable)?;
+            if encoded_keys.is_empty() || encoded_keys.len() > 16 {
+                return Err(ApiError::Unavailable);
+            }
+            for (version, encoded) in encoded_keys {
+                let version = version
+                    .parse::<i32>()
+                    .ok()
+                    .filter(|value| *value > 0)
+                    .ok_or(ApiError::Unavailable)?;
+                if keks.insert(version, Self::decode_kek(&encoded)?).is_some() {
+                    return Err(ApiError::Unavailable);
+                }
+            }
+        }
+
+        if let Ok(encoded) = env::var("ZERANT_VAULT_KEK_B64")
+            && let std::collections::btree_map::Entry::Vacant(entry) = keks.entry(key_version)
+        {
+            entry.insert(Self::decode_kek(&encoded)?);
+        }
+
+        if !keks.contains_key(&key_version) {
+            return Err(ApiError::Unavailable);
+        }
+
+        Ok(Self { keks, key_version })
+    }
+
+    fn key_for_version(&self, version: i32) -> Result<&Aes256Gcm, ApiError> {
+        self.keks.get(&version).ok_or(ApiError::Unavailable)
     }
 
     fn data_aad(account_id: Uuid, credential_id: Uuid, key_version: i32) -> Vec<u8> {
@@ -448,6 +487,7 @@ impl VaultCipher {
         let dek = Aes256Gcm::new_from_slice(&dek_bytes).map_err(|_| ApiError::Unavailable)?;
         let data_aad = Self::data_aad(account_id, credential_id, self.key_version);
         let key_aad = Self::key_aad(account_id, credential_id, self.key_version);
+        let kek = self.key_for_version(self.key_version)?;
 
         let ciphertext = dek
             .encrypt(
@@ -459,8 +499,7 @@ impl VaultCipher {
             )
             .map_err(|_| ApiError::Unavailable)?;
 
-        let wrapped_dek = self
-            .kek
+        let wrapped_dek = kek
             .encrypt(
                 (&wrap_nonce).into(),
                 Payload {
@@ -481,15 +520,13 @@ impl VaultCipher {
     }
 
     fn decrypt(&self, account_id: Uuid, row: &CredentialRow) -> Result<Vec<u8>, ApiError> {
-        if row.key_version != self.key_version
-            || row.data_nonce.len() != 12
-            || row.wrap_nonce.len() != 12
-        {
+        if row.data_nonce.len() != 12 || row.wrap_nonce.len() != 12 {
             return Err(ApiError::Unavailable);
         }
+
+        let kek = self.key_for_version(row.key_version)?;
         let key_aad = Self::key_aad(account_id, row.id, row.key_version);
-        let mut dek_bytes = self
-            .kek
+        let mut dek_bytes = kek
             .decrypt(
                 row.wrap_nonce.as_slice().into(),
                 Payload {
@@ -3150,7 +3187,7 @@ mod tests {
     #[test]
     fn envelope_encryption_roundtrips_and_tampering_fails() {
         let cipher = VaultCipher {
-            kek: Aes256Gcm::new_from_slice(&[7_u8; 32]).unwrap(),
+            keks: BTreeMap::from([(1, Aes256Gcm::new_from_slice(&[7_u8; 32]).unwrap())]),
             key_version: 1,
         };
         let account = Uuid::from_u128(1);
@@ -3183,7 +3220,7 @@ mod tests {
     #[test]
     fn envelope_encryption_uses_fresh_keys_and_nonces() {
         let cipher = VaultCipher {
-            kek: Aes256Gcm::new_from_slice(&[9_u8; 32]).unwrap(),
+            keks: BTreeMap::from([(1, Aes256Gcm::new_from_slice(&[9_u8; 32]).unwrap())]),
             key_version: 1,
         };
         let account = Uuid::from_u128(3);
@@ -3198,5 +3235,48 @@ mod tests {
         assert_ne!(first.wrap_nonce, second.wrap_nonce);
         assert_ne!(first.wrapped_dek, second.wrapped_dek);
         assert_ne!(first.ciphertext, second.ciphertext);
+    }
+
+    #[test]
+    fn envelope_key_rotation_keeps_old_records_readable() {
+        let account = Uuid::from_u128(10);
+        let old_id = Uuid::from_u128(11);
+        let old_cipher = VaultCipher {
+            keks: BTreeMap::from([(1, Aes256Gcm::new_from_slice(&[1_u8; 32]).unwrap())]),
+            key_version: 1,
+        };
+        let encrypted = old_cipher.encrypt(account, old_id, b"old-record").unwrap();
+
+        let row = CredentialRow {
+            id: old_id,
+            ciphertext: encrypted.ciphertext,
+            data_nonce: encrypted.data_nonce,
+            wrapped_dek: encrypted.wrapped_dek,
+            wrap_nonce: encrypted.wrap_nonce,
+            key_version: encrypted.key_version,
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+        };
+
+        let rotated = VaultCipher {
+            keks: BTreeMap::from([
+                (1, Aes256Gcm::new_from_slice(&[1_u8; 32]).unwrap()),
+                (2, Aes256Gcm::new_from_slice(&[2_u8; 32]).unwrap()),
+            ]),
+            key_version: 2,
+        };
+
+        assert_eq!(rotated.decrypt(account, &row).unwrap(), b"old-record");
+
+        let new_record = rotated
+            .encrypt(account, Uuid::from_u128(12), b"new-record")
+            .unwrap();
+        assert_eq!(new_record.key_version, 2);
+
+        let missing_old_key = VaultCipher {
+            keks: BTreeMap::from([(2, Aes256Gcm::new_from_slice(&[2_u8; 32]).unwrap())]),
+            key_version: 2,
+        };
+        assert!(missing_old_key.decrypt(account, &row).is_err());
     }
 }
