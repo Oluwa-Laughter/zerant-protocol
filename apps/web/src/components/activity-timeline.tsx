@@ -32,6 +32,10 @@ function eventTitle(type: string): string {
       return "Verification denied";
     case "verification_expired":
       return "Verification expired";
+    case "verifier_api_key_created":
+      return "Integration key created";
+    case "verifier_api_key_revoked":
+      return "Integration key revoked";
     default:
       return "Trust activity";
   }
@@ -73,8 +77,7 @@ export function ActivityTimeline({
         <p className="eyebrow">Activity</p>
         <h1>Your trust history.</h1>
         <p>
-          See when credentials were issued or revoked and when verification requests were
-          created, approved, denied or expired.
+          See credential, verification and developer-access changes associated with your Zerant account.
         </p>
       </section>
 
@@ -101,7 +104,7 @@ export function ActivityTimeline({
           <div className="activity-empty">
             <h2>No activity yet.</h2>
             <p className="muted">
-              Issuance, revocation and verification decisions will appear here.
+              Issuance, verification decisions and integration access changes will appear here.
             </p>
           </div>
         )}

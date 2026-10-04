@@ -122,3 +122,49 @@ export async function fetchZerantPublic(path: string): Promise<Response | null> 
     return null;
   }
 }
+
+export async function proxyIntegrationToZerant(
+  request: Request,
+  path: string,
+  options?: { method?: string },
+): Promise<Response> {
+  const authorization = request.headers.get("authorization");
+  if (!authorization?.startsWith("Bearer ")) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const method = options?.method ?? request.method;
+  let body: ArrayBuffer | undefined;
+  if (!["GET", "HEAD"].includes(method)) {
+    body = await request.arrayBuffer();
+    if (body.byteLength > MAX_PROXY_BODY) {
+      return Response.json({ error: "request too large" }, { status: 413 });
+    }
+  }
+
+  const headers = new Headers({ authorization });
+  const contentType = request.headers.get("content-type");
+  if (contentType) headers.set("content-type", contentType);
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(new URL(path, backendOrigin()), {
+      method,
+      headers,
+      body,
+      redirect: "manual",
+      cache: "no-store",
+    });
+  } catch {
+    return Response.json({ error: "Zerant API unavailable" }, { status: 503 });
+  }
+
+  const responseHeaders = new Headers({ "cache-control": "no-store" });
+  const upstreamType = upstream.headers.get("content-type");
+  if (upstreamType) responseHeaders.set("content-type", upstreamType);
+
+  return new Response(await upstream.arrayBuffer(), {
+    status: upstream.status,
+    headers: responseHeaders,
+  });
+}

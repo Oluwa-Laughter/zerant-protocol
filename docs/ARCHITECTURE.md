@@ -64,6 +64,8 @@ Credential definitions are immutable once used. Issuers publish a new database r
 
 Public trust discovery exposes only organization-level verification material: issuer identity, public signing-key lifecycle, immutable credential-definition versions and signed revocation state. Directory enumeration is cursor-paginated and bounded. Holder IDs, recipients, credentials, sessions and wallet data are excluded by contract and regression tests.
 
+Verifier integrations use separately revocable bearer credentials whose full secrets are shown once and stored only as SHA-256 hashes. Integration keys have explicit request-create/read scopes and optional expiry. Machine request creation reuses the same account-scoped request core as the signed-in verifier dashboard and requires immutable managed credential definitions. Browser sessions are not forwarded through the integration proxy.
+
 Protocol-critical logic remains native Rust. Contextual policy evaluation, disclosure v0.2/v0.3, replay persistence, issuer issuance, verifier requests, holder consent, verifier-scoped holder proof keys, audience-bound proof construction, payment-intent/settlement verification, the read-only Z3 transport, protected credential storage, ZecAuth authentication and server sessions are implemented. Production wallet spending, managed KMS/HSM custody, stronger unlinkable credential systems, invoice automation and live FROST signing remain future work.
 
 See [M1B implementation](specs/implementation-m1b.md).

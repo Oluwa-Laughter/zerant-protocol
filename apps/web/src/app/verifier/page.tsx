@@ -4,6 +4,7 @@ import {
   VerifierWorkspace,
   type TrustedIssuerOption,
   type VerificationRequestItem,
+  type VerifierApiKeyView,
   type VerifierKeyView,
   type VerifierProfile,
 } from "@/components/verifier-workspace";
@@ -26,6 +27,7 @@ export default async function VerifierPage() {
   let issuers: TrustedIssuerOption[] = [];
   let requests: VerificationRequestItem[] = [];
   let keys: VerifierKeyView[] = [];
+  let apiKeys: VerifierApiKeyView[] = [];
 
   try {
     const sessionResponse = await fetchZerantBackend("/v1/session", cookieHeader);
@@ -41,15 +43,19 @@ export default async function VerifierPage() {
       const profileResponse = await fetchZerantBackend("/v1/verifier", cookieHeader);
       if (profileResponse?.ok) {
         profile = (await profileResponse.json()) as VerifierProfile;
-        const [requestsResponse, keysResponse] = await Promise.all([
+        const [requestsResponse, keysResponse, apiKeysResponse] = await Promise.all([
           fetchZerantBackend("/v1/verifier/requests", cookieHeader),
           fetchZerantBackend("/v1/verifier/keys", cookieHeader),
+          fetchZerantBackend("/v1/verifier/api-keys", cookieHeader),
         ]);
         if (requestsResponse?.ok) {
           requests = (await requestsResponse.json()) as VerificationRequestItem[];
         }
         if (keysResponse?.ok) {
           keys = (await keysResponse.json()) as VerifierKeyView[];
+        }
+        if (apiKeysResponse?.ok) {
+          apiKeys = (await apiKeysResponse.json()) as VerifierApiKeyView[];
         }
       }
     }
@@ -65,6 +71,7 @@ export default async function VerifierPage() {
       issuers={issuers}
       initialRequests={requests}
       initialKeys={keys}
+      initialApiKeys={apiKeys}
     />
   );
 }

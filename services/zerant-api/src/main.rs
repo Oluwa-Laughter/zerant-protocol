@@ -63,6 +63,8 @@ const SESSION_TTL_DAYS: i64 = 7;
 const ZECAUTH_TTL_MINUTES: i64 = 5;
 const WRITE_RATE_WINDOW_SECONDS: i64 = 60;
 const MAX_ACTIVE_ZECAUTH_CHALLENGES: i64 = 10_000;
+const MAX_ACTIVE_VERIFIER_API_KEYS: i64 = 20;
+const VERIFIER_API_KEY_PREFIX: &str = "zrt_vk_";
 
 #[derive(Clone)]
 struct AppState {
@@ -455,6 +457,32 @@ struct VerifierKeyView {
     retired_at: Option<OffsetDateTime>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateVerifierApiKey {
+    name: String,
+    scopes: Vec<String>,
+    expires_in_days: Option<u16>,
+}
+
+#[derive(Serialize)]
+struct VerifierApiKeyView {
+    id: Uuid,
+    name: String,
+    key_prefix: String,
+    scopes: Vec<String>,
+    created_at: OffsetDateTime,
+    last_used_at: Option<OffsetDateTime>,
+    expires_at: Option<OffsetDateTime>,
+    revoked: bool,
+}
+
+#[derive(Serialize)]
+struct CreatedVerifierApiKey {
+    key: VerifierApiKeyView,
+    secret: String,
+}
+
 #[derive(Serialize)]
 struct IssuerDirectoryEntry {
     display_name: String,
@@ -470,6 +498,7 @@ struct CreateVerificationRequest {
     credential_schema_id: Option<Uuid>,
     claim_type: Option<String>,
     context: Option<String>,
+    #[serde(default)]
     accepted_issuer_ids: Vec<String>,
 }
 
@@ -732,6 +761,91 @@ fn cookie_value(headers: &HeaderMap, name: &str) -> Result<String, ApiError> {
 
 fn session_token(headers: &HeaderMap) -> Result<String, ApiError> {
     cookie_value(headers, SESSION_COOKIE)
+}
+
+fn normalize_verifier_api_scopes(mut scopes: Vec<String>) -> Result<Vec<String>, ApiError> {
+    if scopes.is_empty() || scopes.len() > 2 {
+        return Err(ApiError::Invalid);
+    }
+    scopes.sort();
+    scopes.dedup();
+    if scopes.is_empty()
+        || scopes
+            .iter()
+            .any(|scope| !matches!(scope.as_str(), "requests:create" | "requests:read"))
+    {
+        return Err(ApiError::Invalid);
+    }
+    Ok(scopes)
+}
+
+fn generate_verifier_api_secret() -> String {
+    let mut bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    let encoded = URL_SAFE_NO_PAD.encode(bytes);
+    bytes.fill(0);
+    format!("{VERIFIER_API_KEY_PREFIX}{encoded}")
+}
+
+fn bearer_token(headers: &HeaderMap) -> Result<&str, ApiError> {
+    let header = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(ApiError::Unauthorized)?;
+    let token = header
+        .strip_prefix("Bearer ")
+        .filter(|value| value.starts_with(VERIFIER_API_KEY_PREFIX))
+        .filter(|value| (48..=128).contains(&value.len()))
+        .ok_or(ApiError::Unauthorized)?;
+    if token.chars().any(char::is_whitespace) {
+        return Err(ApiError::Unauthorized);
+    }
+    Ok(token)
+}
+
+async fn verifier_api_account_id(
+    headers: &HeaderMap,
+    db: &Pool,
+    required_scope: &str,
+) -> Result<Uuid, ApiError> {
+    if !matches!(required_scope, "requests:create" | "requests:read") {
+        return Err(ApiError::Unavailable);
+    }
+    let token = bearer_token(headers)?;
+    let hash = Sha256::digest(token.as_bytes()).to_vec();
+    let client = db_client(db).await?;
+    let row = client
+        .query_opt(
+            "WITH matched AS (
+                 SELECT k.id, v.account_id, k.scopes, k.last_used_at
+                 FROM verifier_api_keys k
+                 JOIN verifier_profiles v ON v.id = k.verifier_profile_id
+                 WHERE k.token_hash = $1
+                   AND k.revoked_at IS NULL
+                   AND (k.expires_at IS NULL OR k.expires_at > NOW())
+             ), touched AS (
+                 UPDATE verifier_api_keys k
+                 SET last_used_at = NOW()
+                 FROM matched m
+                 WHERE k.id = m.id
+                   AND (m.last_used_at IS NULL OR m.last_used_at < NOW() - INTERVAL '5 minutes')
+                 RETURNING k.id
+             )
+             SELECT m.account_id, m.scopes
+             FROM matched m
+             LEFT JOIN touched t ON t.id = m.id",
+            &[&hash],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+    let scopes_value: Value = row.get(1);
+    let scopes: Vec<String> =
+        serde_json::from_value(scopes_value).map_err(|_| ApiError::Unavailable)?;
+    if !scopes.iter().any(|scope| scope == required_scope) {
+        return Err(ApiError::Unauthorized);
+    }
+    Ok(row.get(0))
 }
 
 async fn db_client(db: &Pool) -> Result<deadpool_postgres::Client, ApiError> {
@@ -2551,6 +2665,192 @@ async fn rotate_verifier_key(
     }))
 }
 
+async fn create_verifier_api_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CreateVerifierApiKey>,
+) -> Result<(StatusCode, Json<CreatedVerifierApiKey>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "verifier_api_key_create", 10).await?;
+
+    let name = input.name.trim().to_owned();
+    if !valid_short_text(&name, 2, 80) {
+        return Err(ApiError::Invalid);
+    }
+    let scopes = normalize_verifier_api_scopes(input.scopes)?;
+    let now = OffsetDateTime::now_utc();
+    let expires_at = match input.expires_in_days {
+        Some(days) if (1..=365).contains(&days) => Some(now + Duration::days(i64::from(days))),
+        Some(_) => return Err(ApiError::Invalid),
+        None => None,
+    };
+
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let verifier = tx
+        .query_opt(
+            "SELECT id FROM verifier_profiles WHERE account_id = $1 FOR UPDATE",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let verifier_profile_id: Uuid = verifier.get(0);
+
+    let active_count: i64 = tx
+        .query_one(
+            "SELECT COUNT(*)
+             FROM verifier_api_keys
+             WHERE verifier_profile_id = $1
+               AND revoked_at IS NULL
+               AND (expires_at IS NULL OR expires_at > NOW())",
+            &[&verifier_profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    if active_count >= MAX_ACTIVE_VERIFIER_API_KEYS {
+        return Err(ApiError::Conflict);
+    }
+
+    let secret = generate_verifier_api_secret();
+    let key_prefix: String = secret.chars().take(24).collect();
+    let token_hash = Sha256::digest(secret.as_bytes()).to_vec();
+    let scopes_value = serde_json::to_value(&scopes).map_err(|_| ApiError::Unavailable)?;
+    let id = Uuid::new_v4();
+
+    let row = tx
+        .query_one(
+            "INSERT INTO verifier_api_keys
+             (id, verifier_profile_id, name, key_prefix, token_hash, scopes, expires_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
+             RETURNING created_at",
+            &[
+                &id,
+                &verifier_profile_id,
+                &name,
+                &key_prefix,
+                &token_hash,
+                &scopes_value,
+                &expires_at,
+            ],
+        )
+        .await
+        .map_err(|error| {
+            if error
+                .as_db_error()
+                .is_some_and(|db| db.code().code() == "23505")
+            {
+                ApiError::Conflict
+            } else {
+                ApiError::Unavailable
+            }
+        })?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(CreatedVerifierApiKey {
+            key: VerifierApiKeyView {
+                id,
+                name,
+                key_prefix,
+                scopes,
+                created_at: row.get(0),
+                last_used_at: None,
+                expires_at,
+                revoked: false,
+            },
+            secret,
+        }),
+    ))
+}
+
+async fn list_verifier_api_keys(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<VerifierApiKeyView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let rows = client
+        .query(
+            "SELECT k.id, k.name, k.key_prefix, k.scopes, k.created_at,
+                    k.last_used_at, k.expires_at, k.revoked_at
+             FROM verifier_api_keys k
+             JOIN verifier_profiles v ON v.id = k.verifier_profile_id
+             WHERE v.account_id = $1
+             ORDER BY k.created_at DESC
+             LIMIT 100",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let mut keys = Vec::with_capacity(rows.len());
+    for row in rows {
+        let scopes_value: Value = row.get(3);
+        let scopes: Vec<String> =
+            serde_json::from_value(scopes_value).map_err(|_| ApiError::Unavailable)?;
+        let revoked_at: Option<OffsetDateTime> = row.get(7);
+        keys.push(VerifierApiKeyView {
+            id: row.get(0),
+            name: row.get(1),
+            key_prefix: row.get(2),
+            scopes,
+            created_at: row.get(4),
+            last_used_at: row.get(5),
+            expires_at: row.get(6),
+            revoked: revoked_at.is_some(),
+        });
+    }
+    Ok(Json(keys))
+}
+
+async fn revoke_verifier_api_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<VerifierApiKeyView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "verifier_api_key_revoke", 20).await?;
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            "UPDATE verifier_api_keys k
+             SET revoked_at = NOW()
+             FROM verifier_profiles v
+             WHERE k.id = $1
+               AND k.verifier_profile_id = v.id
+               AND v.account_id = $2
+               AND k.revoked_at IS NULL
+             RETURNING k.id, k.name, k.key_prefix, k.scopes, k.created_at,
+                       k.last_used_at, k.expires_at",
+            &[&id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Conflict)?;
+
+    let scopes_value: Value = row.get(3);
+    let scopes: Vec<String> =
+        serde_json::from_value(scopes_value).map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(VerifierApiKeyView {
+        id: row.get(0),
+        name: row.get(1),
+        key_prefix: row.get(2),
+        scopes,
+        created_at: row.get(4),
+        last_used_at: row.get(5),
+        expires_at: row.get(6),
+        revoked: true,
+    }))
+}
+
 async fn register_verifier(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2711,12 +3011,11 @@ async fn issuer_directory(
     Ok(Json(result))
 }
 
-async fn create_verification_request(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(input): Json<CreateVerificationRequest>,
-) -> Result<(StatusCode, Json<VerifierRequestView>), ApiError> {
-    let account = account_id(&headers, &state.db).await?;
+async fn create_verification_request_for_account(
+    state: &AppState,
+    account: Uuid,
+    input: CreateVerificationRequest,
+) -> Result<VerifierRequestView, ApiError> {
     enforce_account_rate_limit(&state.db, account, "verification_request", 60).await?;
     let holder_zerant_id = input.holder_zerant_id.trim().to_owned();
     let purpose = input.purpose.trim().to_owned();
@@ -2819,7 +3118,7 @@ async fn create_verification_request(
     let signing_key_row_id: Uuid = verifier.get(4);
     let verifier_key_id: String = verifier.get(5);
     let verifier_secret = secret_row(&verifier, signing_key_row_id, 6);
-    let private = decrypt_stored_jwk(&state, account, &verifier_secret)?;
+    let private = decrypt_stored_jwk(state, account, &verifier_secret)?;
 
     let now = OffsetDateTime::now_utc();
     let now_i64 = now.unix_timestamp();
@@ -2875,22 +3174,97 @@ async fn create_verification_request(
         .await
         .map_err(|_| ApiError::Unavailable)?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(VerifierRequestView {
-            id: db_id,
-            holder_zerant_id,
-            purpose,
-            credential_schema_id,
-            credential_name,
-            claim_type,
-            context,
-            status: "pending".into(),
-            verified: false,
-            created_at: now,
-            expires_at: expires_time,
-        }),
-    ))
+    Ok(VerifierRequestView {
+        id: db_id,
+        holder_zerant_id,
+        purpose,
+        credential_schema_id,
+        credential_name,
+        claim_type,
+        context,
+        status: "pending".into(),
+        verified: false,
+        created_at: now,
+        expires_at: expires_time,
+    })
+}
+
+async fn create_verification_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CreateVerificationRequest>,
+) -> Result<(StatusCode, Json<VerifierRequestView>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let request = create_verification_request_for_account(&state, account, input).await?;
+    Ok((StatusCode::CREATED, Json(request)))
+}
+
+async fn create_integration_verification_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CreateVerificationRequest>,
+) -> Result<(StatusCode, Json<VerifierRequestView>), ApiError> {
+    if input.credential_schema_id.is_none() || input.claim_type.is_some() || input.context.is_some()
+    {
+        return Err(ApiError::Invalid);
+    }
+    let account = verifier_api_account_id(&headers, &state.db, "requests:create").await?;
+    let request = create_verification_request_for_account(&state, account, input).await?;
+    Ok((StatusCode::CREATED, Json(request)))
+}
+
+async fn get_integration_verification_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<VerifierRequestView>, ApiError> {
+    let account = verifier_api_account_id(&headers, &state.db, "requests:read").await?;
+    let client = db_client(&state.db).await?;
+    client
+        .execute(
+            "UPDATE verification_requests r
+             SET status = 'expired'
+             FROM verifier_profiles p
+             WHERE r.id = $1
+               AND r.verifier_profile_id = p.id
+               AND p.account_id = $2
+               AND r.status = 'pending'
+               AND r.expires_at <= NOW()",
+            &[&id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let row = client
+        .query_opt(
+            "SELECT r.id, a.public_handle, r.purpose, r.credential_schema_id, s.display_name,
+                    r.claim_type, r.context, r.status, r.created_at, r.expires_at
+             FROM verification_requests r
+             JOIN verifier_profiles p ON p.id = r.verifier_profile_id
+             JOIN accounts a ON a.id = r.subject_account_id
+             LEFT JOIN credential_schemas s ON s.id = r.credential_schema_id
+             WHERE p.account_id = $1 AND r.id = $2",
+            &[&account, &id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+
+    let status: String = row.get(7);
+    let holder: Option<String> = row.get(1);
+    Ok(Json(VerifierRequestView {
+        id: row.get(0),
+        holder_zerant_id: holder.ok_or(ApiError::Unavailable)?,
+        purpose: row.get(2),
+        credential_schema_id: row.get(3),
+        credential_name: row.get(4),
+        claim_type: row.get(5),
+        context: row.get(6),
+        verified: status == "approved",
+        status,
+        created_at: row.get(8),
+        expires_at: row.get(9),
+    }))
 }
 
 async fn list_verifier_requests(
@@ -4509,8 +4883,24 @@ fn app(state: AppState) -> Router {
         .route("/v1/verifier/keys", get(list_verifier_keys))
         .route("/v1/verifier/keys/rotate", post(rotate_verifier_key))
         .route(
+            "/v1/verifier/api-keys",
+            get(list_verifier_api_keys).post(create_verifier_api_key),
+        )
+        .route(
+            "/v1/verifier/api-keys/{id}/revoke",
+            post(revoke_verifier_api_key),
+        )
+        .route(
             "/v1/verifier/requests",
             get(list_verifier_requests).post(create_verification_request),
+        )
+        .route(
+            "/v1/integrations/verifier/requests",
+            post(create_integration_verification_request),
+        )
+        .route(
+            "/v1/integrations/verifier/requests/{id}",
+            get(get_integration_verification_request),
         )
         .route("/v1/holder/requests", get(list_holder_requests))
         .route(
@@ -4571,6 +4961,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0014_wallet_message_auth.sql"),
             include_str!("../migrations/0015_credential_schema_versions.sql"),
             include_str!("../migrations/0016_public_trust_metadata.sql"),
+            include_str!("../migrations/0017_verifier_api_keys.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -4855,6 +5246,70 @@ mod tests {
         assert_ne!(first.wrap_nonce, second.wrap_nonce);
         assert_ne!(first.wrapped_dek, second.wrapped_dek);
         assert_ne!(first.ciphertext, second.ciphertext);
+    }
+
+    #[test]
+    fn verifier_api_scopes_are_strict_and_canonical() {
+        assert_eq!(
+            normalize_verifier_api_scopes(vec!["requests:read".into(), "requests:create".into(),])
+                .unwrap(),
+            vec!["requests:create".to_string(), "requests:read".to_string()]
+        );
+        assert_eq!(
+            normalize_verifier_api_scopes(vec!["requests:read".into(), "requests:read".into(),])
+                .unwrap(),
+            vec!["requests:read".to_string()]
+        );
+        assert!(normalize_verifier_api_scopes(vec![]).is_err());
+        assert!(normalize_verifier_api_scopes(vec!["admin".into()]).is_err());
+        assert!(
+            normalize_verifier_api_scopes(vec![
+                "requests:create".into(),
+                "requests:read".into(),
+                "requests:create".into(),
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn verifier_api_secrets_are_random_and_bearer_only() {
+        let first = generate_verifier_api_secret();
+        let second = generate_verifier_api_secret();
+        assert!(first.starts_with(VERIFIER_API_KEY_PREFIX));
+        assert!(second.starts_with(VERIFIER_API_KEY_PREFIX));
+        assert_ne!(first, second);
+        assert!((48..=128).contains(&first.len()));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {first}")).unwrap(),
+        );
+        assert_eq!(bearer_token(&headers).unwrap(), first);
+
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer session-cookie-looking-value"),
+        );
+        assert!(bearer_token(&headers).is_err());
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_static("Basic dXNlcjpwYXNz"),
+        );
+        assert!(bearer_token(&headers).is_err());
+    }
+
+    #[test]
+    fn verifier_api_key_input_rejects_unknown_fields() {
+        let valid = serde_json::from_str::<CreateVerifierApiKey>(
+            r#"{"name":"Production","scopes":["requests:read"],"expires_in_days":90}"#,
+        );
+        assert!(valid.is_ok());
+        let unknown = serde_json::from_str::<CreateVerifierApiKey>(
+            r#"{"name":"Production","scopes":["requests:read"],"expires_in_days":90,"admin":true}"#,
+        );
+        assert!(unknown.is_err());
     }
 
     #[test]

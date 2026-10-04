@@ -41,6 +41,22 @@ export type VerifierKeyView = {
   retired_at: string | null;
 };
 
+export type VerifierApiKeyView = {
+  id: string;
+  name: string;
+  key_prefix: string;
+  scopes: string[];
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked: boolean;
+};
+
+type CreatedVerifierApiKey = {
+  key: VerifierApiKeyView;
+  secret: string;
+};
+
 export type VerificationRequestItem = {
   id: string;
   holder_zerant_id: string;
@@ -62,6 +78,7 @@ export function VerifierWorkspace({
   issuers,
   initialRequests,
   initialKeys,
+  initialApiKeys,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
@@ -69,6 +86,7 @@ export function VerifierWorkspace({
   issuers: TrustedIssuerOption[];
   initialRequests: VerificationRequestItem[];
   initialKeys: VerifierKeyView[];
+  initialApiKeys: VerifierApiKeyView[];
 }) {
   const availableSchemas = useMemo(
     () =>
@@ -87,6 +105,12 @@ export function VerifierWorkspace({
   const [profile, setProfile] = useState(initialProfile);
   const [requests, setRequests] = useState(initialRequests);
   const [keys, setKeys] = useState<VerifierKeyView[]>(initialKeys);
+  const [apiKeys, setApiKeys] = useState<VerifierApiKeyView[]>(initialApiKeys);
+  const [apiKeyName, setApiKeyName] = useState("");
+  const [apiKeyCreateScope, setApiKeyCreateScope] = useState(true);
+  const [apiKeyReadScope, setApiKeyReadScope] = useState(true);
+  const [apiKeyExpiry, setApiKeyExpiry] = useState("90");
+  const [newApiSecret, setNewApiSecret] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [origin, setOrigin] = useState("");
   const [holderId, setHolderId] = useState("");
@@ -167,6 +191,68 @@ export function VerifierWorkspace({
         ? "Compromised key replaced. Pending requests signed by it were expired."
         : "Security key rotated. Existing short-lived requests can finish normally.",
     );
+  }
+
+  async function createApiKey() {
+    const scopes = [
+      apiKeyCreateScope ? "requests:create" : null,
+      apiKeyReadScope ? "requests:read" : null,
+    ].filter((scope): scope is string => Boolean(scope));
+
+    if (!apiKeyName.trim() || !scopes.length) {
+      setStatus("Name the integration and choose at least one permission.");
+      return;
+    }
+
+    const days = Number.parseInt(apiKeyExpiry, 10);
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      setStatus("Choose a valid integration-key expiry.");
+      return;
+    }
+
+    const response = await fetch("/api/zerant/verifier/api-keys", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: apiKeyName,
+        scopes,
+        expires_in_days: days,
+      }),
+    });
+
+    if (!response.ok) {
+      setStatus(
+        response.status === 429
+          ? "You’re doing that too quickly. Try again in a minute."
+          : "Integration key could not be created.",
+      );
+      return;
+    }
+
+    const created = (await response.json()) as CreatedVerifierApiKey;
+    setApiKeys((current) => [created.key, ...current]);
+    setNewApiSecret(created.secret);
+    setApiKeyName("");
+    setStatus("Integration key created. Copy the secret now; Zerant will not show it again.");
+  }
+
+  async function revokeApiKey(id: string) {
+    const response = await fetch(
+      "/api/zerant/verifier/api-keys/" + encodeURIComponent(id) + "/revoke",
+      { method: "POST", credentials: "same-origin" },
+    );
+
+    if (!response.ok) {
+      setStatus("Integration key could not be revoked.");
+      return;
+    }
+
+    const revoked = (await response.json()) as VerifierApiKeyView;
+    setApiKeys((current) =>
+      current.map((item) => (item.id === revoked.id ? revoked : item)),
+    );
+    setStatus("Integration key revoked.");
   }
 
   async function createRequest() {
@@ -330,6 +416,116 @@ export function VerifierWorkspace({
               ))
             ) : (
               <p className="muted">Security-key history will appear here.</p>
+            )}
+          </div>
+        </article>
+      </section>
+
+      <section className="verifier-integration-section">
+        <article className="verifier-panel">
+          <p className="eyebrow">Developer integration</p>
+          <h2>Connect your server to Zerant.</h2>
+          <p className="muted">
+            Create a scoped key for your application backend. Integration keys are for
+            server-to-server use only and should never be placed in browser code.
+          </p>
+
+          <label htmlFor="integration-key-name">Integration name</label>
+          <input
+            id="integration-key-name"
+            value={apiKeyName}
+            onChange={(event) => setApiKeyName(event.target.value)}
+            placeholder="Production backend"
+          />
+
+          <fieldset className="integration-scope-options">
+            <legend>Permissions</legend>
+            <label>
+              <input
+                type="checkbox"
+                checked={apiKeyCreateScope}
+                onChange={(event) => setApiKeyCreateScope(event.target.checked)}
+              />
+              Create verification requests
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={apiKeyReadScope}
+                onChange={(event) => setApiKeyReadScope(event.target.checked)}
+              />
+              Read request status
+            </label>
+          </fieldset>
+
+          <label htmlFor="integration-key-expiry">Expires in</label>
+          <select
+            id="integration-key-expiry"
+            value={apiKeyExpiry}
+            onChange={(event) => setApiKeyExpiry(event.target.value)}
+          >
+            <option value="30">30 days</option>
+            <option value="90">90 days</option>
+            <option value="180">180 days</option>
+            <option value="365">1 year</option>
+          </select>
+
+          <Button disabled={!apiKeyName.trim()} onClick={createApiKey}>
+            Create integration key
+          </Button>
+
+          {newApiSecret ? (
+            <div className="integration-secret-card">
+              <strong>Copy this secret now.</strong>
+              <p className="small muted">Zerant stores only its hash and cannot show it again.</p>
+              <code>{newApiSecret}</code>
+              <Button
+                variant="secondary"
+                onClick={() => void navigator.clipboard?.writeText(newApiSecret)}
+              >
+                Copy secret
+              </Button>
+            </div>
+          ) : null}
+
+          <div className="integration-endpoints">
+            <span className="eyebrow">Server endpoints</span>
+            <code>POST /api/zerant/integrations/verifier/requests</code>
+            <code>GET /api/zerant/integrations/verifier/requests/&lt;request-id&gt;</code>
+          </div>
+        </article>
+
+        <article className="verifier-panel">
+          <p className="eyebrow">Integration keys</p>
+          <h2>{apiKeys.length} key{apiKeys.length === 1 ? "" : "s"}</h2>
+          <div className="integration-key-list">
+            {apiKeys.length ? (
+              apiKeys.map((key) => (
+                <article className="integration-key-card" key={key.id}>
+                  <div className="integration-key-card-top">
+                    <div>
+                      <strong>{key.name}</strong>
+                      <code>{key.key_prefix}…</code>
+                    </div>
+                    <span className={key.revoked ? "request-status denied" : "request-status approved"}>
+                      {key.revoked ? "Revoked" : "Active"}
+                    </span>
+                  </div>
+                  <p className="small muted">{key.scopes.join(" · ")}</p>
+                  <p className="small muted">
+                    Created {new Date(key.created_at).toLocaleDateString()}
+                    {key.last_used_at ? " · last used " + new Date(key.last_used_at).toLocaleDateString() : " · never used"}
+                    {key.expires_at ? " · expires " + new Date(key.expires_at).toLocaleDateString() : ""}
+                  </p>
+                  {!key.revoked ? (
+                    <Button variant="secondary" onClick={() => revokeApiKey(key.id)}>
+                      Revoke key
+                    </Button>
+                  ) : null}
+                </article>
+              ))
+            ) : (
+              <p className="muted">No integration keys yet.</p>
             )}
           </div>
         </article>

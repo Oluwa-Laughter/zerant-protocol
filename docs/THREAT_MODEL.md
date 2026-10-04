@@ -19,6 +19,7 @@ Trust boundaries separate issuer authority, holder account state, verifier reque
 | XSS, dependency or browser compromise | No credential HTML rendering, CSP review, dependency pinning, secrets outside SSR/logs | Same-origin malicious code can read unlocked data; implementation security review |
 | Status lookup tracking or central profiles | Local full snapshots, no individual lookups or portfolio endpoint | Future metadata hosting exposes access patterns; network/log inspection |
 | DoS/resource exhaustion | Size limits, bounded event lists, no untrusted URL fetches, database-backed per-account write quotas, global active-authentication circuit breaker | Per-IP anonymous abuse remains an edge/WAF responsibility; oversize parser and quota tests |
+| Verifier API-key theft | One-time secret display, SHA-256 hashed storage, explicit scopes, expiry, immediate revocation, server-only usage and shared verifier quotas | A stolen active key can act within its scopes until revoked or expired; operator secret management remains critical |
 | Clock manipulation | Trusted local clock assumption, fail closed if unhealthy, no expiry grace | Undetected OS clock manipulation defeats time bounds; simulated-clock tests |
 
 ## Limits and response
