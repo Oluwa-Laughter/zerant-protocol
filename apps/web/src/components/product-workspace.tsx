@@ -18,12 +18,23 @@ export type WorkspaceZcash = {
   chain_height: number;
 } | null;
 
+export type WorkspaceZcashNetwork = {
+  configured: boolean;
+  network: string;
+  synced: boolean;
+  block_height: number | null;
+  estimated_height: number | null;
+  lag: number | null;
+} | null;
+
 export function ProductWorkspace({
   session,
   zcash,
+  zcashNetwork,
 }: {
   session: WorkspaceSession;
   zcash: WorkspaceZcash;
+  zcashNetwork: WorkspaceZcashNetwork;
 }) {
   const authenticated = Boolean(session?.authenticated);
 
@@ -96,14 +107,37 @@ export function ProductWorkspace({
 
         <article className="workspace-card">
           <p className="eyebrow">Zcash readiness</p>
-          <h2>{zcash ? "Zcash services ready." : "Zcash services unavailable."}</h2>
+          <h2>
+            {zcashNetwork?.configured
+              ? zcashNetwork.synced
+                ? "Zcash network ready."
+                : "Zcash network syncing."
+              : zcash
+                ? "Zcash services ready."
+                : "Zcash network connection unavailable."}
+          </h2>
           <p className="muted">
-            {zcash
-              ? "Zerant can validate Zcash activity and prepare supported privacy-preserving actions."
-              : "Zcash-powered verification and payment review are temporarily unavailable."}
+            {zcashNetwork?.configured
+              ? zcashNetwork.synced
+                ? "Zerant is connected to current Zcash network data for supported privacy-preserving actions."
+                : "Zerant is catching up with the Zcash network before network-dependent actions are enabled."
+              : zcash
+                ? "Zerant can validate supported Zcash activity."
+                : "Credentials and private trust remain available while network connectivity is not configured."}
           </p>
-          <div className={zcash ? "workspace-state ready" : "workspace-state"}>
-            <span />{zcash ? "Zcash ready" : "Unavailable"}
+          <div
+            className={
+              zcashNetwork?.synced || zcash ? "workspace-state ready" : "workspace-state"
+            }
+          >
+            <span />
+            {zcashNetwork?.configured
+              ? zcashNetwork.synced
+                ? "Zcash ready"
+                : "Syncing"
+              : zcash
+                ? "Zcash ready"
+                : "Not connected"}
           </div>
         </article>
 

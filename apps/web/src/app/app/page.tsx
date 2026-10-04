@@ -4,6 +4,7 @@ import {
   ProductWorkspace,
   type WorkspaceSession,
   type WorkspaceZcash,
+  type WorkspaceZcashNetwork,
 } from "@/components/product-workspace";
 import { fetchZerantBackend } from "@/lib/server-api";
 
@@ -20,20 +21,31 @@ export default async function AppPage() {
 
   let session: WorkspaceSession = null;
   let zcash: WorkspaceZcash = null;
+  let zcashNetwork: WorkspaceZcashNetwork = null;
 
   try {
     const sessionResponse = await fetchZerantBackend("/v1/session", cookieHeader);
     if (sessionResponse?.ok) {
       session = (await sessionResponse.json()) as NonNullable<WorkspaceSession>;
-      const zcashResponse = await fetchZerantBackend("/v1/zcash/status", cookieHeader);
+      const [zcashResponse, networkResponse] = await Promise.all([
+        fetchZerantBackend("/v1/zcash/status", cookieHeader),
+        fetchZerantBackend("/v1/zcash/network/readiness", cookieHeader),
+      ]);
       if (zcashResponse?.ok) {
         zcash = (await zcashResponse.json()) as NonNullable<WorkspaceZcash>;
+      }
+      if (networkResponse?.ok) {
+        zcashNetwork =
+          (await networkResponse.json()) as NonNullable<WorkspaceZcashNetwork>;
       }
     }
   } catch {
     session = null;
     zcash = null;
+    zcashNetwork = null;
   }
 
-  return <ProductWorkspace session={session} zcash={zcash} />;
+  return (
+    <ProductWorkspace session={session} zcash={zcash} zcashNetwork={zcashNetwork} />
+  );
 }

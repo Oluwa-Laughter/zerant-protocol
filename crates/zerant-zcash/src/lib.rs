@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod address;
+pub mod lightclient;
 pub mod payment;
 pub mod pczt;
 pub mod zip321;

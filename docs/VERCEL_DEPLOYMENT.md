@@ -30,6 +30,13 @@ Set these in Vercel Project Settings -> Environment Variables.
 - `ZERANT_ZCASH_CHAIN`: `zcash:testnet` while the product remains on testnet.
 - `ZERANT_ZECAUTH_SCOPES`: `auth,request_payment`.
 
+Optional Zcash network connectivity:
+
+- ZERANT_LIGHT_CLIENT_ENDPOINT: HTTPS endpoint for a trusted Zaino or lightwalletd-compatible service.
+- ZERANT_LIGHT_CLIENT_ALLOW_LOOPBACK: keep false in Vercel; this exists only for deliberate local testing.
+
+Zerant validates the configured endpoint at startup, requires HTTPS for remote services, rejects embedded credentials, query strings, fragments and paths, bounds gRPC response sizes, and checks that the remote chain matches ZERANT_ZCASH_CHAIN.
+
 Production only:
 
 - `ZERANT_PUBLIC_ORIGIN`: `https://zerant.vercel.app` or the final custom production origin.

@@ -47,7 +47,12 @@ use zerant_disclosure::{
     Context as DisclosureContext, Decision, Evidence, REQUEST_SCHEMA, Request, VerifierPin,
     respond, sign_request,
 };
-use zerant_zcash::{Adapter, HttpRegtestTransport};
+use zerant_zcash::{
+    Adapter, HttpRegtestTransport,
+    lightclient::{
+        LightClientNetwork, fetch_light_client_readiness, validate_light_client_endpoint,
+    },
+};
 
 const SESSION_COOKIE: &str = "zerant_session";
 const AUTH_ATTEMPT_COOKIE: &str = "zerant_auth_attempt";
@@ -65,6 +70,8 @@ struct AppState {
     cipher: Arc<VaultCipher>,
     public_origin: String,
     zcash_chain: String,
+    light_client_endpoint: Option<String>,
+    light_client_allow_loopback: bool,
     allowed_scopes: BTreeSet<String>,
 }
 
@@ -456,6 +463,16 @@ struct InspectPaymentRequest {
 #[serde(deny_unknown_fields)]
 struct InspectAddress {
     address: String,
+}
+
+#[derive(Serialize)]
+struct ZcashNetworkReadiness {
+    configured: bool,
+    network: String,
+    synced: bool,
+    block_height: Option<u64>,
+    estimated_height: Option<u64>,
+    lag: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -3831,6 +3848,52 @@ async fn inspect_zcash_payment_request(
     Ok(Json(summary))
 }
 
+async fn zcash_network_readiness(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<ZcashNetworkReadiness>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "zcash_network_readiness", 60).await?;
+
+    let expected_network = match state.zcash_chain.as_str() {
+        "zcash:mainnet" => LightClientNetwork::Mainnet,
+        "zcash:testnet" => LightClientNetwork::Testnet,
+        _ => return Err(ApiError::Unavailable),
+    };
+
+    let Some(endpoint) = state.light_client_endpoint.as_deref() else {
+        return Ok(Json(ZcashNetworkReadiness {
+            configured: false,
+            network: match expected_network {
+                LightClientNetwork::Mainnet => "mainnet",
+                LightClientNetwork::Testnet => "testnet",
+            }
+            .into(),
+            synced: false,
+            block_height: None,
+            estimated_height: None,
+            lag: None,
+        }));
+    };
+
+    let readiness = fetch_light_client_readiness(
+        endpoint,
+        expected_network,
+        state.light_client_allow_loopback,
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(ZcashNetworkReadiness {
+        configured: true,
+        network: readiness.network,
+        synced: readiness.synced,
+        block_height: Some(readiness.block_height),
+        estimated_height: Some(readiness.estimated_height),
+        lag: Some(readiness.lag),
+    }))
+}
+
 async fn zcash_status(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3915,6 +3978,7 @@ fn app(state: AppState) -> Router {
         )
         .route("/v1/credentials/{id}", delete(delete_credential))
         .route("/v1/zcash/status", get(zcash_status))
+        .route("/v1/zcash/network/readiness", get(zcash_network_readiness))
         .route("/v1/zcash/address/inspect", post(inspect_zcash_address))
         .route(
             "/v1/zcash/payment-request/inspect",
@@ -4010,6 +4074,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(ApiError::Unavailable.to_string().into());
     }
 
+    let light_client_allow_loopback = env::var("ZERANT_LIGHT_CLIENT_ALLOW_LOOPBACK")
+        .map(|value| value == "true")
+        .unwrap_or(false);
+    let light_client_endpoint = env::var("ZERANT_LIGHT_CLIENT_ENDPOINT")
+        .ok()
+        .map(|value| {
+            validate_light_client_endpoint(&value, light_client_allow_loopback)
+                .map_err(|_| ApiError::Unavailable.to_string())
+        })
+        .transpose()?;
+
     let allowed_scopes: BTreeSet<String> = env::var("ZERANT_ZECAUTH_SCOPES")
         .unwrap_or_else(|_| "auth,request_payment".into())
         .split(',')
@@ -4055,6 +4130,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cipher: Arc::new(VaultCipher::from_env().map_err(|error| error.to_string())?),
         public_origin,
         zcash_chain,
+        light_client_endpoint,
+        light_client_allow_loopback,
         allowed_scopes,
     };
 

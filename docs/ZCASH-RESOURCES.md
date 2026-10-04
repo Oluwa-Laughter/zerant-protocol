@@ -35,6 +35,12 @@ Zerant accepts a bounded payment-request URI, delegates parsing and canonical re
 
 Raw memo bytes are intentionally not returned by the generic review endpoint. The browser does not implement ZIP-321 parsing.
 
+### Shielded light-client readiness
+
+zcash_client_backend 0.24.0 now provides Zerant's maintained light-client protocol boundary. Zerant can connect to a configured Zaino or lightwalletd-compatible gRPC service and read only bounded network-readiness information: expected network, current and estimated block heights, synchronization lag, and synced/not-synced state.
+
+Remote endpoints require HTTPS. The server validates the configured endpoint, applies connection/request timeouts, bounds gRPC message sizes, and rejects a service that reports the wrong chain. Wallet balances, compact-block contents and transaction history are not projected into the web product.
+
 ### Z3 / Zebra / Zallet
 
 The existing native adapter performs runtime RPC discovery and bounded readiness projections. Browser code never receives Z3 credentials or direct wallet RPC access.

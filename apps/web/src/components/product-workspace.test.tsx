@@ -5,7 +5,7 @@ import { ProductWorkspace } from "./product-workspace";
 
 test("workspace renders server and Zcash boundaries without browser-local persistence", () => {
   const html = renderToStaticMarkup(
-    <ProductWorkspace session={null} zcash={null} />,
+    <ProductWorkspace session={null} zcash={null} zcashNetwork={null} />,
   );
 
   for (const text of [
