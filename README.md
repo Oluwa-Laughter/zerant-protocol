@@ -42,6 +42,7 @@ The product does not seed demo credentials, identities, payments or verification
 - Issuer registration, private credential issuance, recipient delivery by Zerant ID, and immediate credential revocation.
 - Verifier registration, trusted-issuer selection, short-lived requests and verified status.
 - Append-only account activity history with cursor pagination.
+- Database-backed per-account write quotas across Vercel instances, plus a global authentication-challenge circuit breaker.
 - Zcash-native authentication separation from payment authority.
 - Canonical Zcash address inspection and ZIP-321 payment-request review.
 - Read-only Z3/Zallet capability and settlement-observation boundaries.

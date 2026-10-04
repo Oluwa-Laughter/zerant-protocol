@@ -50,6 +50,8 @@ const AUTH_ATTEMPT_COOKIE: &str = "zerant_auth_attempt";
 const MAX_CREDENTIAL_BYTES: usize = 256 * 1024;
 const SESSION_TTL_DAYS: i64 = 7;
 const ZECAUTH_TTL_MINUTES: i64 = 5;
+const WRITE_RATE_WINDOW_SECONDS: i64 = 60;
+const MAX_ACTIVE_ZECAUTH_CHALLENGES: i64 = 10_000;
 
 #[derive(Clone)]
 struct AppState {
@@ -76,6 +78,8 @@ enum ApiError {
     Invalid,
     #[error("conflict")]
     Conflict,
+    #[error("too many requests")]
+    TooManyRequests,
     #[error("service unavailable")]
     Unavailable,
 }
@@ -87,6 +91,7 @@ impl IntoResponse for ApiError {
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Invalid => StatusCode::BAD_REQUEST,
             Self::Conflict => StatusCode::CONFLICT,
+            Self::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             Self::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
         };
         (
@@ -512,6 +517,48 @@ async fn account_id(headers: &HeaderMap, db: &Pool) -> Result<Uuid, ApiError> {
         .ok_or(ApiError::Unauthorized)
 }
 
+async fn enforce_account_rate_limit(
+    db: &Pool,
+    account: Uuid,
+    action: &str,
+    max_requests: i32,
+) -> Result<(), ApiError> {
+    if max_requests <= 0 {
+        return Err(ApiError::Unavailable);
+    }
+    let cap = max_requests.checked_add(1).ok_or(ApiError::Unavailable)?;
+    let client = db_client(db).await?;
+    let row = client
+        .query_one(
+            "INSERT INTO account_rate_limits(account_id, action, window_started_at, request_count)
+             VALUES ($1, $2, NOW(), 1)
+             ON CONFLICT (account_id, action)
+             DO UPDATE SET
+                 window_started_at = CASE
+                     WHEN account_rate_limits.window_started_at <=
+                          NOW() - ($3::bigint * INTERVAL '1 second')
+                     THEN NOW()
+                     ELSE account_rate_limits.window_started_at
+                 END,
+                 request_count = CASE
+                     WHEN account_rate_limits.window_started_at <=
+                          NOW() - ($3::bigint * INTERVAL '1 second')
+                     THEN 1
+                     ELSE LEAST(account_rate_limits.request_count + 1, $4)
+                 END
+             RETURNING request_count",
+            &[&account, &action, &WRITE_RATE_WINDOW_SECONDS, &cap],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let count: i32 = row.get(0);
+    if count > max_requests {
+        return Err(ApiError::TooManyRequests);
+    }
+    Ok(())
+}
+
 fn zerant_public_handle(verification_key: &[u8]) -> String {
     let digest = Sha256::digest(verification_key);
     format!("zr_{}", &hex::encode(digest)[..24])
@@ -848,6 +895,26 @@ async fn zecauth_challenge(
     let client = db_client(&state.db).await?;
     client
         .execute(
+            "DELETE FROM zecauth_challenges WHERE expires_at <= NOW() - INTERVAL '1 day'",
+            &[],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let active: i64 = client
+        .query_one(
+            "SELECT COUNT(*) FROM zecauth_challenges
+             WHERE consumed_at IS NULL AND expires_at > NOW()",
+            &[],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    if active >= MAX_ACTIVE_ZECAUTH_CHALLENGES {
+        return Err(ApiError::TooManyRequests);
+    }
+
+    client
+        .execute(
             "INSERT INTO zecauth_challenges
              (id, nonce_hash, attempt_hash, message, chain, requested_scopes, expires_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7)",
@@ -1130,6 +1197,7 @@ async fn store_credential(
     Json(input): Json<StoreCredential>,
 ) -> Result<(StatusCode, Json<StoredCredential>), ApiError> {
     let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "credential_store", 30).await?;
     let mut plaintext = serde_json::to_vec(&input.credential).map_err(|_| ApiError::Invalid)?;
     if plaintext.is_empty() || plaintext.len() > MAX_CREDENTIAL_BYTES {
         plaintext.fill(0);
@@ -1284,6 +1352,7 @@ async fn register_verifier(
     Json(input): Json<RegisterVerifier>,
 ) -> Result<(StatusCode, Json<VerifierProfileView>), ApiError> {
     let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "verifier_register", 5).await?;
     let display_name = input.display_name.trim().to_owned();
     let origin = input.origin.trim().to_owned();
     if !valid_short_text(&display_name, 2, 120) || validate_origin(&origin, &[]).is_err() {
@@ -1378,6 +1447,7 @@ async fn create_verification_request(
     Json(input): Json<CreateVerificationRequest>,
 ) -> Result<(StatusCode, Json<VerifierRequestView>), ApiError> {
     let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "verification_request", 60).await?;
     let holder_zerant_id = input.holder_zerant_id.trim().to_owned();
     let purpose = input.purpose.trim().to_owned();
     let claim_type = input.claim_type.trim().to_owned();
@@ -1622,6 +1692,7 @@ async fn decide_holder_request(
     Json(input): Json<DecideRequest>,
 ) -> Result<Json<Value>, ApiError> {
     let holder_account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, holder_account, "verification_decision", 60).await?;
     if input.decision == "deny" {
         let client = db_client(&state.db).await?;
         let affected = client
@@ -1972,6 +2043,7 @@ async fn register_issuer(
     Json(input): Json<RegisterIssuer>,
 ) -> Result<(StatusCode, Json<IssuerProfileView>), ApiError> {
     let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "issuer_register", 5).await?;
     let display_name = input.display_name.trim().to_owned();
     if !(2..=120).contains(&display_name.chars().count())
         || display_name.chars().any(char::is_control)
@@ -2049,6 +2121,7 @@ async fn issue_private_credential(
     Json(input): Json<IssueCredential>,
 ) -> Result<(StatusCode, Json<IssuedCredentialView>), ApiError> {
     let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "credential_issue", 30).await?;
     let holder_zerant_id = input.holder_zerant_id.trim().to_owned();
     let claim_type = input.claim_type.trim().to_owned();
     let value = input.value.trim().to_owned();
@@ -2246,6 +2319,7 @@ async fn revoke_issued_credential(
     Path(credential_id): Path<String>,
 ) -> Result<Json<IssuedCredentialView>, ApiError> {
     let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "credential_revoke", 30).await?;
     if credential_id.is_empty() || credential_id.len() > 128 {
         return Err(ApiError::Invalid);
     }
@@ -2398,7 +2472,8 @@ async fn inspect_zcash_address(
     headers: HeaderMap,
     Json(input): Json<InspectAddress>,
 ) -> Result<Json<zerant_zcash::address::AddressSummary>, ApiError> {
-    let _ = account_id(&headers, &state.db).await?;
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "zcash_address_inspect", 120).await?;
     let summary =
         zerant_zcash::address::inspect_address(&input.address).map_err(|_| ApiError::Invalid)?;
     Ok(Json(summary))
@@ -2409,7 +2484,8 @@ async fn inspect_zcash_payment_request(
     headers: HeaderMap,
     Json(input): Json<InspectPaymentRequest>,
 ) -> Result<Json<zerant_zcash::zip321::PaymentRequestSummary>, ApiError> {
-    let _ = account_id(&headers, &state.db).await?;
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "zcash_payment_inspect", 120).await?;
     let summary =
         zerant_zcash::zip321::inspect_payment_request(&input.uri).map_err(|_| ApiError::Invalid)?;
     Ok(Json(summary))
@@ -2513,6 +2589,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0005_verification_network.sql"),
             include_str!("../migrations/0006_revocation_lifecycle.sql"),
             include_str!("../migrations/0007_trust_activity.sql"),
+            include_str!("../migrations/0008_rate_limits.sql"),
         ] {
             client
                 .batch_execute(migration)

@@ -18,7 +18,7 @@ Trust boundaries separate issuer authority, holder account state, verifier reque
 | Credential-store compromise | Envelope encryption, PostgreSQL access control, KEK separation and server sessions | KEK/runtime compromise remains; encryption and session tests |
 | XSS, dependency or browser compromise | No credential HTML rendering, CSP review, dependency pinning, secrets outside SSR/logs | Same-origin malicious code can read unlocked data; implementation security review |
 | Status lookup tracking or central profiles | Local full snapshots, no individual lookups or portfolio endpoint | Future metadata hosting exposes access patterns; network/log inspection |
-| DoS/resource exhaustion | Size limits, bounded event lists, no untrusted URL fetches, request timeout | Future hosting needs rate limits; oversize parser tests |
+| DoS/resource exhaustion | Size limits, bounded event lists, no untrusted URL fetches, database-backed per-account write quotas, global active-authentication circuit breaker | Per-IP anonymous abuse remains an edge/WAF responsibility; oversize parser and quota tests |
 | Clock manipulation | Trusted local clock assumption, fail closed if unhealthy, no expiry grace | Undetected OS clock manipulation defeats time bounds; simulated-clock tests |
 
 ## Limits and response

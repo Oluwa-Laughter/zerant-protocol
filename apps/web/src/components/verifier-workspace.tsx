@@ -59,6 +59,7 @@ export function VerifierWorkspace({
       body: JSON.stringify({ display_name: displayName, origin }),
     });
     if (!response.ok) {
+      if (response.status === 429) { setStatus("You’re doing that too quickly. Try again in a minute."); return; }
       setStatus(
         response.status === 409
           ? "This website or account is already registered."
@@ -88,6 +89,7 @@ export function VerifierWorkspace({
       }),
     });
     if (!response.ok) {
+      if (response.status === 429) { setStatus("You’re doing that too quickly. Try again in a minute."); return; }
       setStatus(
         response.status === 404
           ? "That Zerant ID could not be found."

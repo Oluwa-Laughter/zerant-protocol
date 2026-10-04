@@ -34,6 +34,7 @@ export function ZcashAddressInspector({ enabled }: { enabled: boolean }) {
     });
 
     if (!response.ok) {
+      if (response.status === 429) { setStatus("You’re doing that too quickly. Try again in a minute."); return; }
       setStatus(
         response.status === 401
           ? "Your Zerant session is not authenticated."

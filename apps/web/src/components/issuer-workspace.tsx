@@ -49,6 +49,7 @@ export function IssuerWorkspace({
       body: JSON.stringify({ display_name: displayName }),
     });
     if (!response.ok) {
+      if (response.status === 429) { setStatus("You’re doing that too quickly. Try again in a minute."); return; }
       setStatus(response.status === 409 ? "This account already has an issuer profile." : "Issuer profile could not be created.");
       return;
     }
@@ -63,6 +64,7 @@ export function IssuerWorkspace({
       { method: "POST", credentials: "same-origin" },
     );
     if (!response.ok) {
+      if (response.status === 429) { setStatus("You’re doing that too quickly. Try again in a minute."); return; }
       setStatus("Credential could not be revoked. It may already be revoked.");
       return;
     }
@@ -94,6 +96,7 @@ export function IssuerWorkspace({
     });
 
     if (!response.ok) {
+      if (response.status === 429) { setStatus("You’re doing that too quickly. Try again in a minute."); return; }
       setStatus(
         response.status === 404
           ? "That Zerant ID could not be found."

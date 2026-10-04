@@ -38,6 +38,7 @@ export function HolderRequests({
       },
     );
     if (!response.ok) {
+      if (response.status === 429) { setStatus("You’re doing that too quickly. Try again in a minute."); return; }
       setStatus(
         response.status === 404
           ? "A matching private credential could not be found for this request."
