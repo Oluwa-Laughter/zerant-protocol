@@ -34,4 +34,9 @@ A context-specific policy must not be silently reused as a global score. Exact l
 
 ## Executable disclosure profile
 
-The current native disclosure profile is v0.2. It adds the pinned policy digest to threshold requests and binds responses to the exact request digest, origin, challenge, nonce and audience-specific holder key. See `docs/specs/disclosure-v0.2.md`.
+The supported native disclosure profiles are single-result v0.2 and compound all-of v0.3. It adds the pinned policy digest to threshold requests and binds responses to the exact request digest, origin, challenge, nonce and audience-specific holder key. See `docs/specs/disclosure-v0.2.md`.
+
+Compound v0.3 signs 2–8 atomic requirements and exact ordinary expected values,
+verifies every selected attestation before one durable replay consumption, and binds
+invoice-paid assertions to immutable payment-intent digests. It preserves v0.2. See
+[compound disclosure](specs/disclosure-v0.3.md) and [payment intents/receipts](specs/payment-v0.1.md).

@@ -38,3 +38,12 @@ No public ledger receives credentials or presentations in M1. Zcash integration 
 Payment claims are optional domain assertions, not generic identity. The current Zcash adapter does not export wallet balances, addresses, seed fingerprints, memos or transaction history into Zerant credentials. A minimal paid-invoice attestation may be issued only after the responsible application or issuer validates its expected payment condition.
 
 A boolean paid-invoice claim still reveals that the named business condition was satisfied. It does not make the invoice, browser session, issuer relationship or network traffic anonymous. Zcash shielded-transaction privacy does not automatically make a Zerant presentation unlinkable.
+
+
+## Compound and payment privacy
+
+A compound request is one explicit all-of consent decision across 2–8 ordered atomic requirements. Every requirement is signed into the same origin/challenge/nonce/expiry binding. Partial satisfaction produces no accepted result, denial produces no response, and private source credentials are never substituted when evidence is missing.
+
+For payment conditions, the verifier receives an issuer-backed `payment.invoice_paid=true` attestation whose context binds the immutable payment-intent digest. The native recipient, amount, transaction ID, memo, account metadata, and wallet history remain outside the compound response. The intent digest is still a correlatable application identifier within the parties that know the underlying intent; it is not an anonymity mechanism.
+
+The browser integration console uses public fixtures and transient state only. Its settlement choices are simulations. Native Rust verification and previously recorded Z3 regtest evidence are labeled separately. No browser code receives wallet secrets, PCZT bytes, FROST shares, or native RPC credentials.

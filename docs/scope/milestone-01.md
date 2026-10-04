@@ -1,6 +1,6 @@
 # Milestone 01: local foundation
 
-Status: specified, not implemented. MUST/MUST NOT requirements describe future M1 behavior.
+Status: historical foundation scope. Several native Rust requirements are now implemented; this file remains the original acceptance reference and does not describe current product status by itself.
 
 ## Included
 
@@ -30,4 +30,4 @@ Mainnet, payments, tokens, NFTs, governance, AI features, mobile apps, custom ZK
 - Inspect outbound payloads, logs, browser storage and any metadata service to confirm no backend can reconstruct the holder's complete credential profile from protocol data.
 - Verify keyboard use, focus, reduced motion and accessible consent states against DESIGN.md.
 
-No runtime tests are available in this architecture-only milestone preparation. Implementation must supply independent fixtures and negative cases before declaring M1 complete.
+Runtime protocol tests now exist across credential, policy, disclosure, replay, payment, and Zcash adapter crates. Remaining acceptance items—especially holder vault/key lifecycle and authenticated browser integration—must still be satisfied before treating this historical scope as complete.

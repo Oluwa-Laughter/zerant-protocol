@@ -56,3 +56,42 @@ Static web output remains `apps/web/out`. Hosting this browser playground does n
 deploy a verifier or wallet service. No deployment was performed in this run.
 
 Public RFC test key material is labeled under credential fixtures. Never reuse it.
+
+
+## Compound integration console extension
+
+The native v0.3 compound profile adds one consent decision for up to eight ordered
+credential, threshold and invoice-bound paid-boolean requirements; v0.2 remains
+available. Every condition must verify before atomic replay consumption. Payment
+recipient/amount checks belong to the responsible local issuer; the verifier receives
+only the intent-bound assertion. No source credential fallback is permitted.
+
+The browser integration console uses public fixtures and transient state only. Its
+settlement outcomes are simulations, separate from Native Rust capabilities and
+previously exercised live Z3 regtest. It holds no wallet keys and invokes no spending.
+Individual, freelancer, vendor, community/grant, OSS, marketplace, team and API use
+cases are templates over the same protocol. PCZT discovery is per method, never
+inferred from Zallet branding. Advertised spending is not authorization. Mainnet
+execution, live browser wallet integration and FROST cryptography are not enabled.
+
+See [compound disclosure](docs/specs/disclosure-v0.3.md), [payment protocol](docs/specs/payment-v0.1.md), and [Zcash integration](docs/ZCASH-INTEGRATION.md).
+
+Native payment API: `PaymentIntent::digest/claim_context`, `Adapter::verify_intent`,
+`SqlitePaymentCreditStore::register/cancel/credit_verified`, and
+`payment::broadcast_state`. Public receipt JSON is an untrusted observation;
+only native verified receipt tokens authorize credit. See [payment contract](docs/specs/payment-v0.1.md)
+and [current capability matrix](docs/ZCASH-INTEGRATION.md).
+
+```sh
+cargo run -p zerant-zcash --example verify_payment -- --fixture < fixtures/payment-verification-input.json
+Z3_REGTEST_UNAUTHENTICATED=1 make z3-check # isolated router without auth only
+```
+
+The demo remains a public simulation with a compound request builder, consent and
+settlement failure previews. Native signatures/replay and payment observations run
+in Rust; the browser does not invoke a wallet or cryptographic verifier. PCZT and
+FROST review/coordination interfaces are implemented and tested; live spend/signing
+adapters and browser origin/vault integration remain unimplemented. Current live
+reads succeeded; the latest synthetic shielding attempt failed closed. The prior
+confirmed coinbase-shielding record is historical evidence, not a new fully shielded
+send. Broad [composable templates](docs/examples/README.md) reuse the same primitives.

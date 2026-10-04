@@ -40,3 +40,20 @@ helpers must prove regtest-only mining works before wallet mutations and use onl
 synthetic funds. Wallet readiness and confirmation count cannot prove amount/recipient
 or settlement finality. Raw wallet responses, account fingerprints and transaction
 memos must never be logged or included in generic attestations.
+
+
+## Compound and payment threats
+
+| Threat | Mitigation | Residual risk |
+| --- | --- | --- |
+| Partial requirement bypass | v0.3 verifies every ordered requirement before one atomic replay consumption | A trusted issuer can still make a dishonest assertion |
+| Payment amount/recipient substitution | immutable intent digest plus exact native recipient and integer-zatoshi checks | Merchant/application must authenticate how the intent reached the payer |
+| Payment reuse across invoices | unique transaction constraint and one-time intent credit | Cross-system reuse outside the shared ledger requires issuer coordination |
+| RPC capability confusion | each wallet method is discovered independently; capability is never spend authorization | Beta Zallet methods can change between builds |
+| RPC success mistaken for settlement | send results require explicit broadcast semantics; settlement still requires later named-transaction confirmation | Reorgs remain possible after finite confirmations |
+| Transparent/privacy downgrade | automatic spend planning permits only `FullPrivacy`; transparent matching outputs fail settlement verification | External wallet tooling can still be misconfigured |
+| Stale receipt replay | receipt observations have a freshness bound and are revalidated before credit | Clock compromise remains outside protocol guarantees |
+| PCZT plan substitution | review acknowledgement binds exact plan digest and intent digest | PCZT inspection output must come from trusted wallet tooling |
+| Shared-control secret leakage | Zerant stores no FROST/private-share material | External coordinator/tooling becomes its own trust boundary |
+
+No generic Zerant verifier is entitled to whole-wallet RPC output. Reorg detection, downstream attestation revocation, invoice retention/deletion, and operational monitoring remain responsibilities of the payment issuer/application.

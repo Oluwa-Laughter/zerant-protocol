@@ -29,3 +29,22 @@ FROST is an optional future organizational signing/custody capability for teams 
 Zerant succeeds when applications can ask for a narrow fact, holders can understand and approve exactly what leaves their device, and verifiers can fail closed on tampering, expiry, revocation, domain substitution and replay—without creating a centralized holder profile.
 
 No claim of anonymity, unlinkability, zero knowledge or production Zcash payment privacy should exceed the mechanism that is actually implemented and tested.
+
+
+## Compound integration console extension
+
+The native v0.3 compound profile adds one consent decision for up to eight ordered
+credential, threshold and invoice-bound paid-boolean requirements; v0.2 remains
+available. Every condition must verify before atomic replay consumption. Payment
+recipient/amount checks belong to the responsible local issuer; the verifier receives
+only the intent-bound assertion. No source credential fallback is permitted.
+
+The browser integration console uses public fixtures and transient state only. Its
+settlement outcomes are simulations, separate from Native Rust capabilities and
+previously exercised live Z3 regtest. It holds no wallet keys and invokes no spending.
+Individual, freelancer, vendor, community/grant, OSS, marketplace, team and API use
+cases are templates over the same protocol. PCZT discovery is per method, never
+inferred from Zallet branding. Advertised spending is not authorization. Mainnet
+execution, live browser wallet integration and FROST cryptography are not enabled.
+
+See [compound disclosure](docs/specs/disclosure-v0.3.md), [payment protocol](docs/specs/payment-v0.1.md), and [Zcash integration](docs/ZCASH-INTEGRATION.md).

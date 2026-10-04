@@ -33,6 +33,25 @@ const commonPrivate = [
 
 const scenarioDetails: Scenario[] = [
   {
+    id: "individual",
+    label: "Individual",
+    audience: "Private application",
+    request: {
+      origin: "https://individual.example",
+      purpose: "Confirm one account or membership status",
+      issuer: "zerant:issuer:identity-demo",
+      claim: "membership.active",
+      context: "individual-access",
+      result: true,
+      requestWindow: "5 minutes from issuance",
+      attestationWindow: "Bounded by issuer validity",
+    },
+    sharedSummary: "One audience-bound status result, not a reusable public profile.",
+    withheld: ["Other memberships", "Unrelated activity or identity records", ...commonPrivate],
+    issuerSummary: "Attest only to the status this application is authorized to request.",
+    verifierSummary: "Ask for the one fact needed for access instead of collecting a profile.",
+  },
+  {
     id: "freelancer",
     label: "Freelancer",
     audience: "Client / platform",
@@ -194,28 +213,51 @@ const scenarioDetails: Scenario[] = [
     verifierSummary: "Receive the invoice result, not the payer’s wallet or transaction history.",
     zcashStatus: "Z3 capability/readiness adapter is implemented. Live payment execution is not enabled until official regtest is exercised.",
   },
+  {
+    id: "developer",
+    label: "Developer / API",
+    audience: "Zcash application or service",
+    request: {
+      origin: "https://developer.example",
+      purpose: "Verify a machine-readable trust condition",
+      issuer: "zerant:issuer:api-demo",
+      claim: "service.authorization",
+      context: "api-access",
+      result: true,
+      requestWindow: "5 minutes from issuance",
+      attestationWindow: "Bounded by issuer validity",
+    },
+    sharedSummary: "One signed machine-readable authorization result with explicit request bindings.",
+    withheld: ["Other API relationships", "Source evidence", "Wallet-wide state", ...commonPrivate],
+    issuerSummary: "Expose a narrow reusable protocol primitive instead of a vertical-specific API.",
+    verifierSummary: "Integrate the same signed request, consent, revocation and replay rules from application code.",
+    zcashStatus: "Z3 capabilities are discovered at runtime; application code must not assume wallet RPC availability.",
+  },
 ];
 
-// One public policy fixture drives both the Rust vertical vectors and browser requests.
-export const scenarios: Scenario[] = sharedScenarios.map((fixture) => {
-  const detail = scenarioDetails.find((item) => item.id === fixture.id)!;
+// Public browser templates are independent of native policy fixtures. Where a template
+// explicitly asks for a threshold, reuse the matching public policy metadata; ordinary
+// credential and payment templates remain ordinary requests.
+export const scenarios: Scenario[] = scenarioDetails.map((detail) => {
+  if (detail.request.claim !== "reputation.threshold") {
+    return detail;
+  }
+  const fixture = sharedScenarios.find((item) => item.id === detail.id);
+  if (!fixture) {
+    return detail;
+  }
   const policy = fixture.policy;
   return {
     ...detail,
-    label: fixture.label,
     request: {
       ...detail.request,
-      origin: `https://${fixture.id}.example`,
-      purpose: fixture.purpose,
       issuer: policy.issuer_id,
-      claim: "reputation.threshold",
       context: policy.context_id,
       policy: `${policy.policy_id} · v${policy.version}`,
       threshold: policy.supported_thresholds[0],
       result: true,
       attestationWindow: "At most 24 hours, bounded by source expiry and policy window",
     },
-    sharedSummary: "One contextual issuer-attested eligibility threshold: true, plus required verification metadata. The exact local score and evidence are excluded.",
   };
 });
 
