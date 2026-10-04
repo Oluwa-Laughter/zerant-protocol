@@ -84,7 +84,7 @@ and [current capability matrix](docs/ZCASH-INTEGRATION.md).
 
 ```sh
 cargo run -p zerant-zcash --example verify_payment -- --fixture < fixtures/payment-verification-input.json
-Z3_REGTEST_UNAUTHENTICATED=1 make z3-check # isolated router without auth only
+make z3-check # requires Z3_REGTEST_RPC_ROUTER_PASSWORD in the environment
 ```
 
 The demo remains a public simulation with a compound request builder, consent and

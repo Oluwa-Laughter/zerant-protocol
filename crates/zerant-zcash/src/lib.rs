@@ -277,17 +277,10 @@ pub struct HttpRegtestTransport {
     password: String,
 }
 impl HttpRegtestTransport {
-    /// Explicit opt-in for an isolated loopback router configured without auth.
-    pub fn unauthenticated() -> Result<Self> {
-        Self::build(String::new(), String::new())
-    }
     pub fn new(username: String, password: String) -> Result<Self> {
         if username.is_empty() || password.is_empty() {
             return Err(Error::Trust);
         }
-        Self::build(username, password)
-    }
-    fn build(username: String, password: String) -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none())
@@ -321,16 +314,13 @@ impl RegtestTransport for HttpRegtestTransport {
             return Err(Error::Encoding);
         }
 
-        let request = self
+        let response = self
             .client
             .post("http://127.0.0.1:8181")
-            .json(&json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}));
-        let request = if self.username.is_empty() {
-            request
-        } else {
-            request.basic_auth(&self.username, Some(&self.password))
-        };
-        let response = request.send().map_err(|_| Error::Trust)?;
+            .basic_auth(&self.username, Some(&self.password))
+            .json(&json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}))
+            .send()
+            .map_err(|_| Error::Trust)?;
         if !response.status().is_success() {
             return Err(Error::Trust);
         }

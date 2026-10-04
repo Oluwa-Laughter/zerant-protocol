@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { ConsentPanel } from "@/components/consent-panel";
 import { Button } from "@/components/ui/button";
 import { scenarios } from "@/lib/demo-data";
-import capabilities from "../../../../fixtures/z3-current-capabilities.json";
+import capabilities from "../../../../fixtures/z3-regtest-discovery.json";
 
 const roles = ["Holder", "Issuer", "Verifier"] as const;
 type Role = (typeof roles)[number];
@@ -179,7 +179,7 @@ export function DemoDashboard() {
         <p>The Rust adapter understands Z3 capability discovery plus minimal Zebra/Zallet readiness projections. It does not export wallet-wide data into credentials and it does not send ZEC from this web playground.</p>
         <div className="status-grid">
           <div><strong>Native Rust</strong><span>rpc.discover, getblockchaininfo, getwalletinfo projections</span></div>
-          <div><strong>Recorded live RPC capabilities · 2026-10-04</strong><span>{capabilities.methods.map((method) => method.name).filter((name) => ["z_sendmany", "z_sendfromaccount", "z_viewtransaction", "pczt_create"].includes(name)).join(", ")}. PCZT is absent from this snapshot; no live browser connection or spend readiness is established.</span></div>
+          <div><strong>Recorded live RPC capabilities · historical snapshot</strong><span>{capabilities.methods.map((method) => method.name).filter((name) => ["z_sendmany", "z_sendfromaccount", "z_viewtransaction", "pczt_create"].includes(name)).join(", ")}. PCZT is absent from this historical snapshot; no live browser connection or spend readiness is established.</span></div>
           <div><strong>Previously exercised live Z3 regtest</strong><span>Recorded local regtest discovery, chain and wallet RPC checks succeeded. A synthetic coinbase-shielding payment was confirmed locally; fully shielded sends and production settlement remain unavailable.</span></div>
         </div>
       </section>

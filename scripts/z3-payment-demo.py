@@ -14,14 +14,13 @@ import urllib.request
 if sys.argv[1:] != ['--execute-regtest']:
     raise SystemExit('Usage: python3 scripts/z3-payment-demo.py --execute-regtest')
 
-if not os.getenv('Z3_REGTEST_RPC_ROUTER_PASSWORD') and os.getenv('Z3_REGTEST_UNAUTHENTICATED') != '1':
+if not os.getenv('Z3_REGTEST_RPC_ROUTER_PASSWORD'):
     raise SystemExit('Set the isolated regtest router password in Z3_REGTEST_RPC_ROUTER_PASSWORD')
 
 HEADERS = {"Content-Type": "application/json"}
-if os.getenv('Z3_REGTEST_UNAUTHENTICATED') != '1':
-    HEADERS["Authorization"] = "Basic " + base64.b64encode(
-        (os.getenv("Z3_REGTEST_RPC_ROUTER_USER", "zebra") + ":" + os.environ["Z3_REGTEST_RPC_ROUTER_PASSWORD"]).encode()
-    ).decode()
+HEADERS["Authorization"] = "Basic " + base64.b64encode(
+    (os.getenv("Z3_REGTEST_RPC_ROUTER_USER", "zebra") + ":" + os.environ["Z3_REGTEST_RPC_ROUTER_PASSWORD"]).encode()
+).decode()
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise RuntimeError("RPC redirects refused")

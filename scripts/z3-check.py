@@ -16,8 +16,6 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 
 def credentials():
-    if os.getenv("Z3_REGTEST_UNAUTHENTICATED") == "1":
-        return None
     user = os.getenv("Z3_REGTEST_RPC_ROUTER_USER", "zebra")
     password = os.getenv("Z3_REGTEST_RPC_ROUTER_PASSWORD")
     if not password:
@@ -27,11 +25,9 @@ def credentials():
 def call(method):
     if method not in ALLOWED_METHODS:
         raise RuntimeError("RPC method not allowlisted")
-    credential = credentials()
+    user, password = credentials()
     headers = {"Content-Type": "application/json"}
-    if credential:
-        user, password = credential
-        headers["Authorization"] = "Basic " + base64.b64encode((user + ":" + password).encode()).decode()
+    headers["Authorization"] = "Basic " + base64.b64encode((user + ":" + password).encode()).decode()
     request = urllib.request.Request(
         URL,
         json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": []}).encode(),
