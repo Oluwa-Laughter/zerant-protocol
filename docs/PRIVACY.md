@@ -71,3 +71,8 @@ Revocation status is visible to the credential holder and issuing organization. 
 ## Issuer compromise recovery
 
 Routine issuer-key rotation does not change holder identifiers or expose additional holder data. If an issuer reports its current key compromised, credentials signed by that key are invalidated and can no longer satisfy new proof requests. This is a trust-safety response, not an anonymity feature.
+
+
+## Verifier compromise recovery
+
+Routine verifier-key rotation does not reveal additional holder data and does not change already-issued credentials. A compromise replacement expires pending requests signed by the affected verifier key before a holder can approve them. This prevents a known-compromised request-signing key from continuing to authorize new disclosures.

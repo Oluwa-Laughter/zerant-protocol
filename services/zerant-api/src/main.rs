@@ -341,6 +341,20 @@ struct VerifierProfileView {
     created_at: OffsetDateTime,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RotateVerifierKey {
+    compromise_current: bool,
+}
+
+#[derive(Serialize)]
+struct VerifierKeyView {
+    active: bool,
+    compromised: bool,
+    valid_from: OffsetDateTime,
+    retired_at: Option<OffsetDateTime>,
+}
+
 #[derive(Serialize)]
 struct IssuerDirectoryEntry {
     display_name: String,
@@ -1999,6 +2013,153 @@ async fn get_verifier_profile(
     }))
 }
 
+async fn list_verifier_keys(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<VerifierKeyView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let rows = client
+        .query(
+            "SELECT k.valid_from, k.retired_at, k.compromised_at
+             FROM verifier_signing_keys k
+             JOIN verifier_profiles v ON v.id = k.verifier_profile_id
+             WHERE v.account_id = $1
+             ORDER BY k.valid_from DESC
+             LIMIT 32",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|row| {
+                let retired_at: Option<OffsetDateTime> = row.get(1);
+                let compromised_at: Option<OffsetDateTime> = row.get(2);
+                VerifierKeyView {
+                    active: retired_at.is_none() && compromised_at.is_none(),
+                    compromised: compromised_at.is_some(),
+                    valid_from: row.get(0),
+                    retired_at,
+                }
+            })
+            .collect(),
+    ))
+}
+
+async fn rotate_verifier_key(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<RotateVerifierKey>,
+) -> Result<Json<VerifierKeyView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "verifier_key_rotate", 3).await?;
+
+    let new_key_row_id = Uuid::new_v4();
+    let new_key_id = format!("key-{}", Uuid::new_v4().simple());
+    let mut new_private =
+        Jwk::generate_ed_key(EdCurve::Ed25519).map_err(|_| ApiError::Unavailable)?;
+    new_private.set_key_id(new_key_id.clone());
+    let new_public = public_jwk(&new_private)?;
+    let public_value = serde_json::to_value(&new_public).map_err(|_| ApiError::Unavailable)?;
+    let mut plaintext = serde_json::to_vec(&new_private).map_err(|_| ApiError::Unavailable)?;
+    let encrypted = state.cipher.encrypt(account, new_key_row_id, &plaintext)?;
+    plaintext.fill(0);
+
+    let now = OffsetDateTime::now_utc();
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let current = tx
+        .query_opt(
+            "SELECT v.id, k.id, k.verifier_key_id
+             FROM verifier_profiles v
+             JOIN verifier_signing_keys k ON k.verifier_profile_id = v.id
+             WHERE v.account_id = $1
+               AND k.retired_at IS NULL
+               AND k.compromised_at IS NULL
+             FOR UPDATE OF k",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Conflict)?;
+
+    let profile_id: Uuid = current.get(0);
+    let current_key_row_id: Uuid = current.get(1);
+    let current_key_id: String = current.get(2);
+
+    let affected = tx
+        .execute(
+            "UPDATE verifier_signing_keys
+             SET retired_at = $3,
+                 compromised_at = CASE WHEN $4 THEN $3 ELSE compromised_at END
+             WHERE id = $1
+               AND verifier_profile_id = $2
+               AND retired_at IS NULL
+               AND compromised_at IS NULL",
+            &[
+                &current_key_row_id,
+                &profile_id,
+                &now,
+                &input.compromise_current,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    if affected != 1 {
+        return Err(ApiError::Conflict);
+    }
+
+    if input.compromise_current {
+        tx.execute(
+            "UPDATE verification_requests
+             SET status = 'expired',
+                 decided_at = COALESCE(decided_at, $3)
+             WHERE verifier_profile_id = $1
+               AND verifier_key_id = $2
+               AND status = 'pending'",
+            &[&profile_id, &current_key_id, &now],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    }
+
+    tx.execute(
+        "INSERT INTO verifier_signing_keys
+         (id, verifier_profile_id, verifier_key_id, public_jwk, ciphertext, data_nonce,
+          wrapped_dek, wrap_nonce, key_version, valid_from)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        &[
+            &new_key_row_id,
+            &profile_id,
+            &new_key_id,
+            &public_value,
+            &encrypted.ciphertext,
+            &encrypted.data_nonce,
+            &encrypted.wrapped_dek,
+            &encrypted.wrap_nonce,
+            &encrypted.key_version,
+            &now,
+        ],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(VerifierKeyView {
+        active: true,
+        compromised: false,
+        valid_from: now,
+        retired_at: None,
+    }))
+}
+
 async fn register_verifier(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2036,7 +2197,13 @@ async fn register_verifier(
     let encrypted = state.cipher.encrypt(account, profile_id, &plaintext)?;
     plaintext.fill(0);
 
-    let row = client
+    let mut tx_client = db_client(&state.db).await?;
+    let tx = tx_client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let row = tx
         .query_one(
             "INSERT INTO verifier_profiles
              (id, account_id, display_name, origin, verifier_id, verifier_key_id, public_jwk,
@@ -2061,12 +2228,35 @@ async fn register_verifier(
         .await
         .map_err(|_| ApiError::Unavailable)?;
 
+    let created_at: OffsetDateTime = row.get(2);
+    tx.execute(
+        "INSERT INTO verifier_signing_keys
+         (id, verifier_profile_id, verifier_key_id, public_jwk, ciphertext, data_nonce,
+          wrapped_dek, wrap_nonce, key_version, valid_from)
+         VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        &[
+            &profile_id,
+            &verifier_key_id,
+            &public_value,
+            &encrypted.ciphertext,
+            &encrypted.data_nonce,
+            &encrypted.wrapped_dek,
+            &encrypted.wrap_nonce,
+            &encrypted.key_version,
+            &created_at,
+        ],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
     Ok((
         StatusCode::CREATED,
         Json(VerifierProfileView {
             display_name: row.get(0),
             origin: row.get(1),
-            created_at: row.get(2),
+            created_at,
         }),
     ))
 }
@@ -2214,9 +2404,14 @@ async fn create_verification_request(
 
     let verifier = client
         .query_opt(
-            "SELECT id, display_name, origin, verifier_id, verifier_key_id,
-                    ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version
-             FROM verifier_profiles WHERE account_id = $1",
+            "SELECT v.id, v.display_name, v.origin, v.verifier_id,
+                    k.id, k.verifier_key_id, k.ciphertext, k.data_nonce,
+                    k.wrapped_dek, k.wrap_nonce, k.key_version
+             FROM verifier_profiles v
+             JOIN verifier_signing_keys k ON k.verifier_profile_id = v.id
+             WHERE v.account_id = $1
+               AND k.retired_at IS NULL
+               AND k.compromised_at IS NULL",
             &[&account],
         )
         .await
@@ -2226,8 +2421,9 @@ async fn create_verification_request(
     let profile_id: Uuid = verifier.get(0);
     let origin: String = verifier.get(2);
     let verifier_id: String = verifier.get(3);
-    let verifier_key_id: String = verifier.get(4);
-    let verifier_secret = secret_row(&verifier, profile_id, 5);
+    let signing_key_row_id: Uuid = verifier.get(4);
+    let verifier_key_id: String = verifier.get(5);
+    let verifier_secret = secret_row(&verifier, signing_key_row_id, 6);
     let private = decrypt_stored_jwk(&state, account, &verifier_secret)?;
 
     let now = OffsetDateTime::now_utc();
@@ -2241,7 +2437,7 @@ async fn create_verification_request(
         schema: REQUEST_SCHEMA.into(),
         request_id: random_id(),
         verifier_id,
-        verifier_key_id,
+        verifier_key_id: verifier_key_id.clone(),
         verifier_origin: origin,
         purpose: purpose.clone(),
         accepted_issuer_ids: accepted.clone(),
@@ -2263,8 +2459,9 @@ async fn create_verification_request(
         .execute(
             "INSERT INTO verification_requests
              (id, verifier_profile_id, subject_account_id, request_id, request_jws, purpose,
-              claim_type, context, accepted_issuer_ids, expires_at, credential_schema_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+              claim_type, context, accepted_issuer_ids, expires_at, credential_schema_id,
+              verifier_key_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
             &[
                 &db_id,
                 &profile_id,
@@ -2277,6 +2474,7 @@ async fn create_verification_request(
                 &accepted_value,
                 &expires_time,
                 &credential_schema_id,
+                &verifier_key_id,
             ],
         )
         .await
@@ -2445,10 +2643,13 @@ async fn decide_holder_request(
         .query_opt(
             "SELECT r.request_jws, r.claim_type, r.context, r.accepted_issuer_ids,
                     r.expires_at, r.status,
-                    v.id, v.account_id, v.origin, v.verifier_id, v.verifier_key_id,
-                    v.public_jwk, v.created_at
+                    v.id, v.account_id, v.origin, v.verifier_id,
+                    k.verifier_key_id, k.public_jwk, k.valid_from, k.compromised_at
              FROM verification_requests r
              JOIN verifier_profiles v ON v.id = r.verifier_profile_id
+             JOIN verifier_signing_keys k
+               ON k.verifier_profile_id = v.id
+              AND k.verifier_key_id = r.verifier_key_id
              WHERE r.id = $1 AND r.subject_account_id = $2",
             &[&id, &holder_account],
         )
@@ -2648,8 +2849,9 @@ async fn decide_holder_request(
     let verifier_public_value: Value = request_row.get(11);
     let verifier_public: PublicJwk =
         serde_json::from_value(verifier_public_value).map_err(|_| ApiError::Unavailable)?;
-    let verifier_created: OffsetDateTime = request_row.get(12);
-    let verifier_valid_from = verifier_created.unix_timestamp();
+    let verifier_valid_from_time: OffsetDateTime = request_row.get(12);
+    let verifier_compromised_at: Option<OffsetDateTime> = request_row.get(13);
+    let verifier_valid_from = verifier_valid_from_time.unix_timestamp();
     if verifier_valid_from < 0 {
         return Err(ApiError::Unavailable);
     }
@@ -2659,8 +2861,8 @@ async fn decide_holder_request(
         key: verifier_public,
         allowed_origins: vec![verifier_origin.clone()],
         valid_from: verifier_valid_from as u64,
-        valid_until: key_valid_until,
-        compromised: false,
+        valid_until: request_expiry_i64 as u64,
+        compromised: verifier_compromised_at.is_some(),
     };
     let disclosure_context = DisclosureContext {
         pin: &pin,
@@ -3503,6 +3705,8 @@ fn app(state: AppState) -> Router {
             "/v1/verifier",
             get(get_verifier_profile).post(register_verifier),
         )
+        .route("/v1/verifier/keys", get(list_verifier_keys))
+        .route("/v1/verifier/keys/rotate", post(rotate_verifier_key))
         .route(
             "/v1/verifier/requests",
             get(list_verifier_requests).post(create_verification_request),
@@ -3561,6 +3765,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0010_account_controls.sql"),
             include_str!("../migrations/0011_pairwise_holder_keys.sql"),
             include_str!("../migrations/0012_issuer_key_lifecycle.sql"),
+            include_str!("../migrations/0013_verifier_key_lifecycle.sql"),
         ] {
             client
                 .batch_execute(migration)

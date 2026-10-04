@@ -29,6 +29,15 @@ export type TrustedIssuerOption = {
   schemas: TrustedCredentialSchema[];
 };
 
+
+
+export type VerifierKeyView = {
+  active: boolean;
+  compromised: boolean;
+  valid_from: string;
+  retired_at: string | null;
+};
+
 export type VerificationRequestItem = {
   id: string;
   holder_zerant_id: string;
@@ -49,12 +58,14 @@ export function VerifierWorkspace({
   initialProfile,
   issuers,
   initialRequests,
+  initialKeys,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
   initialProfile: VerifierProfile | null;
   issuers: TrustedIssuerOption[];
   initialRequests: VerificationRequestItem[];
+  initialKeys: VerifierKeyView[];
 }) {
   const availableSchemas = useMemo(
     () =>
@@ -72,6 +83,7 @@ export function VerifierWorkspace({
 
   const [profile, setProfile] = useState(initialProfile);
   const [requests, setRequests] = useState(initialRequests);
+  const [keys, setKeys] = useState<VerifierKeyView[]>(initialKeys);
   const [displayName, setDisplayName] = useState("");
   const [origin, setOrigin] = useState("");
   const [holderId, setHolderId] = useState("");
@@ -102,6 +114,56 @@ export function VerifierWorkspace({
     }
     setProfile((await response.json()) as VerifierProfile);
     setStatus("Verifier profile is active.");
+  }
+
+  async function rotateVerifierKey(compromiseCurrent: boolean) {
+    const response = await fetch("/api/zerant/verifier/keys/rotate", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ compromise_current: compromiseCurrent }),
+    });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        setStatus("You’re doing that too quickly. Try again in a minute.");
+        return;
+      }
+      setStatus("Verification security key could not be replaced.");
+      return;
+    }
+
+    const created = (await response.json()) as VerifierKeyView;
+    const now = new Date().toISOString();
+    setKeys((current) => [
+      created,
+      ...current.map((item) =>
+        item.active
+          ? {
+              ...item,
+              active: false,
+              compromised: compromiseCurrent || item.compromised,
+              retired_at: now,
+            }
+          : item,
+      ),
+    ]);
+
+    if (compromiseCurrent) {
+      const requestsResponse = await fetch("/api/zerant/verifier/requests", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (requestsResponse.ok) {
+        setRequests((await requestsResponse.json()) as VerificationRequestItem[]);
+      }
+    }
+
+    setStatus(
+      compromiseCurrent
+        ? "Compromised key replaced. Pending requests signed by it were expired."
+        : "Security key rotated. Existing short-lived requests can finish normally.",
+    );
   }
 
   async function createRequest() {
@@ -214,6 +276,60 @@ export function VerifierWorkspace({
           <p>Request only the trusted fact your application actually needs.</p>
         </div>
         <span className="pill">{profile.origin}</span>
+      </section>
+
+      <section className="verifier-security-section">
+        <article className="verifier-panel">
+          <p className="eyebrow">Verification security</p>
+          <h2>Keep request signing healthy.</h2>
+          <p className="muted">
+            Routine rotation changes the key used for new requests while already-sent requests keep
+            their normal short expiry.
+          </p>
+          <div className="vault-actions wrap">
+            <Button variant="secondary" onClick={() => rotateVerifierKey(false)}>
+              Rotate security key
+            </Button>
+            <Button variant="secondary" onClick={() => rotateVerifierKey(true)}>
+              Replace compromised key
+            </Button>
+          </div>
+        </article>
+
+        <article className="verifier-panel">
+          <p className="eyebrow">Key history</p>
+          <h2>{keys.length} key{keys.length === 1 ? "" : "s"}</h2>
+          <div className="key-history-list">
+            {keys.length ? (
+              keys.map((key, index) => (
+                <article className="key-history-card" key={key.valid_from + String(index)}>
+                  <div>
+                    <strong>{key.active ? "Current security key" : "Previous security key"}</strong>
+                    <span
+                      className={
+                        key.compromised
+                          ? "credential-status revoked"
+                          : key.active
+                            ? "credential-status active"
+                            : "request-status"
+                      }
+                    >
+                      {key.compromised ? "Compromised" : key.active ? "Active" : "Retired"}
+                    </span>
+                  </div>
+                  <p className="small muted">
+                    Active since {new Date(key.valid_from).toLocaleDateString()}
+                    {key.retired_at
+                      ? " · retired " + new Date(key.retired_at).toLocaleDateString()
+                      : ""}
+                  </p>
+                </article>
+              ))
+            ) : (
+              <p className="muted">Security-key history will appear here.</p>
+            )}
+          </div>
+        </article>
       </section>
 
       <section className="verifier-grid">

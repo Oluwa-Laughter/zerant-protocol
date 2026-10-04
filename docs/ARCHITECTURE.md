@@ -42,6 +42,12 @@ Issuer signing authority is versioned instead of being replaced in place. Every 
 
 Historical signing keys remain encrypted under the issuer account boundary and participate in the same vault-key versioning model as other protected records.
 
+## Verifier key lifecycle
+
+Verifier request signing authority is versioned. Every verification request records the verifier key that signed it. Routine rotation retires the current key for new requests while already-sent requests remain valid until their existing short expiry. If a verifier reports the current key compromised, Zerant marks that key compromised, immediately expires pending requests signed by it, and activates a replacement for future requests.
+
+Holder approval always validates the request against the exact historical verifier key recorded on the request, so rotation cannot silently reinterpret an existing request.
+
 ## Product application (implemented)
 
 The web application now uses authenticated service state for real credentials, issuer profiles, verifier profiles and consent requests. It contains no seeded credential or verification data. A holder can receive issuer-created private credentials, review short-lived verifier requests, approve or deny them, and use Zcash-native identity/payment review surfaces.
