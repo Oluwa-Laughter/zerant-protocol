@@ -16,7 +16,7 @@
     "backend": {
       "root": ".",
       "runtime": "container",
-      "entrypoint": "services/zerant-api/Dockerfile.vercel"
+      "entrypoint": "Dockerfile.vercel"
     }
   },
   "rewrites": [
