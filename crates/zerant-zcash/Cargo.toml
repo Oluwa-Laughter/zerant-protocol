@@ -8,4 +8,6 @@ zerant-core = { path = "../zerant-core" }
 zerant-credential = { path = "../zerant-credential" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
+rusqlite = { version = "0.38", features = ["bundled"] }
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json"] }

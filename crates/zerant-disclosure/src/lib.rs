@@ -4,6 +4,8 @@
 //! It does not authenticate a browser transport, store holder secrets, or implement ZK.
 #![forbid(unsafe_code)]
 
+pub mod compound;
+
 use josekit::{
     jwk::Jwk,
     jws::{self, EdDSA, JwsHeader},
@@ -805,6 +807,60 @@ mod tests {
         sign_credential(&payload, &fixture.issuer_private).unwrap()
     }
 
+    fn ordinary_attestation_with_id(
+        fixture: &Fixture,
+        claim_type: &str,
+        context: &str,
+        credential_id: String,
+        revocation_handle: String,
+    ) -> String {
+        let payload = CredentialPayload {
+            schema: "zerant.credential.v0.1".into(),
+            kind: CredentialKind::Attestation,
+            credential_id,
+            issuer_id: ISSUER.into(),
+            issuer_key_id: ISSUER_KID.into(),
+            subject_key: fixture.holder_public.clone(),
+            audience: ORIGIN.into(),
+            issued_at: NOW - 100,
+            expires_at: NOW + 1_000,
+            revocation_handle,
+            claim: Claim::Ordinary(OrdinaryClaim {
+                claim_type: claim_type.into(),
+                value: ClaimValue::String("active".into()),
+                context: Some(context.into()),
+            }),
+        };
+        sign_credential(&payload, &fixture.issuer_private).unwrap()
+    }
+
+    fn boolean_attestation_with_id(
+        fixture: &Fixture,
+        claim_type: &str,
+        context: &str,
+        credential_id: String,
+        revocation_handle: String,
+    ) -> String {
+        let payload = CredentialPayload {
+            schema: "zerant.credential.v0.1".into(),
+            kind: CredentialKind::Attestation,
+            credential_id,
+            issuer_id: ISSUER.into(),
+            issuer_key_id: ISSUER_KID.into(),
+            subject_key: fixture.holder_public.clone(),
+            audience: ORIGIN.into(),
+            issued_at: NOW - 100,
+            expires_at: NOW + 1_000,
+            revocation_handle,
+            claim: Claim::Ordinary(OrdinaryClaim {
+                claim_type: claim_type.into(),
+                value: ClaimValue::Boolean(true),
+                context: Some(context.into()),
+            }),
+        };
+        sign_credential(&payload, &fixture.issuer_private).unwrap()
+    }
+
     fn threshold_attestation(fixture: &Fixture, digest_value: &str, threshold: u64) -> String {
         let payload = CredentialPayload {
             schema: "zerant.credential.v0.1".into(),
@@ -1281,6 +1337,139 @@ mod tests {
     }
 
     #[test]
+    fn compound_all_of_requires_every_requirement_and_consumes_once() {
+        let fixture = fixture();
+        let primary = ordinary_request();
+        let digest_value = encode_base64url(&[9; 32]);
+        let mut threshold = threshold_request(digest_value.clone(), 10);
+        threshold.verifier_id = primary.verifier_id.clone();
+        threshold.verifier_key_id = primary.verifier_key_id.clone();
+        threshold.verifier_origin = primary.verifier_origin.clone();
+        threshold.purpose = primary.purpose.clone();
+        threshold.challenge = primary.challenge.clone();
+        threshold.nonce = primary.nonce.clone();
+        threshold.issued_at = primary.issued_at;
+        threshold.expires_at = primary.expires_at;
+
+        let request = compound::CompoundRequest {
+            schema: compound::SCHEMA.into(),
+            primary,
+            additional: vec![threshold],
+            expected_values: vec![Some(ClaimValue::String("active".into())), None],
+        };
+        let ctx = context(&fixture, NOW + 10, ORIGIN);
+        let request_jws = compound::sign(&request, &ctx, &fixture.verifier_private).unwrap();
+
+        let first = ordinary_attestation(&fixture, "membership", "community");
+        let second = threshold_attestation(&fixture, &digest_value, 10);
+        let evidence = vec![evidence(&first, &fixture), evidence(&second, &fixture)];
+
+        assert_eq!(
+            compound::respond(
+                &request_jws,
+                &ctx,
+                Decision::Deny,
+                &evidence,
+                &fixture.holder_private,
+            )
+            .unwrap(),
+            None
+        );
+        assert!(
+            compound::respond(
+                &request_jws,
+                &ctx,
+                Decision::Approve,
+                &evidence[..1],
+                &fixture.holder_private,
+            )
+            .is_err()
+        );
+
+        let response = compound::respond(
+            &request_jws,
+            &ctx,
+            Decision::Approve,
+            &evidence,
+            &fixture.holder_private,
+        )
+        .unwrap()
+        .unwrap();
+        let store = MemoryReplay::default();
+        compound::register(&request_jws, &ctx, &store).unwrap();
+        let accepted = compound::accept(&request_jws, &response, &ctx, &evidence, &store).unwrap();
+        assert_eq!(accepted.len(), 2);
+        assert!(compound::accept(&request_jws, &response, &ctx, &evidence, &store).is_err());
+    }
+
+    #[test]
+    fn compound_payment_requirement_exposes_attestation_not_wallet_evidence() {
+        let mut fixture = fixture();
+        let intent_digest = encode_base64url(&[77; 32]);
+        let payment_context = format!("payment-intent:{intent_digest}");
+        fixture.trust.issuers[0]
+            .allowed_claim_types
+            .push("payment.invoice_paid".into());
+        fixture.trust.issuers[0]
+            .allowed_contexts
+            .push(payment_context.clone());
+
+        let mut request = ordinary_request();
+        request.claim_type = "payment.invoice_paid".into();
+        request.context = Some(payment_context.clone());
+        request.purpose = "Confirm settlement of this private Zcash payment intent".into();
+
+        let compound = compound::CompoundRequest {
+            schema: compound::SCHEMA.into(),
+            primary: request,
+            additional: vec![{
+                let mut role = ordinary_request();
+                role.request_id = encode_base64url(&[88; 16]);
+                role.purpose = "Confirm settlement of this private Zcash payment intent".into();
+                role
+            }],
+            expected_values: vec![
+                Some(ClaimValue::Boolean(true)),
+                Some(ClaimValue::String("active".into())),
+            ],
+        };
+        let ctx = context(&fixture, NOW + 10, ORIGIN);
+        let request_jws = compound::sign(&compound, &ctx, &fixture.verifier_private).unwrap();
+        let payment = boolean_attestation_with_id(
+            &fixture,
+            "payment.invoice_paid",
+            &payment_context,
+            encode_base64url(&[89; 16]),
+            encode_base64url(&[90; 16]),
+        );
+        let role = ordinary_attestation_with_id(
+            &fixture,
+            "membership",
+            "community",
+            encode_base64url(&[91; 16]),
+            encode_base64url(&[92; 16]),
+        );
+        let evidence = vec![evidence(&payment, &fixture), evidence(&role, &fixture)];
+
+        let response = compound::respond(
+            &request_jws,
+            &ctx,
+            Decision::Approve,
+            &evidence,
+            &fixture.holder_private,
+        )
+        .unwrap()
+        .unwrap();
+
+        let [_, payload, _] = compact_parts(&response).unwrap();
+        let text = String::from_utf8(decode_base64url(payload).unwrap()).unwrap();
+        assert!(text.contains("payment.invoice_paid") || text.contains("attestations"));
+        for forbidden in ["valueZat", "recipient", "memo", "wallet", "balance", "txid"] {
+            assert!(!text.contains(forbidden), "{forbidden}");
+        }
+    }
+
+    #[test]
     fn strict_header_and_payload_reject_unknowns() {
         let extra_header = serde_json::json!({
             "alg":"EdDSA","kid":VERIFIER_KID,"typ":REQUEST_TYP,"jku":"https://evil.example"
@@ -1306,5 +1495,91 @@ mod tests {
         value["extra"] = true.into();
         let token = sign_jws(&value, REQUEST_TYP, VERIFIER_KID, &fixture.verifier_private).unwrap();
         assert!(verify_request(&token, &fixture.pin, ORIGIN, NOW + 1, &[]).is_err());
+    }
+    #[test]
+    fn compound_all_of_consent_bindings_and_replay() {
+        let f = fixture();
+        let c = context(&f, NOW, ORIGIN);
+        let primary = ordinary_request();
+        let mut second = threshold_request(encode_base64url(&[9; 32]), 10);
+        second.request_id = encode_base64url(&[99; 16]);
+        second.purpose = primary.purpose.clone();
+        second.challenge = primary.challenge.clone();
+        second.nonce = primary.nonce.clone();
+        second.issued_at = primary.issued_at;
+        second.expires_at = primary.expires_at;
+        let request = compound::CompoundRequest {
+            schema: compound::SCHEMA.into(),
+            primary,
+            additional: vec![second],
+            expected_values: vec![Some(ClaimValue::String("active".into())), None],
+        };
+        let token = compound::sign(&request, &c, &f.verifier_private).unwrap();
+        let ordinary = ordinary_attestation(&f, "membership", "community");
+        let threshold = threshold_attestation(&f, &encode_base64url(&[9; 32]), 10);
+        let items = [evidence(&ordinary, &f), evidence(&threshold, &f)];
+        assert!(
+            compound::respond(&token, &c, Decision::Deny, &[], &f.holder_private)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            compound::respond(
+                &token,
+                &c,
+                Decision::Approve,
+                &items[..1],
+                &f.holder_private
+            )
+            .is_err()
+        );
+        let response = compound::respond(&token, &c, Decision::Approve, &items, &f.holder_private)
+            .unwrap()
+            .unwrap();
+        let decoded = decode_base64url(response.split('.').nth(1).unwrap()).unwrap();
+        let text = String::from_utf8(decoded).unwrap();
+        for forbidden in [
+            "score",
+            "source_events",
+            "wallet",
+            "recipient",
+            "amount_zat",
+        ] {
+            assert!(!text.contains(forbidden));
+        }
+        let store = MemoryReplay::default();
+        compound::register(&token, &c, &store).unwrap();
+        let swapped = [evidence(&threshold, &f), evidence(&ordinary, &f)];
+        assert!(compound::accept(&token, &response, &c, &swapped, &store).is_err());
+        assert_eq!(
+            store
+                .get(&request.primary.request_id)
+                .unwrap()
+                .unwrap()
+                .status,
+            ReplayStatus::Pending
+        );
+        assert_eq!(
+            compound::accept(&token, &response, &c, &items, &store)
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(compound::accept(&token, &response, &c, &items, &store).is_err());
+        assert!(compound::verify(&token, &context(&f, NOW, "https://wrong.example")).is_err());
+        assert!(compound::verify(&token, &context(&f, NOW + 301, ORIGIN)).is_err());
+        let mut mutated = request.clone();
+        mutated.additional[0].verifier_origin = "https://wrong.example".into();
+        assert!(compound::sign(&mutated, &c, &f.verifier_private).is_err());
+        mutated = request.clone();
+        mutated.additional[0].request_id = mutated.primary.request_id.clone();
+        assert!(compound::sign(&mutated, &c, &f.verifier_private).is_err());
+        let other = Jwk::generate_ed_key(EdCurve::Ed25519).unwrap();
+        assert!(compound::respond(&token, &c, Decision::Approve, &items, &other).is_err());
+        let mut unknown = serde_json::to_value(&request).unwrap();
+        unknown["whole_wallet"] = serde_json::json!(true);
+        assert!(
+            parse_canonical::<compound::CompoundRequest>(&canonicalize(&unknown).unwrap()).is_err()
+        );
     }
 }

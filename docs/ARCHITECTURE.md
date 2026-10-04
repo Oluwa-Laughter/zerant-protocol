@@ -1,6 +1,6 @@
 # Architecture
 
-Status: proposed local foundation. No directories below are implemented components.
+Status: active implementation architecture. The Rust protocol crates and public web console described below exist; future boundaries are labeled explicitly.
 
 ## Planned monorepo
 
@@ -50,7 +50,7 @@ The first protocol-critical implementation now lives in Rust. `zerant-core` owns
 
 The cryptographic boundary uses maintained libraries: `josekit 0.10.3` for JOSE/JWS EdDSA and `serde_json_canonicalizer 0.3.2` for RFC 8785 payload canonicalization. Zerant does not implement Ed25519 or JWS itself. Protected JOSE headers are restricted to `alg=EdDSA`, exact `kid`, and exact message-specific `typ`; signed Zerant payloads are JCS canonical.
 
-Protocol-critical logic remains native Rust. Contextual policy evaluation, disclosure v0.2, replay persistence and the read-only Z3 adapter are implemented and covered by shared vectors/tests. Browser/WASM integration, holder vault storage, enrollment/key-possession UX, authenticated browser transport, payment sending/settlement and live FROST wiring remain unimplemented.
+Protocol-critical logic remains native Rust. Contextual policy evaluation, disclosure v0.2/v0.3, replay persistence, payment-intent/settlement verification, and the read-only Z3 transport are implemented and covered by tests. Browser/WASM protocol execution, holder vault storage, enrollment/key-possession UX, authenticated browser transport, wallet spending, production invoice lifecycle automation, and live FROST wiring remain unimplemented.
 
 See [M1B implementation](specs/implementation-m1b.md).
 
@@ -136,3 +136,27 @@ on reorgs. The explicit regtest helper exposes transparent coinbase funding and
 shielded receipt; it does not weaken `FullPrivacy` to make fully shielded sends work.
 No wallet seeds/keys, transaction IDs, addresses or memos are written to public
 fixtures. Generic credentials do not acquire wallet dependencies.
+
+## Compound disclosure / invoice lifecycle decisions
+
+The v0.3 extension signs 2–8 ordered atomic request descriptions with identical
+origin, purpose, challenge, nonce and validity. It keeps v0.2 unchanged and verifies
+all issuer attestations with one audience subject key before consuming one durable
+replay row. Payment requirements use payment.invoice_paid with the canonical intent
+digest as context; approval requirements use the same ordinary attestation primitive.
+Payment receipt observations remain native issuer evidence, never verifier proof.
+
+Exact settlement checks sum only external shielded outputs to a pinned recipient.
+The payment ledger retains only intent ID/digest, txid and lifecycle status, uses a
+unique transaction constraint, and rejects stale/cancelled/expired observations.
+A receipt requires a mined block identity/time and a fresh named-transaction query;
+reorg revocation and invoice retention/deletion remain issuer responsibilities.
+No whole-wallet response, participant secrets or PCZT bytes enter browser data.
+SQLite reuses the existing maintained rusqlite dependency for durable single-credit
+protection. No cryptographic profile, trust root or subject enrollment changes.
+
+PCZT interfaces bind explicit review to the exact plan and intent digest; inspection
+is creator-claimed metadata, not cryptographic proof. External adapters must validate
+extracted transactions against their original proposals. Shared control delegates
+approval verification to reviewed external tooling. Native HTTP remains read-only;
+discovery alone never authorizes spending. FROST is an interface, not live signing.

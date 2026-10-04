@@ -16,6 +16,8 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 
 def credentials():
+    if os.getenv("Z3_REGTEST_UNAUTHENTICATED") == "1":
+        return None
     user = os.getenv("Z3_REGTEST_RPC_ROUTER_USER", "zebra")
     password = os.getenv("Z3_REGTEST_RPC_ROUTER_PASSWORD")
     if not password:
@@ -25,12 +27,15 @@ def credentials():
 def call(method):
     if method not in ALLOWED_METHODS:
         raise RuntimeError("RPC method not allowlisted")
-    user, password = credentials()
-    auth = base64.b64encode((user + ":" + password).encode()).decode()
+    credential = credentials()
+    headers = {"Content-Type": "application/json"}
+    if credential:
+        user, password = credential
+        headers["Authorization"] = "Basic " + base64.b64encode((user + ":" + password).encode()).decode()
     request = urllib.request.Request(
         URL,
         json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": []}).encode(),
-        {"Content-Type": "application/json", "Authorization": "Basic " + auth},
+        headers,
         method="POST",
     )
     with opener.open(request, timeout=15) as response:
@@ -55,7 +60,10 @@ try:
         "blocks": chain["blocks"],
         "wallet_rpc_reachable": True,
         "payment_exercised": False,
-        "methods": sorted(names & {"getblockchaininfo", "getwalletinfo", "z_sendmany"}),
+        "pczt_complete": all(m in names for m in ("pczt_create", "pczt_inspect", "pczt_prove", "pczt_sign", "pczt_combine", "pczt_extract")),
+        "sendfromaccount_advertised": "z_sendfromaccount" in names,
+        "receipt_verification": "z_viewtransaction" in names,
+        "methods": sorted(names & {"getblockchaininfo", "getwalletinfo", "z_sendmany", "z_viewtransaction", "z_sendfromaccount", "pczt_create", "pczt_inspect", "pczt_prove", "pczt_sign", "pczt_combine", "pczt_extract"}),
     }))
 except Exception:
     raise SystemExit(

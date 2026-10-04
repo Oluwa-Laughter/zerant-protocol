@@ -1,12 +1,24 @@
 //! Read-only live probe. Never prints wallet-wide response data.
 use zerant_zcash::{Adapter, HttpRegtestTransport};
 fn run() -> zerant_core::Result<()> {
-    let transport = HttpRegtestTransport::new(
-        std::env::var("Z3_REGTEST_RPC_ROUTER_USER").unwrap_or_else(|_| "zebra".into()),
-        std::env::var("Z3_REGTEST_RPC_ROUTER_PASSWORD").map_err(|_| zerant_core::Error::Trust)?,
-    )?;
+    let transport = if std::env::var("Z3_REGTEST_UNAUTHENTICATED").as_deref() == Ok("1") {
+        HttpRegtestTransport::unauthenticated()?
+    } else {
+        HttpRegtestTransport::new(
+            std::env::var("Z3_REGTEST_RPC_ROUTER_USER").unwrap_or_else(|_| "zebra".into()),
+            std::env::var("Z3_REGTEST_RPC_ROUTER_PASSWORD")
+                .map_err(|_| zerant_core::Error::Trust)?,
+        )?
+    };
     let adapter = Adapter(transport);
-    let methods = adapter.capabilities()?.methods;
+    let capabilities = adapter.capabilities()?;
+    println!(
+        "pczt_complete={} sendfromaccount={} receipt_verification={}",
+        capabilities.pczt_complete,
+        capabilities.sendfromaccount_advertised,
+        capabilities.receipt_verification
+    );
+    let methods = capabilities.methods;
     for method in ["getblockchaininfo", "getwalletinfo"] {
         if !methods.iter().any(|m| m == method) {
             return Err(zerant_core::Error::Trust);

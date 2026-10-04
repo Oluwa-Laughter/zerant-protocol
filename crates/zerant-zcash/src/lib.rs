@@ -6,6 +6,9 @@
 //! live supported regtest contract is exercised.
 #![forbid(unsafe_code)]
 
+pub mod payment;
+pub mod pczt;
+
 use serde_json::{Value, json};
 use zerant_core::{Error, MAX_JSON_BYTES, MAX_SAFE_INTEGER, Result};
 use zerant_credential::{ClaimValue, OrdinaryClaim};
@@ -13,7 +16,15 @@ use zerant_credential::{ClaimValue, OrdinaryClaim};
 pub const RPC_DISCOVER: &str = "rpc.discover";
 pub const RPC_BLOCKCHAIN_INFO: &str = "getblockchaininfo";
 pub const RPC_WALLET_INFO: &str = "getwalletinfo";
+pub const RPC_VIEW_TRANSACTION: &str = "z_viewtransaction";
 pub const RPC_SEND_MANY: &str = "z_sendmany";
+pub const RPC_SEND_FROM_ACCOUNT: &str = "z_sendfromaccount";
+pub const RPC_PCZT_CREATE: &str = "pczt_create";
+pub const RPC_PCZT_COMBINE: &str = "pczt_combine";
+pub const RPC_PCZT_INSPECT: &str = "pczt_inspect";
+pub const RPC_PCZT_PROVE: &str = "pczt_prove";
+pub const RPC_PCZT_SIGN: &str = "pczt_sign";
+pub const RPC_PCZT_EXTRACT: &str = "pczt_extract";
 
 /// Transport owns authentication, deadlines, endpoint selection, TLS/loopback policy,
 /// and response-size enforcement before returning JSON.
@@ -23,8 +34,12 @@ pub trait RegtestTransport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Capabilities {
+    pub states: std::collections::BTreeMap<String, CapabilityState>,
     pub methods: Vec<String>,
     pub sendmany_advertised: bool,
+    pub pczt_complete: bool,
+    pub sendfromaccount_advertised: bool,
+    pub receipt_verification: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,12 +55,6 @@ pub enum WalletReadiness {
 }
 
 pub struct Adapter<T>(pub T);
-fn validate_txid(txid: &str) -> Result<()> {
-    if txid.len() != 64 || !txid.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return Err(Error::Encoding);
-    }
-    Ok(())
-}
 
 fn bounded(value: &Value) -> Result<()> {
     if serde_json::to_vec(value).map_err(|_| Error::Json)?.len() > MAX_JSON_BYTES {
@@ -78,8 +87,44 @@ impl<T: RegtestTransport> Adapter<T> {
         names.sort();
         names.dedup();
 
+        let states = [
+            "z_viewtransaction",
+            "z_sendmany",
+            "z_sendfromaccount",
+            "pczt_create",
+            "pczt_combine",
+            "pczt_inspect",
+            "pczt_prove",
+            "pczt_sign",
+            "pczt_extract",
+        ]
+        .into_iter()
+        .map(|method| {
+            (
+                method.to_owned(),
+                if names.iter().any(|n| n == method) {
+                    CapabilityState::Advertised
+                } else {
+                    CapabilityState::Absent
+                },
+            )
+        })
+        .collect();
         Ok(Capabilities {
+            states,
             sendmany_advertised: names.iter().any(|name| name == RPC_SEND_MANY),
+            pczt_complete: [
+                "pczt_create",
+                "pczt_inspect",
+                "pczt_prove",
+                "pczt_sign",
+                "pczt_combine",
+                "pczt_extract",
+            ]
+            .iter()
+            .all(|m| names.iter().any(|n| n == m)),
+            sendfromaccount_advertised: names.iter().any(|n| n == "z_sendfromaccount"),
+            receipt_verification: names.iter().any(|n| n == "z_viewtransaction"),
             methods: names,
         })
     }
@@ -118,8 +163,8 @@ impl<T: RegtestTransport> Adapter<T> {
     /// Current Zallet method verified from live Z3 OpenRPC discovery. One named
     /// transaction only; raw outputs, memos and account metadata are discarded.
     pub fn confirmations(&self, txid: &str) -> Result<u64> {
-        validate_txid(txid)?;
-        let response = self.0.call("z_viewtransaction", json!([txid]))?;
+        payment::validate_txid(txid)?;
+        let response = self.0.call(RPC_VIEW_TRANSACTION, json!([txid]))?;
         bounded(&response)?;
         response
             .get("confirmations")
@@ -138,7 +183,7 @@ impl<T: RegtestTransport> Adapter<T> {
         minimum_zat: u64,
         minimum_confirmations: u64,
     ) -> Result<()> {
-        validate_txid(txid)?;
+        payment::validate_txid(txid)?;
         if recipient.is_empty()
             || recipient.len() > 1024
             || minimum_zat == 0
@@ -148,7 +193,7 @@ impl<T: RegtestTransport> Adapter<T> {
         {
             return Err(Error::Credential);
         }
-        let response = self.0.call("z_viewtransaction", json!([txid]))?;
+        let response = self.0.call(RPC_VIEW_TRANSACTION, json!([txid]))?;
         bounded(&response)?;
         let confirmations = response
             .get("confirmations")
@@ -232,10 +277,17 @@ pub struct HttpRegtestTransport {
     password: String,
 }
 impl HttpRegtestTransport {
+    /// Explicit opt-in for an isolated loopback router configured without auth.
+    pub fn unauthenticated() -> Result<Self> {
+        Self::build(String::new(), String::new())
+    }
     pub fn new(username: String, password: String) -> Result<Self> {
         if username.is_empty() || password.is_empty() {
             return Err(Error::Trust);
         }
+        Self::build(username, password)
+    }
+    fn build(username: String, password: String) -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none())
@@ -254,28 +306,31 @@ impl RegtestTransport for HttpRegtestTransport {
         use std::io::Read;
         if !matches!(
             method,
-            "rpc.discover" | "getblockchaininfo" | "getwalletinfo" | "z_viewtransaction"
+            "rpc.discover" | "getblockchaininfo" | "getwalletinfo" | RPC_VIEW_TRANSACTION
         ) {
             return Err(Error::Trust);
         }
-        if method == "z_viewtransaction" {
+        if method == RPC_VIEW_TRANSACTION {
             let txid = params
                 .as_array()
                 .filter(|a| a.len() == 1)
                 .and_then(|a| a[0].as_str())
                 .ok_or(Error::Encoding)?;
-            validate_txid(txid)?;
+            payment::validate_txid(txid)?;
         } else if params != json!([]) {
             return Err(Error::Encoding);
         }
 
-        let response = self
+        let request = self
             .client
             .post("http://127.0.0.1:8181")
-            .basic_auth(&self.username, Some(&self.password))
-            .json(&json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}))
-            .send()
-            .map_err(|_| Error::Trust)?;
+            .json(&json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}));
+        let request = if self.username.is_empty() {
+            request
+        } else {
+            request.basic_auth(&self.username, Some(&self.password))
+        };
+        let response = request.send().map_err(|_| Error::Trust)?;
         if !response.status().is_success() {
             return Err(Error::Trust);
         }
@@ -310,6 +365,7 @@ mod tests {
                     "methods":[
                         {"name":"getblockchaininfo"},
                         {"name":"getwalletinfo"},
+                        {"name":"z_viewtransaction"},
                         {"name":"z_sendmany"}
                     ]
                 })),
@@ -332,6 +388,8 @@ mod tests {
         let adapter = Adapter(Mock);
         let capabilities = adapter.capabilities().unwrap();
         assert!(capabilities.sendmany_advertised);
+        assert!(capabilities.receipt_verification);
+        assert_eq!(capabilities.spend_plan(), SpendPlan::SendMany);
         assert!(
             capabilities
                 .methods
@@ -429,6 +487,143 @@ mod payment_tests {
             assert!(!wire.contains(private));
         }
     }
+
+    struct IntentTransport {
+        transaction: Value,
+    }
+    impl RegtestTransport for IntentTransport {
+        fn call(&self, method: &str, params: Value) -> Result<Value> {
+            match method {
+                RPC_DISCOVER => Ok(json!({
+                    "methods":[
+                        {"name":"z_viewtransaction"},
+                        {"name":"z_sendmany"}
+                    ]
+                })),
+                RPC_VIEW_TRANSACTION => {
+                    assert_eq!(params, json!(["b".repeat(64)]));
+                    Ok(self.transaction.clone())
+                }
+                _ => Err(Error::Trust),
+            }
+        }
+    }
+
+    fn intent_transaction() -> Value {
+        json!({
+            "status":"mined",
+            "confirmations":4,
+            "blockhash":"c".repeat(64),
+            "blocktime":1_800_000_000_u64,
+            "outputs":[{
+                "address":"uregtest-recipient-placeholder",
+                "valueZat":50_000_u64,
+                "walletInternal":false,
+                "pool":"orchard"
+            }]
+        })
+    }
+
+    #[test]
+    fn named_transaction_verifies_exact_intent_without_wallet_history() {
+        use crate::payment::{PAYMENT_INTENT_SCHEMA, PaymentIntent, PrivacyPolicy, ZcashNetwork};
+        let intent = PaymentIntent {
+            schema: PAYMENT_INTENT_SCHEMA.into(),
+            intent_id: zerant_core::encode_base64url(&[41; 16]),
+            network: ZcashNetwork::Regtest,
+            requester_origin: "https://pay.example".into(),
+            recipient: "uregtest-recipient-placeholder".into(),
+            amount_zat: 50_000,
+            min_confirmations: 3,
+            privacy_policy: PrivacyPolicy::FullPrivacy,
+            issued_at: 1_799_999_990,
+            expires_at: 1_800_000_600,
+            reference_commitment: None,
+        };
+        let adapter = Adapter(IntentTransport {
+            transaction: intent_transaction(),
+        });
+        let verified = adapter
+            .verify_intent(
+                &intent,
+                &"b".repeat(64),
+                1_800_000_010,
+                "https://pay.example",
+                &[],
+            )
+            .unwrap();
+        assert_eq!(verified.confirmations(), 4);
+
+        let mut wrong = intent.clone();
+        wrong.amount_zat = 50_001;
+        assert!(
+            adapter
+                .verify_intent(
+                    &wrong,
+                    &"b".repeat(64),
+                    1_800_000_010,
+                    "https://pay.example",
+                    &[],
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn capability_planner_prefers_reviewable_paths() {
+        use std::collections::BTreeMap;
+        let state = |advertised| {
+            if advertised {
+                CapabilityState::Advertised
+            } else {
+                CapabilityState::Absent
+            }
+        };
+        let mut states = BTreeMap::new();
+        for method in [
+            RPC_VIEW_TRANSACTION,
+            RPC_SEND_MANY,
+            RPC_SEND_FROM_ACCOUNT,
+            RPC_PCZT_CREATE,
+            RPC_PCZT_COMBINE,
+            RPC_PCZT_INSPECT,
+            RPC_PCZT_PROVE,
+            RPC_PCZT_SIGN,
+            RPC_PCZT_EXTRACT,
+        ] {
+            states.insert(method.into(), state(false));
+        }
+        states.insert(RPC_VIEW_TRANSACTION.into(), state(true));
+        let mut capabilities = Capabilities {
+            states,
+            methods: vec![RPC_VIEW_TRANSACTION.into()],
+            sendmany_advertised: false,
+            pczt_complete: false,
+            sendfromaccount_advertised: false,
+            receipt_verification: true,
+        };
+        assert_eq!(capabilities.spend_plan(), SpendPlan::ReadOnlyVerification);
+        capabilities
+            .states
+            .insert(RPC_SEND_MANY.into(), state(true));
+        assert_eq!(capabilities.spend_plan(), SpendPlan::SendMany);
+        capabilities
+            .states
+            .insert(RPC_SEND_FROM_ACCOUNT.into(), state(true));
+        assert_eq!(capabilities.spend_plan(), SpendPlan::SendFromAccount);
+        for method in [
+            RPC_PCZT_CREATE,
+            RPC_PCZT_COMBINE,
+            RPC_PCZT_INSPECT,
+            RPC_PCZT_PROVE,
+            RPC_PCZT_SIGN,
+            RPC_PCZT_EXTRACT,
+        ] {
+            capabilities.states.insert(method.into(), state(true));
+        }
+        assert_eq!(capabilities.spend_plan(), SpendPlan::PcztReviewFirst);
+    }
+
     #[test]
     fn malformed_unconfirmed_transparent_and_internal_outputs_fail() {
         for (field, value) in [
@@ -460,5 +655,46 @@ mod payment_tests {
                 .matches_payment(&"a".repeat(64), "specific-recipient", 100000000, 3)
                 .is_err()
         );
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapabilityState {
+    Advertised,
+    Absent,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpendPlan {
+    ReadOnlyVerification,
+    SendMany,
+    SendFromAccount,
+    PcztReviewFirst,
+    Unsupported,
+}
+impl Capabilities {
+    /// Selection is a planning hint, never spend authorization.
+    pub fn spend_plan(&self) -> SpendPlan {
+        let has = |m: &str| self.states.get(m) == Some(&CapabilityState::Advertised);
+        if [
+            "pczt_create",
+            "pczt_combine",
+            "pczt_inspect",
+            "pczt_prove",
+            "pczt_sign",
+            "pczt_extract",
+        ]
+        .iter()
+        .all(|m| has(m))
+        {
+            SpendPlan::PcztReviewFirst
+        } else if has("z_sendfromaccount") {
+            SpendPlan::SendFromAccount
+        } else if has("z_sendmany") {
+            SpendPlan::SendMany
+        } else if has("z_viewtransaction") {
+            SpendPlan::ReadOnlyVerification
+        } else {
+            SpendPlan::Unsupported
+        }
     }
 }

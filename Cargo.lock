@@ -1291,8 +1291,10 @@ name = "zerant-zcash"
 version = "0.1.0"
 dependencies = [
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "zerant-core",
  "zerant-credential",
 ]

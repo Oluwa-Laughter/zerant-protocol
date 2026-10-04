@@ -14,14 +14,25 @@ import urllib.request
 if sys.argv[1:] != ['--execute-regtest']:
     raise SystemExit('Usage: python3 scripts/z3-payment-demo.py --execute-regtest')
 
-if not os.getenv('Z3_REGTEST_RPC_ROUTER_PASSWORD'):
+if not os.getenv('Z3_REGTEST_RPC_ROUTER_PASSWORD') and os.getenv('Z3_REGTEST_UNAUTHENTICATED') != '1':
     raise SystemExit('Set the isolated regtest router password in Z3_REGTEST_RPC_ROUTER_PASSWORD')
 
-AUTH = base64.b64encode((os.getenv('Z3_REGTEST_RPC_ROUTER_USER', 'zebra') + ':' + os.environ['Z3_REGTEST_RPC_ROUTER_PASSWORD']).encode()).decode()
+HEADERS = {"Content-Type": "application/json"}
+if os.getenv('Z3_REGTEST_UNAUTHENTICATED') != '1':
+    HEADERS["Authorization"] = "Basic " + base64.b64encode(
+        (os.getenv("Z3_REGTEST_RPC_ROUTER_USER", "zebra") + ":" + os.environ["Z3_REGTEST_RPC_ROUTER_PASSWORD"]).encode()
+    ).decode()
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise RuntimeError("RPC redirects refused")
+OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
 
+LAST_METHOD = "none"
 def call(method, params):
-    request = urllib.request.Request('http://127.0.0.1:8181', json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}).encode(), {'Content-Type': 'application/json', 'Authorization': 'Basic ' + AUTH})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    global LAST_METHOD
+    LAST_METHOD = method
+    request = urllib.request.Request('http://127.0.0.1:8181', json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}).encode(), HEADERS)
+    with OPENER.open(request, timeout=30) as response:
         raw = response.read(1048577)
     if len(raw) > 1048576:
         raise RuntimeError('RPC size limit')
@@ -36,7 +47,7 @@ def operation(opid):
         if values and values[0]['status'] == 'success':
             result = values[0]['result']
             txids = result.get('txids', [result.get('txid')])
-            if len(txids) != 1 or not isinstance(txids[0], str) or result.get('broadcast') is False:
+            if len(txids) != 1 or not isinstance(txids[0], str) or result.get('broadcast') is not True:
                 raise RuntimeError('Unsupported transaction result')
             return txids[0]
         if values and values[0]['status'] in ('failed', 'cancelled'):
@@ -68,7 +79,7 @@ try:
     for _ in range(30):
         view = call('z_viewtransaction', [txid])
         confirmations = view.get('confirmations', 0)
-        matched = any(o.get('address') == recipient and isinstance(o.get('valueZat'), int) and o['valueZat'] >= 100000000 and not o.get('walletInternal', False) and o.get('pool') != 'transparent' for o in view.get('outputs', []))
+        matched = any(o.get('address') == recipient and type(o.get('valueZat')) is int and o['valueZat'] >= 100000000 and o.get('walletInternal') is False and o.get('pool') in ('sapling', 'orchard', 'ironwood') for o in view.get('outputs', []))
         if confirmations >= 3 and matched:
             print(json.dumps({'network': 'regtest', 'path': 'coinbase-shielding', 'confirmations': confirmations, 'recipient_and_minimum_amount_matched': True, 'fully_shielded_send_demonstrated': False}))
             break
@@ -76,4 +87,4 @@ try:
     else:
         raise RuntimeError('Specific payment condition not observed')
 except Exception:
-    raise SystemExit('Regtest payment demo failed; no payment-condition success is claimed. Inspect the local stack privately.')
+    raise SystemExit('Regtest payment demo failed after ' + LAST_METHOD + '; no payment-condition success is claimed. Inspect the local stack privately.')
