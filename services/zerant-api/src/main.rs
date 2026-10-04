@@ -48,6 +48,8 @@ use zerant_zcash::{Adapter, HttpRegtestTransport};
 const SESSION_COOKIE: &str = "zerant_session";
 const AUTH_ATTEMPT_COOKIE: &str = "zerant_auth_attempt";
 const MAX_CREDENTIAL_BYTES: usize = 256 * 1024;
+const MAX_ACCOUNT_CREDENTIALS: i64 = 256;
+const MAX_ACCOUNT_EXPORT_EVENTS: i64 = 5_000;
 const SESSION_TTL_DAYS: i64 = 7;
 const ZECAUTH_TTL_MINUTES: i64 = 5;
 const WRITE_RATE_WINDOW_SECONDS: i64 = 60;
@@ -157,6 +159,25 @@ impl CredentialRow {
             updated_at: row.get("updated_at"),
         }
     }
+}
+
+#[derive(Serialize)]
+struct AccountSummary {
+    zerant_id: String,
+    credential_count: i64,
+    issuer_profile: Option<String>,
+    verifier_profile: Option<String>,
+    can_delete: bool,
+}
+
+#[derive(Serialize)]
+struct AccountExport {
+    export_version: u8,
+    generated_at: OffsetDateTime,
+    zerant_id: String,
+    credentials: Vec<StoredCredential>,
+    activity: Vec<ActivityEventView>,
+    activity_complete: bool,
 }
 
 #[derive(Deserialize)]
@@ -1229,6 +1250,197 @@ async fn redeem_zecauth_session(
     Ok(response)
 }
 
+async fn ensure_credential_capacity(db: &Pool, account: Uuid) -> Result<(), ApiError> {
+    let client = db_client(db).await?;
+    let row = client
+        .query_one(
+            "SELECT COUNT(*) FROM credential_envelopes WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let count: i64 = row.get(0);
+    if count >= MAX_ACCOUNT_CREDENTIALS {
+        return Err(ApiError::Conflict);
+    }
+    Ok(())
+}
+
+async fn account_summary(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<AccountSummary>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_one(
+            "SELECT a.public_handle,
+                    (SELECT COUNT(*) FROM credential_envelopes e WHERE e.account_id = a.id),
+                    (SELECT display_name FROM issuer_profiles p WHERE p.account_id = a.id),
+                    (SELECT display_name FROM verifier_profiles v WHERE v.account_id = a.id)
+             FROM accounts a
+             WHERE a.id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let zerant_id: Option<String> = row.get(0);
+    let issuer_profile: Option<String> = row.get(2);
+    let verifier_profile: Option<String> = row.get(3);
+    Ok(Json(AccountSummary {
+        zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
+        credential_count: row.get(1),
+        can_delete: issuer_profile.is_none() && verifier_profile.is_none(),
+        issuer_profile,
+        verifier_profile,
+    }))
+}
+
+async fn export_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<AccountExport>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "account_export", 10).await?;
+    let client = db_client(&state.db).await?;
+
+    let account_row = client
+        .query_one(
+            "SELECT public_handle FROM accounts WHERE id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let zerant_id: Option<String> = account_row.get(0);
+
+    let rows = client
+        .query(
+            "SELECT e.id, e.ciphertext, e.data_nonce, e.wrapped_dek, e.wrap_nonce,
+                    e.key_version, e.created_at, e.updated_at,
+                    COALESCE(c.revoked_at IS NOT NULL, false) AS revoked
+             FROM credential_envelopes e
+             LEFT JOIN issued_credentials c ON c.vault_record_id = e.id
+             WHERE e.account_id = $1
+             ORDER BY e.created_at DESC",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    if i64::try_from(rows.len()).map_err(|_| ApiError::Unavailable)? > MAX_ACCOUNT_CREDENTIALS {
+        return Err(ApiError::Conflict);
+    }
+
+    let mut credentials = Vec::with_capacity(rows.len());
+    for row in rows {
+        let revoked: bool = row.get("revoked");
+        let row = CredentialRow::from_row(row);
+        let mut plaintext = state.cipher.decrypt(account, &row)?;
+        let credential = serde_json::from_slice(&plaintext).map_err(|_| ApiError::Unavailable)?;
+        plaintext.fill(0);
+        credentials.push(StoredCredential {
+            id: row.id,
+            credential,
+            revoked,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        });
+    }
+
+    let event_limit = MAX_ACCOUNT_EXPORT_EVENTS
+        .checked_add(1)
+        .ok_or(ApiError::Unavailable)?;
+    let event_rows = client
+        .query(
+            "SELECT id, event_type, object_id, label, context, counterparty, created_at
+             FROM trust_events
+             WHERE account_id = $1
+             ORDER BY created_at DESC, id DESC
+             LIMIT $2",
+            &[&account, &event_limit],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let activity_complete = i64::try_from(event_rows.len()).map_err(|_| ApiError::Unavailable)?
+        <= MAX_ACCOUNT_EXPORT_EVENTS;
+    let mut activity = Vec::new();
+    for row in event_rows
+        .into_iter()
+        .take(usize::try_from(MAX_ACCOUNT_EXPORT_EVENTS).map_err(|_| ApiError::Unavailable)?)
+    {
+        activity.push(ActivityEventView {
+            id: row.get(0),
+            event_type: row.get(1),
+            object_id: row.get(2),
+            label: row.get(3),
+            context: row.get(4),
+            counterparty: row.get(5),
+            created_at: row.get(6),
+        });
+    }
+
+    Ok(Json(AccountExport {
+        export_version: 1,
+        generated_at: OffsetDateTime::now_utc(),
+        zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
+        credentials,
+        activity,
+        activity_complete,
+    }))
+}
+
+async fn delete_account(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let roles = tx
+        .query_one(
+            "SELECT EXISTS(SELECT 1 FROM issuer_profiles WHERE account_id = $1),
+                    EXISTS(SELECT 1 FROM verifier_profiles WHERE account_id = $1)",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let has_issuer: bool = roles.get(0);
+    let has_verifier: bool = roles.get(1);
+    if has_issuer || has_verifier {
+        return Err(ApiError::Conflict);
+    }
+
+    tx.query_one(
+        "SELECT set_config('zerant.allow_account_delete', 'on', true)",
+        &[],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    let affected = tx
+        .execute("DELETE FROM accounts WHERE id = $1", &[&account])
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    if affected != 1 {
+        return Err(ApiError::NotFound);
+    }
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    let clear = format!("{SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0");
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    response.headers_mut().insert(
+        SET_COOKIE,
+        HeaderValue::from_str(&clear).map_err(|_| ApiError::Unavailable)?,
+    );
+    Ok(response)
+}
+
 async fn list_credentials(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1275,6 +1487,7 @@ async fn store_credential(
 ) -> Result<(StatusCode, Json<StoredCredential>), ApiError> {
     let account = account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, account, "credential_store", 30).await?;
+    ensure_credential_capacity(&state.db, account).await?;
     let mut plaintext = serde_json::to_vec(&input.credential).map_err(|_| ApiError::Invalid)?;
     if plaintext.is_empty() || plaintext.len() > MAX_CREDENTIAL_BYTES {
         plaintext.fill(0);
@@ -2580,6 +2793,7 @@ async fn issue_private_credential(
         .map_err(|_| ApiError::Unavailable)?
         .ok_or(ApiError::NotFound)?;
     let subject_account: Uuid = subject.get(0);
+    ensure_credential_capacity(&state.db, subject_account).await?;
     let subject_key = ensure_account_credential_key(&state, subject_account).await?;
 
     let profile_id: Uuid = issuer.get(0);
@@ -2952,6 +3166,8 @@ fn app(state: AppState) -> Router {
         .route("/v1/auth/zecauth/verify", post(zecauth_verify))
         .route("/v1/auth/zecauth/session", get(redeem_zecauth_session))
         .route("/v1/session", get(session_info).delete(logout))
+        .route("/v1/account", get(account_summary).delete(delete_account))
+        .route("/v1/account/export", get(export_account))
         .route("/v1/activity", get(list_activity))
         .route("/v1/issuer", get(get_issuer_profile).post(register_issuer))
         .route(

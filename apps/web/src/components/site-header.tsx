@@ -14,6 +14,7 @@ export function SiteHeader() {
         <Link href="/requests">Requests</Link>
         <Link href="/activity">Activity</Link>
         <Link href="/vault">Credentials</Link>
+        <Link href="/account">Account</Link>
         <Link href="/app" className="nav-app">Open Zerant <span aria-hidden="true">↗</span></Link>
       </nav>
     </header>
