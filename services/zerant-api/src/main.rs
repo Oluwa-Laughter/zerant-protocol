@@ -11,6 +11,7 @@ use axum::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
+use hmac::{Hmac, Mac};
 use josekit::jwk::{Jwk, alg::ed::EdCurve};
 use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
@@ -30,6 +31,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     str::FromStr,
     sync::Arc,
+    time::Duration as StdDuration,
 };
 use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio_postgres::{NoTls, Row, Transaction, config::SslMode};
@@ -64,7 +66,10 @@ const ZECAUTH_TTL_MINUTES: i64 = 5;
 const WRITE_RATE_WINDOW_SECONDS: i64 = 60;
 const MAX_ACTIVE_ZECAUTH_CHALLENGES: i64 = 10_000;
 const MAX_ACTIVE_VERIFIER_API_KEYS: i64 = 20;
+const MAX_ACTIVE_VERIFIER_WEBHOOKS: i64 = 5;
+const MAX_WEBHOOK_ATTEMPTS: i32 = 8;
 const VERIFIER_API_KEY_PREFIX: &str = "zrt_vk_";
+const VERIFIER_WEBHOOK_SECRET_PREFIX: &str = "zrt_whsec_";
 
 #[derive(Clone)]
 struct AppState {
@@ -551,6 +556,41 @@ struct CreatedVerifierApiKey {
     secret: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateVerifierWebhook {
+    name: String,
+    url: String,
+}
+
+#[derive(Serialize)]
+struct VerifierWebhookView {
+    id: Uuid,
+    name: String,
+    url: String,
+    created_at: OffsetDateTime,
+    last_delivery_at: Option<OffsetDateTime>,
+    disabled: bool,
+    pending_deliveries: i64,
+    dead_deliveries: i64,
+}
+
+#[derive(Serialize)]
+struct CreatedVerifierWebhook {
+    webhook: VerifierWebhookView,
+    secret: String,
+}
+
+#[derive(Serialize)]
+struct WebhookDispatchSummary {
+    claimed: usize,
+    delivered: usize,
+    retried: usize,
+    dead: usize,
+    pending: i64,
+    finalized: bool,
+}
+
 #[derive(Serialize)]
 struct IssuerDirectoryEntry {
     display_name: String,
@@ -853,6 +893,103 @@ fn generate_verifier_api_secret() -> String {
     let encoded = URL_SAFE_NO_PAD.encode(bytes);
     bytes.fill(0);
     format!("{VERIFIER_API_KEY_PREFIX}{encoded}")
+}
+
+fn generate_webhook_secret() -> String {
+    let mut bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    let encoded = URL_SAFE_NO_PAD.encode(bytes);
+    bytes.fill(0);
+    format!("{VERIFIER_WEBHOOK_SECRET_PREFIX}{encoded}")
+}
+
+fn parse_webhook_url(input: &str) -> Result<url::Url, ApiError> {
+    if input.len() > 2048 {
+        return Err(ApiError::Invalid);
+    }
+    let url = url::Url::parse(input).map_err(|_| ApiError::Invalid)?;
+    if url.scheme() != "https"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+        || url.query().is_some()
+        || url.port_or_known_default() != Some(443)
+    {
+        return Err(ApiError::Invalid);
+    }
+    let host = url.host_str().ok_or(ApiError::Invalid)?;
+    if host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost") {
+        return Err(ApiError::Invalid);
+    }
+    Ok(url)
+}
+
+fn webhook_ip_is_public(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            let [a, b, c, _] = ip.octets();
+            !(a == 0
+                || a == 10
+                || a == 127
+                || (a == 100 && (64..=127).contains(&b))
+                || (a == 169 && b == 254)
+                || (a == 172 && (16..=31).contains(&b))
+                || (a == 192 && b == 168)
+                || (a == 192 && b == 0 && c == 0)
+                || (a == 192 && b == 0 && c == 2)
+                || (a == 198 && (b == 18 || b == 19))
+                || (a == 198 && b == 51 && c == 100)
+                || (a == 203 && b == 0 && c == 113)
+                || a >= 224)
+        }
+        IpAddr::V6(ip) => {
+            if let Some(v4) = ip.to_ipv4_mapped() {
+                return webhook_ip_is_public(IpAddr::V4(v4));
+            }
+            let segments = ip.segments();
+            !(ip.is_unspecified()
+                || ip.is_loopback()
+                || ip.is_multicast()
+                || (segments[0] & 0xfe00) == 0xfc00
+                || (segments[0] & 0xffc0) == 0xfe80
+                || (segments[0] == 0x2001 && segments[1] == 0x0db8))
+        }
+    }
+}
+
+async fn webhook_public_addrs(url: &url::Url) -> Result<(String, Vec<SocketAddr>), ApiError> {
+    let host = url.host_str().ok_or(ApiError::Invalid)?.to_owned();
+    let mut addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 443))
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .collect();
+    addrs.sort();
+    addrs.dedup();
+    if addrs.is_empty() || addrs.iter().any(|addr| !webhook_ip_is_public(addr.ip())) {
+        return Err(ApiError::Invalid);
+    }
+    Ok((host, addrs))
+}
+
+fn webhook_signature(secret: &[u8], timestamp: i64, body: &[u8]) -> Result<String, ApiError> {
+    let mut mac =
+        <Hmac<Sha256> as Mac>::new_from_slice(secret).map_err(|_| ApiError::Unavailable)?;
+    mac.update(timestamp.to_string().as_bytes());
+    mac.update(b".");
+    mac.update(body);
+    Ok(format!("v1={}", hex::encode(mac.finalize().into_bytes())))
+}
+
+fn webhook_retry_seconds(attempt_count: i32) -> i64 {
+    match attempt_count {
+        0 | 1 => 60,
+        2 => 300,
+        3 => 900,
+        4 => 3_600,
+        5 => 21_600,
+        6 => 43_200,
+        _ => 86_400,
+    }
 }
 
 fn bearer_token(headers: &HeaderMap) -> Result<&str, ApiError> {
@@ -3156,6 +3293,583 @@ async fn revoke_verifier_api_key(
     }))
 }
 
+async fn create_verifier_webhook(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CreateVerifierWebhook>,
+) -> Result<(StatusCode, Json<CreatedVerifierWebhook>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "verifier_webhook_create", 10).await?;
+
+    let name = input.name.trim().to_owned();
+    if !valid_short_text(&name, 2, 80) {
+        return Err(ApiError::Invalid);
+    }
+    let url = parse_webhook_url(input.url.trim())?;
+    webhook_public_addrs(&url).await?;
+    let url = url.to_string();
+
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let verifier = tx
+        .query_opt(
+            "SELECT id FROM verifier_profiles WHERE account_id = $1 FOR UPDATE",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let verifier_profile_id: Uuid = verifier.get(0);
+
+    let active_count: i64 = tx
+        .query_one(
+            "SELECT COUNT(*)
+             FROM verifier_webhooks
+             WHERE verifier_profile_id = $1 AND disabled_at IS NULL",
+            &[&verifier_profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    if active_count >= MAX_ACTIVE_VERIFIER_WEBHOOKS {
+        return Err(ApiError::Conflict);
+    }
+
+    let id = Uuid::new_v4();
+    let secret = generate_webhook_secret();
+    let encrypted = state.cipher.encrypt(account, id, secret.as_bytes())?;
+    let row = tx
+        .query_one(
+            "INSERT INTO verifier_webhooks
+             (id, verifier_profile_id, name, url, ciphertext, data_nonce,
+              wrapped_dek, wrap_nonce, key_version)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+             RETURNING created_at",
+            &[
+                &id,
+                &verifier_profile_id,
+                &name,
+                &url,
+                &encrypted.ciphertext,
+                &encrypted.data_nonce,
+                &encrypted.wrapped_dek,
+                &encrypted.wrap_nonce,
+                &encrypted.key_version,
+            ],
+        )
+        .await
+        .map_err(|error| {
+            if error
+                .as_db_error()
+                .is_some_and(|db| db.code().code() == "23505")
+            {
+                ApiError::Conflict
+            } else {
+                ApiError::Unavailable
+            }
+        })?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(CreatedVerifierWebhook {
+            webhook: VerifierWebhookView {
+                id,
+                name,
+                url,
+                created_at: row.get(0),
+                last_delivery_at: None,
+                disabled: false,
+                pending_deliveries: 0,
+                dead_deliveries: 0,
+            },
+            secret,
+        }),
+    ))
+}
+
+async fn list_verifier_webhooks(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<VerifierWebhookView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let rows = client
+        .query(
+            "SELECT w.id, w.name, w.url, w.created_at, w.last_delivery_at, w.disabled_at,
+                    COUNT(d.id) FILTER (WHERE d.status IN ('pending','delivering')),
+                    COUNT(d.id) FILTER (WHERE d.status = 'dead')
+             FROM verifier_webhooks w
+             JOIN verifier_profiles v ON v.id = w.verifier_profile_id
+             LEFT JOIN webhook_deliveries d ON d.webhook_id = w.id
+             WHERE v.account_id = $1
+             GROUP BY w.id
+             ORDER BY w.created_at DESC
+             LIMIT 100",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(
+        rows.into_iter()
+            .map(|row| {
+                let disabled_at: Option<OffsetDateTime> = row.get(5);
+                VerifierWebhookView {
+                    id: row.get(0),
+                    name: row.get(1),
+                    url: row.get(2),
+                    created_at: row.get(3),
+                    last_delivery_at: row.get(4),
+                    disabled: disabled_at.is_some(),
+                    pending_deliveries: row.get(6),
+                    dead_deliveries: row.get(7),
+                }
+            })
+            .collect(),
+    ))
+}
+
+async fn disable_verifier_webhook(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<VerifierWebhookView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "verifier_webhook_disable", 20).await?;
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let row = tx
+        .query_opt(
+            "UPDATE verifier_webhooks w
+             SET disabled_at = NOW()
+             FROM verifier_profiles v
+             WHERE w.id = $1
+               AND w.verifier_profile_id = v.id
+               AND v.account_id = $2
+               AND w.disabled_at IS NULL
+             RETURNING w.id, w.name, w.url, w.created_at, w.last_delivery_at",
+            &[&id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Conflict)?;
+    tx.execute(
+        "UPDATE webhook_deliveries
+         SET status = 'dead',
+             last_error = 'webhook_disabled'
+         WHERE webhook_id = $1 AND status IN ('pending','delivering')",
+        &[&id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    let dead_deliveries: i64 = tx
+        .query_one(
+            "SELECT COUNT(*) FROM webhook_deliveries WHERE webhook_id = $1 AND status = 'dead'",
+            &[&id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(VerifierWebhookView {
+        id: row.get(0),
+        name: row.get(1),
+        url: row.get(2),
+        created_at: row.get(3),
+        last_delivery_at: row.get(4),
+        disabled: true,
+        pending_deliveries: 0,
+        dead_deliveries,
+    }))
+}
+
+async fn enqueue_verifier_webhooks(
+    tx: &Transaction<'_>,
+    verifier_profile_id: Uuid,
+    request_id: Uuid,
+    event_type: &str,
+    credential_schema_id: Option<Uuid>,
+    occurred_at: OffsetDateTime,
+) -> Result<(), ApiError> {
+    if !matches!(event_type, "verification.approved" | "verification.denied") {
+        return Err(ApiError::Unavailable);
+    }
+    let webhooks = tx
+        .query(
+            "SELECT id
+             FROM verifier_webhooks
+             WHERE verifier_profile_id = $1 AND disabled_at IS NULL
+             ORDER BY created_at ASC
+             LIMIT $2",
+            &[&verifier_profile_id, &MAX_ACTIVE_VERIFIER_WEBHOOKS],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let occurred_at_text = occurred_at
+        .format(&Rfc3339)
+        .map_err(|_| ApiError::Unavailable)?;
+    for row in webhooks {
+        let webhook_id: Uuid = row.get(0);
+        let delivery_id = Uuid::new_v4();
+        let status = if event_type == "verification.approved" {
+            "approved"
+        } else {
+            "denied"
+        };
+        let payload = serde_json::json!({
+            "schema": "zerant.webhook.event.v0.1",
+            "event_id": delivery_id,
+            "type": event_type,
+            "request_id": request_id,
+            "credential_schema_id": credential_schema_id,
+            "status": status,
+            "verified": status == "approved",
+            "occurred_at": occurred_at_text,
+        });
+        tx.execute(
+            "INSERT INTO webhook_deliveries
+             (id, webhook_id, verification_request_id, event_type, payload)
+             VALUES ($1,$2,$3,$4,$5)
+             ON CONFLICT (webhook_id, verification_request_id, event_type) DO NOTHING",
+            &[
+                &delivery_id,
+                &webhook_id,
+                &request_id,
+                &event_type,
+                &payload,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    }
+    Ok(())
+}
+
+async fn claim_request_webhook_deliveries(
+    db: &Pool,
+    request_id: Uuid,
+) -> Result<Vec<Uuid>, ApiError> {
+    let mut client = db_client(db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let rows = tx
+        .query(
+            "SELECT d.id
+             FROM webhook_deliveries d
+             JOIN verifier_webhooks w ON w.id = d.webhook_id
+             WHERE d.verification_request_id = $1
+               AND d.status = 'pending'
+               AND d.next_attempt_at <= NOW()
+               AND w.disabled_at IS NULL
+             ORDER BY d.created_at ASC
+             FOR UPDATE OF d SKIP LOCKED
+             LIMIT $2",
+            &[&request_id, &MAX_ACTIVE_VERIFIER_WEBHOOKS],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let ids: Vec<Uuid> = rows.into_iter().map(|row| row.get(0)).collect();
+    for id in &ids {
+        tx.execute(
+            "UPDATE webhook_deliveries
+             SET status = 'delivering',
+                 attempt_count = attempt_count + 1,
+                 last_attempt_at = NOW()
+             WHERE id = $1 AND status = 'pending'",
+            &[id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    }
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+    Ok(ids)
+}
+
+async fn finish_webhook_failure(
+    db: &Pool,
+    delivery_id: Uuid,
+    attempt_count: i32,
+    status_code: Option<i32>,
+    error: &str,
+    force_dead: bool,
+) -> Result<bool, ApiError> {
+    let client = db_client(db).await?;
+    let dead = force_dead || attempt_count >= MAX_WEBHOOK_ATTEMPTS;
+    if dead {
+        client
+            .execute(
+                "UPDATE webhook_deliveries
+                 SET status = 'dead',
+                     last_status_code = $2,
+                     last_error = $3
+                 WHERE id = $1 AND status = 'delivering'",
+                &[&delivery_id, &status_code, &error],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+    } else {
+        let retry_at =
+            OffsetDateTime::now_utc() + Duration::seconds(webhook_retry_seconds(attempt_count));
+        client
+            .execute(
+                "UPDATE webhook_deliveries
+                 SET status = 'pending',
+                     next_attempt_at = $2,
+                     last_status_code = $3,
+                     last_error = $4
+                 WHERE id = $1 AND status = 'delivering'",
+                &[&delivery_id, &retry_at, &status_code, &error],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+    }
+    Ok(dead)
+}
+
+async fn deliver_webhook(state: &AppState, delivery_id: Uuid) -> Result<&'static str, ApiError> {
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            "SELECT d.event_type, d.payload, d.attempt_count,
+                    w.id, w.url, w.ciphertext, w.data_nonce, w.wrapped_dek,
+                    w.wrap_nonce, w.key_version, v.account_id
+             FROM webhook_deliveries d
+             JOIN verifier_webhooks w ON w.id = d.webhook_id
+             JOIN verifier_profiles v ON v.id = w.verifier_profile_id
+             WHERE d.id = $1
+               AND d.status = 'delivering'
+               AND w.disabled_at IS NULL",
+            &[&delivery_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let Some(row) = row else {
+        return Ok("dead");
+    };
+
+    let event_type: String = row.get(0);
+    let payload: Value = row.get(1);
+    let attempt_count: i32 = row.get(2);
+    let webhook_id: Uuid = row.get(3);
+    let url_text: String = row.get(4);
+    let owner_account: Uuid = row.get(10);
+    let now = OffsetDateTime::now_utc();
+    let secret_row = CredentialRow {
+        id: webhook_id,
+        ciphertext: row.get(5),
+        data_nonce: row.get(6),
+        wrapped_dek: row.get(7),
+        wrap_nonce: row.get(8),
+        key_version: row.get(9),
+        created_at: now,
+        updated_at: now,
+    };
+    let mut secret = state.cipher.decrypt(owner_account, &secret_row)?;
+    let body = serde_json::to_vec(&payload).map_err(|_| ApiError::Unavailable)?;
+    let timestamp = now.unix_timestamp();
+    let signature = webhook_signature(&secret, timestamp, &body)?;
+    secret.fill(0);
+
+    let url = match parse_webhook_url(&url_text) {
+        Ok(url) => url,
+        Err(_) => {
+            let _ = finish_webhook_failure(
+                &state.db,
+                delivery_id,
+                attempt_count,
+                None,
+                "unsafe_destination",
+                true,
+            )
+            .await?;
+            return Ok("dead");
+        }
+    };
+    let (host, addrs) = match webhook_public_addrs(&url).await {
+        Ok(value) => value,
+        Err(_) => {
+            let mut client = db_client(&state.db).await?;
+            let tx = client
+                .transaction()
+                .await
+                .map_err(|_| ApiError::Unavailable)?;
+            tx.execute(
+                "UPDATE verifier_webhooks
+                 SET disabled_at = COALESCE(disabled_at, NOW())
+                 WHERE id = $1",
+                &[&webhook_id],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+            tx.execute(
+                "UPDATE webhook_deliveries
+                 SET status = 'dead',
+                     last_error = 'unsafe_destination'
+                 WHERE webhook_id = $1
+                   AND status IN ('pending','delivering')",
+                &[&webhook_id],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+            tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+            return Ok("dead");
+        }
+    };
+
+    let http = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(StdDuration::from_secs(5))
+        .resolve_to_addrs(&host, &addrs)
+        .build()
+        .map_err(|_| ApiError::Unavailable)?;
+    let result = http
+        .post(url)
+        .header("user-agent", "Zerant-Webhook/1.0")
+        .header("content-type", "application/json")
+        .header("x-zerant-event", &event_type)
+        .header("x-zerant-delivery-id", delivery_id.to_string())
+        .header("x-zerant-timestamp", timestamp.to_string())
+        .header("x-zerant-signature", signature)
+        .body(body)
+        .send()
+        .await;
+
+    match result {
+        Ok(response) if response.status().is_success() => {
+            let status_code = i32::from(response.status().as_u16());
+            let mut client = db_client(&state.db).await?;
+            let tx = client
+                .transaction()
+                .await
+                .map_err(|_| ApiError::Unavailable)?;
+            tx.execute(
+                "UPDATE webhook_deliveries
+                 SET status = 'delivered',
+                     delivered_at = NOW(),
+                     last_status_code = $2,
+                     last_error = NULL
+                 WHERE id = $1 AND status = 'delivering'",
+                &[&delivery_id, &status_code],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+            tx.execute(
+                "UPDATE verifier_webhooks SET last_delivery_at = NOW() WHERE id = $1",
+                &[&webhook_id],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+            tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+            Ok("delivered")
+        }
+        Ok(response) => {
+            let status_code = i32::from(response.status().as_u16());
+            let dead = finish_webhook_failure(
+                &state.db,
+                delivery_id,
+                attempt_count,
+                Some(status_code),
+                "http_error",
+                false,
+            )
+            .await?;
+            Ok(if dead { "dead" } else { "retried" })
+        }
+        Err(_) => {
+            let dead = finish_webhook_failure(
+                &state.db,
+                delivery_id,
+                attempt_count,
+                None,
+                "network_error",
+                false,
+            )
+            .await?;
+            Ok(if dead { "dead" } else { "retried" })
+        }
+    }
+}
+
+async fn deliver_webhook_batch(
+    state: &AppState,
+    ids: Vec<Uuid>,
+) -> Result<(usize, usize, usize), ApiError> {
+    let mut set = tokio::task::JoinSet::new();
+    for id in ids {
+        let state = state.clone();
+        set.spawn(async move { deliver_webhook(&state, id).await });
+    }
+
+    let mut delivered = 0;
+    let mut retried = 0;
+    let mut dead = 0;
+    while let Some(result) = set.join_next().await {
+        match result.map_err(|_| ApiError::Unavailable)?? {
+            "delivered" => delivered += 1,
+            "retried" => retried += 1,
+            _ => dead += 1,
+        }
+    }
+    Ok((delivered, retried, dead))
+}
+
+async fn dispatch_request_webhooks(
+    state: &AppState,
+    request_id: Uuid,
+) -> Result<WebhookDispatchSummary, ApiError> {
+    let ids = claim_request_webhook_deliveries(&state.db, request_id).await?;
+    let claimed = ids.len();
+    let (delivered, retried, dead) = deliver_webhook_batch(state, ids).await?;
+
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            "SELECT r.status, r.expires_at,
+                    COUNT(d.id) FILTER (WHERE d.status IN ('pending','delivering'))
+             FROM verification_requests r
+             LEFT JOIN webhook_deliveries d ON d.verification_request_id = r.id
+             WHERE r.id = $1
+             GROUP BY r.id, r.status, r.expires_at",
+            &[&request_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let status: String = row.get(0);
+    let expires_at: OffsetDateTime = row.get(1);
+    let pending: i64 = row.get(2);
+
+    Ok(WebhookDispatchSummary {
+        claimed,
+        delivered,
+        retried,
+        dead,
+        pending,
+        finalized: matches!(status.as_str(), "approved" | "denied" | "expired")
+            || expires_at <= OffsetDateTime::now_utc(),
+    })
+}
+
+async fn dispatch_request_webhooks_internal(
+    State(state): State<AppState>,
+    Path(request_id): Path<Uuid>,
+) -> Result<Json<WebhookDispatchSummary>, ApiError> {
+    Ok(Json(dispatch_request_webhooks(&state, request_id).await?))
+}
+
 async fn register_verifier(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3690,20 +4404,38 @@ async fn decide_holder_request(
     let holder_account = account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, holder_account, "verification_decision", 60).await?;
     if input.decision == "deny" {
-        let client = db_client(&state.db).await?;
-        let affected = client
-            .execute(
+        let mut client = db_client(&state.db).await?;
+        let tx = client
+            .transaction()
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+        let row = tx
+            .query_opt(
                 "UPDATE verification_requests
                  SET status = 'denied', decided_at = NOW()
                  WHERE id = $1 AND subject_account_id = $2
-                   AND status = 'pending' AND expires_at > NOW()",
+                   AND status = 'pending' AND expires_at > NOW()
+                 RETURNING verifier_profile_id, credential_schema_id, decided_at",
                 &[&id, &holder_account],
             )
             .await
-            .map_err(|_| ApiError::Unavailable)?;
-        if affected != 1 {
-            return Err(ApiError::Conflict);
-        }
+            .map_err(|_| ApiError::Unavailable)?
+            .ok_or(ApiError::Conflict)?;
+
+        let verifier_profile_id: Uuid = row.get(0);
+        let credential_schema_id: Option<Uuid> = row.get(1);
+        let decided_at: OffsetDateTime = row.get(2);
+        enqueue_verifier_webhooks(
+            &tx,
+            verifier_profile_id,
+            id,
+            "verification.denied",
+            credential_schema_id,
+            decided_at,
+        )
+        .await?;
+        tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
         return Ok(Json(
             serde_json::json!({ "status": "denied", "verified": false }),
         ));
@@ -3965,8 +4697,14 @@ async fn decide_holder_request(
     let encrypted_response = state
         .cipher
         .encrypt(verifier_account, id, response.as_bytes())?;
-    let affected = client
-        .execute(
+
+    let mut tx_client = db_client(&state.db).await?;
+    let tx = tx_client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let row = tx
+        .query_opt(
             "UPDATE verification_requests
              SET status = 'approved',
                  response_ciphertext = $3,
@@ -3976,7 +4714,8 @@ async fn decide_holder_request(
                  response_key_version = $7,
                  decided_at = NOW()
              WHERE id = $1 AND subject_account_id = $2
-               AND status = 'pending' AND expires_at > NOW()",
+               AND status = 'pending' AND expires_at > NOW()
+             RETURNING credential_schema_id, decided_at",
             &[
                 &id,
                 &holder_account,
@@ -3988,10 +4727,21 @@ async fn decide_holder_request(
             ],
         )
         .await
-        .map_err(|_| ApiError::Unavailable)?;
-    if affected != 1 {
-        return Err(ApiError::Conflict);
-    }
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Conflict)?;
+
+    let credential_schema_id: Option<Uuid> = row.get(0);
+    let decided_at: OffsetDateTime = row.get(1);
+    enqueue_verifier_webhooks(
+        &tx,
+        verifier_profile_id,
+        id,
+        "verification.approved",
+        credential_schema_id,
+        decided_at,
+    )
+    .await?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
 
     Ok(Json(
         serde_json::json!({ "status": "approved", "verified": true }),
@@ -5913,6 +6663,18 @@ fn app(state: AppState) -> Router {
             post(revoke_verifier_api_key),
         )
         .route(
+            "/v1/verifier/webhooks",
+            get(list_verifier_webhooks).post(create_verifier_webhook),
+        )
+        .route(
+            "/v1/verifier/webhooks/{id}/disable",
+            post(disable_verifier_webhook),
+        )
+        .route(
+            "/v1/internal/webhooks/requests/{request_id}/dispatch",
+            post(dispatch_request_webhooks_internal),
+        )
+        .route(
             "/v1/verifier/requests",
             get(list_verifier_requests).post(create_verification_request),
         )
@@ -5986,6 +6748,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0017_verifier_api_keys.sql"),
             include_str!("../migrations/0018_issuer_teams.sql"),
             include_str!("../migrations/0019_issuer_audit.sql"),
+            include_str!("../migrations/0020_verifier_webhooks.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -6412,6 +7175,92 @@ mod tests {
             r#"{"name":"Production","scopes":["requests:read"],"expires_in_days":90,"admin":true}"#,
         );
         assert!(unknown.is_err());
+    }
+
+    #[test]
+    fn webhook_urls_are_strict_and_do_not_accept_embedded_authority() {
+        let valid = parse_webhook_url("https://hooks.example.com/zerant").unwrap();
+        assert_eq!(valid.scheme(), "https");
+        assert_eq!(valid.host_str(), Some("hooks.example.com"));
+
+        for invalid in [
+            "http://hooks.example.com/zerant",
+            "https://user:pass@hooks.example.com/zerant",
+            "https://hooks.example.com:8443/zerant",
+            "https://hooks.example.com/zerant?token=secret",
+            "https://hooks.example.com/zerant#fragment",
+            "https://localhost/zerant",
+        ] {
+            assert!(
+                parse_webhook_url(invalid).is_err(),
+                "{invalid} was accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn webhook_ip_filter_blocks_internal_and_documentation_networks() {
+        for blocked in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.10.20",
+            "100.64.1.1",
+            "192.0.2.10",
+            "198.51.100.10",
+            "203.0.113.10",
+            "::1",
+            "fc00::1",
+            "fe80::1",
+            "2001:db8::1",
+        ] {
+            let ip = blocked.parse::<IpAddr>().unwrap();
+            assert!(!webhook_ip_is_public(ip), "{blocked} was treated as public");
+        }
+
+        for public in ["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"] {
+            let ip = public.parse::<IpAddr>().unwrap();
+            assert!(webhook_ip_is_public(ip), "{public} was rejected");
+        }
+    }
+
+    #[test]
+    fn webhook_signature_binds_timestamp_and_exact_body() {
+        let secret = b"zrt_whsec_test_secret_value";
+        let first = webhook_signature(secret, 1_700_000_000, br#"{"status":"approved"}"#).unwrap();
+        let second = webhook_signature(secret, 1_700_000_001, br#"{"status":"approved"}"#).unwrap();
+        let changed = webhook_signature(secret, 1_700_000_000, br#"{"status":"denied"}"#).unwrap();
+
+        assert!(first.starts_with("v1="));
+        assert_ne!(first, second);
+        assert_ne!(first, changed);
+    }
+
+    #[test]
+    fn webhook_retry_backoff_is_bounded_and_non_decreasing() {
+        let schedule: Vec<i64> = (1..=MAX_WEBHOOK_ATTEMPTS)
+            .map(webhook_retry_seconds)
+            .collect();
+        assert!(schedule.windows(2).all(|pair| pair[0] <= pair[1]));
+        assert_eq!(schedule[0], 60);
+        assert_eq!(*schedule.last().unwrap(), 86_400);
+    }
+
+    #[test]
+    fn webhook_input_rejects_unknown_fields() {
+        assert!(
+            serde_json::from_str::<CreateVerifierWebhook>(
+                r#"{"name":"Production","url":"https://hooks.example.com/zerant"}"#,
+            )
+            .is_ok()
+        );
+        assert!(
+            serde_json::from_str::<CreateVerifierWebhook>(
+                r#"{"name":"Production","url":"https://hooks.example.com/zerant","secret":"caller-controlled"}"#,
+            )
+            .is_err()
+        );
     }
 
     #[test]

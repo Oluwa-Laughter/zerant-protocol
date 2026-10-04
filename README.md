@@ -45,6 +45,7 @@ The product does not seed demo credentials, identities, payments or verification
 - Public issuer discovery with paginated organization profiles, public signing-key lifecycle, immutable credential-definition history and signed revocation publications.
 - Verifier registration, issuer-defined credential selection, short-lived requests and verified status.
 - Revocable scoped server-to-server verifier integration keys with one-time secret display and managed-schema request APIs.
+- Signed verifier result webhooks with durable outbox state, Vercel Queue retries, SSRF-safe delivery and dead-delivery visibility.
 - Append-only account activity history with cursor pagination.
 - Database-backed per-account write quotas across Vercel instances, plus a global authentication-challenge circuit breaker.
 - Zcash-native authentication separation from payment authority.
@@ -61,7 +62,7 @@ This is **not end-to-end holder-only encryption**: an authorized Zerant service 
 
 No zero-knowledge, anonymity or full unlinkability claim is made. Zerant now uses a distinct protected holder key for each verifier relationship so proofs do not expose one stable holder key across verifiers, but service metadata, issuers and surrounding context can still correlate activity. Managed KMS/HSM deployment, stronger unlinkable credentials, production Zcash spending and live FROST signing remain future work.
 
-Read architecture, disclosure profile, privacy limits, public trust discovery, verifier integration API, examples, Zcash integration, Zcash resource map and security documentation in docs/.
+Read architecture, disclosure profile, privacy limits, public trust discovery, verifier integration API, verifier webhooks, examples, Zcash integration, Zcash resource map and security documentation in docs/.
 
 ## Local setup
 

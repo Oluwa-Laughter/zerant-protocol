@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { version = "1", features = ["serde", "v4"] }
@@ -31,3 +31,5 @@ josekit = { workspace = true }
 zerant-disclosure = { path = "../../crates/zerant-disclosure" }
 zerant-core = { path = "../../crates/zerant-core" }
 secp256k1 = { version = "0.31", features = ["recovery"] }
+hmac = "0.12"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }

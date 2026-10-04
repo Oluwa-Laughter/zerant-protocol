@@ -168,3 +168,49 @@ export async function proxyIntegrationToZerant(
     headers: responseHeaders,
   });
 }
+
+export type WebhookDispatchSummary = {
+  claimed: number;
+  delivered: number;
+  retried: number;
+  dead: number;
+  pending: number;
+  finalized: boolean;
+};
+
+export async function dispatchWebhookRequestToZerant(
+  requestId: string,
+): Promise<WebhookDispatchSummary> {
+  let upstream: Response;
+  try {
+    upstream = await fetch(
+      new URL(
+        "/v1/internal/webhooks/requests/" + encodeURIComponent(requestId) + "/dispatch",
+        backendOrigin(),
+      ),
+      {
+        method: "POST",
+        redirect: "manual",
+        cache: "no-store",
+      },
+    );
+  } catch {
+    throw new Error("Zerant webhook dispatcher unavailable");
+  }
+
+  if (upstream.status === 404) {
+    return {
+      claimed: 0,
+      delivered: 0,
+      retried: 0,
+      dead: 0,
+      pending: 0,
+      finalized: true,
+    };
+  }
+  if (!upstream.ok) {
+    throw new Error("Zerant webhook dispatcher failed");
+  }
+
+  return (await upstream.json()) as WebhookDispatchSummary;
+}

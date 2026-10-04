@@ -100,3 +100,11 @@ PY
 ```
 
 Production key custody should later move from an environment secret to a managed KMS/HSM. That is an operational-hardening step, not a reason to expose key material to the browser.
+
+## Vercel Queues
+
+Verifier result webhooks use a private queue-triggered Next.js route declared under the `web` service in `vercel.json`. Vercel provides queue authentication and delivery; no public consumer URL or `CRON_SECRET` is required.
+
+The queue message contains only the verification request UUID. Webhook payloads and delivery state remain in PostgreSQL. This makes Queue a wake-up/retry layer rather than a second source of truth.
+
+The current queue message retention is seven days, with bounded concurrency and application-level dead-delivery tracking.

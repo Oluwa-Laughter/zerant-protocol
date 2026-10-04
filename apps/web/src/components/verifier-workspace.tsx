@@ -57,6 +57,22 @@ type CreatedVerifierApiKey = {
   secret: string;
 };
 
+export type VerifierWebhookView = {
+  id: string;
+  name: string;
+  url: string;
+  created_at: string;
+  last_delivery_at: string | null;
+  disabled: boolean;
+  pending_deliveries: number;
+  dead_deliveries: number;
+};
+
+type CreatedVerifierWebhook = {
+  webhook: VerifierWebhookView;
+  secret: string;
+};
+
 export type VerificationRequestItem = {
   id: string;
   holder_zerant_id: string;
@@ -79,6 +95,7 @@ export function VerifierWorkspace({
   initialRequests,
   initialKeys,
   initialApiKeys,
+  initialWebhooks,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
@@ -87,6 +104,7 @@ export function VerifierWorkspace({
   initialRequests: VerificationRequestItem[];
   initialKeys: VerifierKeyView[];
   initialApiKeys: VerifierApiKeyView[];
+  initialWebhooks: VerifierWebhookView[];
 }) {
   const availableSchemas = useMemo(
     () =>
@@ -106,6 +124,11 @@ export function VerifierWorkspace({
   const [requests, setRequests] = useState(initialRequests);
   const [keys, setKeys] = useState<VerifierKeyView[]>(initialKeys);
   const [apiKeys, setApiKeys] = useState<VerifierApiKeyView[]>(initialApiKeys);
+  const [webhooks, setWebhooks] =
+    useState<VerifierWebhookView[]>(initialWebhooks);
+  const [webhookName, setWebhookName] = useState("");
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [newWebhookSecret, setNewWebhookSecret] = useState<string | null>(null);
   const [apiKeyName, setApiKeyName] = useState("");
   const [apiKeyCreateScope, setApiKeyCreateScope] = useState(true);
   const [apiKeyReadScope, setApiKeyReadScope] = useState(true);
@@ -253,6 +276,62 @@ export function VerifierWorkspace({
       current.map((item) => (item.id === revoked.id ? revoked : item)),
     );
     setStatus("Integration key revoked.");
+  }
+
+  async function createWebhook() {
+    if (!webhookName.trim() || !webhookUrl.trim()) {
+      setStatus("Name the webhook and enter its HTTPS endpoint.");
+      return;
+    }
+
+    const response = await fetch("/api/zerant/verifier/webhooks", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: webhookName,
+        url: webhookUrl,
+      }),
+    });
+
+    if (!response.ok) {
+      setStatus(
+        response.status === 429
+          ? "You’re doing that too quickly. Try again in a minute."
+          : response.status === 409
+            ? "That webhook is already active or you reached the endpoint limit."
+            : "Webhook could not be created. Use a public HTTPS endpoint without a query string.",
+      );
+      return;
+    }
+
+    const created = (await response.json()) as CreatedVerifierWebhook;
+    setWebhooks((current) => [created.webhook, ...current]);
+    setNewWebhookSecret(created.secret);
+    setWebhookName("");
+    setWebhookUrl("");
+    setStatus("Webhook created. Copy its signing secret now; Zerant will not show it again.");
+  }
+
+  async function disableWebhook(id: string) {
+    const response = await fetch(
+      "/api/zerant/verifier/webhooks/" + encodeURIComponent(id) + "/disable",
+      {
+        method: "POST",
+        credentials: "same-origin",
+      },
+    );
+
+    if (!response.ok) {
+      setStatus("Webhook could not be disabled.");
+      return;
+    }
+
+    const disabled = (await response.json()) as VerifierWebhookView;
+    setWebhooks((current) =>
+      current.map((item) => (item.id === disabled.id ? disabled : item)),
+    );
+    setStatus("Webhook disabled. Pending deliveries for it will not be sent.");
   }
 
   async function createRequest() {
@@ -526,6 +605,96 @@ export function VerifierWorkspace({
               ))
             ) : (
               <p className="muted">No integration keys yet.</p>
+            )}
+          </div>
+        </article>
+      </section>
+
+      <section className="verifier-webhook-section">
+        <article className="verifier-panel">
+          <p className="eyebrow">Result webhooks</p>
+          <h2>Receive verification results automatically.</h2>
+          <p className="muted">
+            Zerant can notify your server when a holder approves or denies a request. Delivery
+            payloads contain request status only — never the holder’s credential contents or wallet
+            information.
+          </p>
+
+          <label htmlFor="webhook-name">Endpoint name</label>
+          <input
+            id="webhook-name"
+            value={webhookName}
+            onChange={(event) => setWebhookName(event.target.value)}
+            placeholder="Production results"
+          />
+
+          <label htmlFor="webhook-url">HTTPS endpoint</label>
+          <input
+            id="webhook-url"
+            value={webhookUrl}
+            onChange={(event) => setWebhookUrl(event.target.value)}
+            placeholder="https://yourapp.com/api/zerant/webhook"
+            spellCheck={false}
+          />
+
+          <Button disabled={!webhookName.trim() || !webhookUrl.trim()} onClick={createWebhook}>
+            Add webhook
+          </Button>
+
+          {newWebhookSecret ? (
+            <div className="integration-secret-card">
+              <strong>Copy this webhook secret now.</strong>
+              <p className="small muted">
+                Use it to verify the signature on every Zerant delivery. It will not be shown
+                again.
+              </p>
+              <code>{newWebhookSecret}</code>
+              <Button
+                variant="secondary"
+                onClick={() => void navigator.clipboard?.writeText(newWebhookSecret)}
+              >
+                Copy webhook secret
+              </Button>
+            </div>
+          ) : null}
+        </article>
+
+        <article className="verifier-panel">
+          <p className="eyebrow">Webhook health</p>
+          <h2>{webhooks.length} endpoint{webhooks.length === 1 ? "" : "s"}</h2>
+          <div className="webhook-list">
+            {webhooks.length ? (
+              webhooks.map((webhook) => (
+                <article className="webhook-card" key={webhook.id}>
+                  <div className="webhook-card-top">
+                    <div>
+                      <strong>{webhook.name}</strong>
+                      <code>{webhook.url}</code>
+                    </div>
+                    <span
+                      className={webhook.disabled ? "request-status denied" : "request-status approved"}
+                    >
+                      {webhook.disabled ? "Disabled" : "Active"}
+                    </span>
+                  </div>
+                  <p className="small muted">
+                    {webhook.last_delivery_at
+                      ? "Last delivered " + new Date(webhook.last_delivery_at).toLocaleString()
+                      : "No successful delivery yet"}
+                  </p>
+                  <div className="webhook-health">
+                    <span>{webhook.pending_deliveries} pending</span>
+                    <span>{webhook.dead_deliveries} failed permanently</span>
+                  </div>
+                  {!webhook.disabled ? (
+                    <Button variant="secondary" onClick={() => disableWebhook(webhook.id)}>
+                      Disable webhook
+                    </Button>
+                  ) : null}
+                </article>
+              ))
+            ) : (
+              <p className="muted">No result webhooks configured yet.</p>
             )}
           </div>
         </article>

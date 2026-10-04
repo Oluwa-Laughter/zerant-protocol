@@ -111,6 +111,10 @@ Typical responses:
 - `429` — account request quota exceeded;
 - `503` — Zerant service or required dependency unavailable.
 
-## Future work
+## Result webhooks
 
-Webhook delivery should be implemented with a durable outbox and retry policy before Zerant advertises push notifications. Until then integrations poll the request-status endpoint. A future independently verifiable response-package API may expose the signed verifier-specific proof without exposing source credentials.
+Verifiers can register public HTTPS webhook endpoints from the signed-in verifier workspace. Zerant emits final approved/denied request status through a durable outbox and Vercel Queue-backed retry path. Webhook payloads contain request status and managed credential-definition identity only; they do not contain holder credentials or wallet data.
+
+See [Verifier result webhooks](VERIFIER_WEBHOOKS.md) for payload shape, HMAC verification, SSRF protections, idempotency and retry behavior.
+
+Polling remains supported and is useful as a reconciliation path. A future independently verifiable response-package API may expose the signed verifier-specific proof without exposing source credentials.

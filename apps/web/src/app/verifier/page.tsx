@@ -7,6 +7,7 @@ import {
   type VerifierApiKeyView,
   type VerifierKeyView,
   type VerifierProfile,
+  type VerifierWebhookView,
 } from "@/components/verifier-workspace";
 import { fetchZerantBackend } from "@/lib/server-api";
 
@@ -28,6 +29,7 @@ export default async function VerifierPage() {
   let requests: VerificationRequestItem[] = [];
   let keys: VerifierKeyView[] = [];
   let apiKeys: VerifierApiKeyView[] = [];
+  let webhooks: VerifierWebhookView[] = [];
 
   try {
     const sessionResponse = await fetchZerantBackend("/v1/session", cookieHeader);
@@ -43,11 +45,13 @@ export default async function VerifierPage() {
       const profileResponse = await fetchZerantBackend("/v1/verifier", cookieHeader);
       if (profileResponse?.ok) {
         profile = (await profileResponse.json()) as VerifierProfile;
-        const [requestsResponse, keysResponse, apiKeysResponse] = await Promise.all([
+        const [requestsResponse, keysResponse, apiKeysResponse, webhooksResponse] =
+          await Promise.all([
           fetchZerantBackend("/v1/verifier/requests", cookieHeader),
           fetchZerantBackend("/v1/verifier/keys", cookieHeader),
-          fetchZerantBackend("/v1/verifier/api-keys", cookieHeader),
-        ]);
+            fetchZerantBackend("/v1/verifier/api-keys", cookieHeader),
+            fetchZerantBackend("/v1/verifier/webhooks", cookieHeader),
+          ]);
         if (requestsResponse?.ok) {
           requests = (await requestsResponse.json()) as VerificationRequestItem[];
         }
@@ -56,6 +60,9 @@ export default async function VerifierPage() {
         }
         if (apiKeysResponse?.ok) {
           apiKeys = (await apiKeysResponse.json()) as VerifierApiKeyView[];
+        }
+        if (webhooksResponse?.ok) {
+          webhooks = (await webhooksResponse.json()) as VerifierWebhookView[];
         }
       }
     }
@@ -72,6 +79,7 @@ export default async function VerifierPage() {
       initialRequests={requests}
       initialKeys={keys}
       initialApiKeys={apiKeys}
+      initialWebhooks={webhooks}
     />
   );
 }

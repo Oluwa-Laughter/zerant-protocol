@@ -10,6 +10,7 @@
     "test": "node --import tsx --test src/components/*.test.tsx src/lib/*.test.ts"
   },
   "dependencies": {
+    "@vercel/queue": "^0.7.0",
     "clsx": "2.1.1",
     "next": "16.3.8",
     "react": "19.3.0",

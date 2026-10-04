@@ -11,7 +11,21 @@
           "format": "url",
           "env": "ZERANT_API_ORIGIN"
         }
-      ]
+      ],
+      "functions": {
+        "src/app/api/zerant/queues/webhook-dispatch/route.ts": {
+          "maxDuration": 60,
+          "experimentalTriggers": [
+            {
+              "type": "queue/v2beta",
+              "topic": "zerant-webhook-dispatch",
+              "retryAfterSeconds": 60,
+              "initialDelaySeconds": 0,
+              "maxConcurrency": 8
+            }
+          ]
+        }
+      }
     },
     "backend": {
       "root": ".",
