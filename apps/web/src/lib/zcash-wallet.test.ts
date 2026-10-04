@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   normalizeDerivedSignature,
   normalizeWalletConnection,
+  zatoshiToZec,
 } from "./zcash-wallet";
 
 test("normalizes a shielded-first injected wallet connection", () => {
@@ -38,4 +39,13 @@ test("requires derived signing mode for Zerant identity", () => {
       signingMode: "current",
     }),
   );
+});
+
+
+test("converts zatoshis to an exact ZEC decimal string", () => {
+  assert.equal(zatoshiToZec(1), "0.00000001");
+  assert.equal(zatoshiToZec(125_000_000), "1.25");
+  assert.equal(zatoshiToZec(100_000_000), "1");
+  assert.throws(() => zatoshiToZec(0));
+  assert.throws(() => zatoshiToZec(Number.MAX_SAFE_INTEGER + 1));
 });

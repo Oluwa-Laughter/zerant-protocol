@@ -181,3 +181,17 @@ Both methods converge on the same account/session layer. Issuance, credential st
 ### Compatibility rule
 
 Zerant does not hard-code product logic to one wallet vendor. New Zcash wallets can be added by implementing either the injected provider capability surface or the ZecAuth authentication handoff. Wallet-specific logic stays at the connection boundary.
+
+## ZIP-321 wallet execution
+
+The product now treats the canonical ZIP-321 URI as the portable wallet handoff format.
+
+After the Rust parser validates and canonicalizes a request:
+
+- any compatible wallet can receive the canonical zcash: URI through the wallet-app handoff;
+- a compatible injected browser wallet may execute a simple single-recipient request directly;
+- direct browser-wallet execution is limited to a request with one recipient, a fixed amount, no memo, and no additional parameters;
+- direct browser-wallet execution always requests shielded funding and still requires explicit wallet approval;
+- multi-recipient, memo-bearing, or otherwise richer requests are handed back to the wallet app so Zerant does not silently drop ZIP-321 semantics.
+
+Zerant does not read a wallet balance or transaction history before offering either path.

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { getInjectedZcashWallet, zatoshiToZec } from "@/lib/zcash-wallet";
 
 type Payment = {
   index: number;
@@ -35,6 +36,58 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
       ? "Paste a real ZIP-321 payment request to review it."
       : "Connect your Zcash identity before reviewing payment requests.",
   );
+
+  function openInWalletApp() {
+    if (!summary) return;
+    setStatus("Opening the validated payment request in your Zcash wallet…");
+    window.location.href = summary.canonical_uri;
+  }
+
+  async function payWithBrowserWallet() {
+    if (!summary || summary.payment_count !== 1) {
+      setStatus("Use a wallet app for multi-recipient payment requests.");
+      return;
+    }
+    const payment = summary.payments[0];
+    if (
+      !payment ||
+      payment.amount_zat === null ||
+      payment.memo_present ||
+      payment.other_param_names.length > 0
+    ) {
+      setStatus(
+        "This request needs wallet-app handling so all payment details remain intact.",
+      );
+      return;
+    }
+
+    try {
+      const wallet = getInjectedZcashWallet();
+      if (!wallet) {
+        setStatus("No compatible Zcash browser wallet was detected.");
+        return;
+      }
+      const existing = await wallet.existingConnection();
+      if (!existing) {
+        setStatus("Approve the browser wallet connection to continue…");
+        await wallet.connect();
+      }
+
+      setStatus("Review and approve the shielded payment in your wallet…");
+      const txid = await wallet.sendShieldedPayment({
+        to: payment.recipient,
+        amount: zatoshiToZec(payment.amount_zat),
+      });
+      const shortTxid = txid.length > 18 ? txid.slice(0, 10) + "…" + txid.slice(-6) : txid;
+      setStatus("Payment submitted by your wallet. Transaction " + shortTxid + ".");
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "The wallet did not complete the payment.",
+      );
+    }
+  }
 
   async function inspect() {
     setSummary(null);
@@ -99,6 +152,35 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
               <strong>{formatZec(summary.total_zat)}</strong>
             </div>
           </div>
+
+          <div className="payment-request-actions">
+            <Button onClick={openInWalletApp}>Open in Zcash wallet</Button>
+            <Button
+              variant="secondary"
+              onClick={payWithBrowserWallet}
+              disabled={
+                summary.payment_count !== 1 ||
+                summary.payments[0]?.amount_zat === null ||
+                summary.payments[0]?.memo_present ||
+                Boolean(summary.payments[0]?.other_param_names.length)
+              }
+            >
+              Pay from shielded browser wallet
+            </Button>
+          </div>
+          {summary.payment_count !== 1 ||
+          summary.payments[0]?.amount_zat === null ||
+          summary.payments[0]?.memo_present ||
+          Boolean(summary.payments[0]?.other_param_names.length) ? (
+            <p className="small muted payment-request-note">
+              This request should be opened in a wallet app so every ZIP-321 field is preserved.
+            </p>
+          ) : (
+            <p className="small muted payment-request-note">
+              Browser-wallet payment uses shielded funds by default and still requires approval in
+              your wallet.
+            </p>
+          )}
 
           <div className="request-payment-list">
             {summary.payments.map((payment) => (

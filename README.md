@@ -45,7 +45,7 @@ The product does not seed demo credentials, identities, payments or verification
 - Database-backed per-account write quotas across Vercel instances, plus a global authentication-challenge circuit breaker.
 - Zcash-native authentication separation from payment authority.
 - Compatible Zcash wallet connection with injected browser-wallet support and ZecAuth wallet-app fallback.
-- Canonical Zcash address inspection and ZIP-321 payment-request review.
+- Canonical Zcash address inspection, ZIP-321 payment-request review, wallet-app handoff and shielded browser-wallet submission for supported simple requests.
 - Read-only Z3/Zallet capability and settlement-observation boundaries.
 - PCZT/FROST coordination interfaces remain capability-gated; Zerant does not implement custom threshold cryptography.
 

@@ -34,6 +34,27 @@ export type WalletMessageSignature = {
   signingMode: "derived";
 };
 
+export type ShieldedPayment = {
+  to: string;
+  amount: string;
+};
+
+export function zatoshiToZec(zat: number): string {
+  if (!Number.isSafeInteger(zat) || zat <= 0) {
+    throw new Error("Payment amount must be a positive safe integer.");
+  }
+  const whole = Math.floor(zat / 100_000_000);
+  const fraction = (zat % 100_000_000).toString().padStart(8, "0").replace(/0+$/, "");
+  return fraction ? whole.toString() + "." + fraction : whole.toString();
+}
+
+function normalizeTransactionId(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("Wallet did not return a transaction id.");
+  }
+  return value;
+}
+
 declare global {
   interface Window {
     noirwallet?: RawNoirWallet;
@@ -105,6 +126,20 @@ export class NoirInjectedWallet {
       params: [message, { signingMode: "derived" }],
     });
     return normalizeDerivedSignature(result);
+  }
+
+  async sendShieldedPayment(payment: ShieldedPayment): Promise<string> {
+    const result = await this.provider.request({
+      method: "zcash_sendTransaction",
+      params: [
+        {
+          to: payment.to,
+          amount: payment.amount,
+          fundingSource: "shielded",
+        },
+      ],
+    });
+    return normalizeTransactionId(result);
   }
 
   async disconnect(): Promise<void> {
