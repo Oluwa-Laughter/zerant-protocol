@@ -154,3 +154,30 @@ individual PCZT methods are available on the operator's current Zallet build.
 The default capability allow-list is `auth` plus `request_payment`. Broader viewing capabilities must be explicitly enabled by the operator. The authentication key is a pseudonymous login identity only and is never interpreted as a Zcash address or spending key.
 
 Authenticated users can query bounded Z3/Zallet capability, chain-readiness and wallet-readiness state through the Rust API. Raw balances, seed fingerprints, address inventories and wallet history are not returned to the browser.
+
+## Wallet connection model
+
+Zerant supports two Zcash-native wallet connection paths without making wallet activity part of identity.
+
+### Injected browser wallets
+
+The web application detects a compatible injected Zcash provider. The first concrete implementation targets Noir Wallet's documented provider surface:
+
+- zcash_requestAccounts for explicit connection approval;
+- zcash_getAccounts for silent existing-connection checks;
+- zcash_signMessage with derived signing mode for Zerant authentication;
+- zcash_disconnect for explicit disconnect.
+
+Zerant does not request wallet balance, transaction history, memos, or address inventories during authentication. The shielded address is treated as the wallet's primary payment-facing address, but it is not stored as the Zerant account identity.
+
+The derived message-signing key is verified server-side using the Zcash signed-message prefix, compact-size encoding, double SHA-256, recoverable secp256k1 signatures, and the exact short-lived Zerant challenge. The main transparent signing identity is deliberately rejected for this login path.
+
+### Wallet apps and other compatible wallets
+
+ZecAuth remains the wallet-app handoff path. A short-lived domain/chain/nonce challenge is opened with the wallet, the wallet returns a signed result to Zerant, and the browser redeems the completed attempt into the same opaque Zerant session model.
+
+Both methods converge on the same account/session layer. Issuance, credential storage, verifier requests, consent and Zcash payment review do not care which supported wallet-authentication method created the session.
+
+### Compatibility rule
+
+Zerant does not hard-code product logic to one wallet vendor. New Zcash wallets can be added by implementing either the injected provider capability surface or the ZecAuth authentication handoff. Wallet-specific logic stays at the connection boundary.

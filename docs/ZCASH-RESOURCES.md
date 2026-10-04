@@ -51,6 +51,12 @@ Zerant does not reimplement PCZT cryptography or serialize PCZT material into ge
 
 FROST remains an external threshold-signing boundary for organizations, teams, and shared treasuries. Zerant coordinates policy and approval state but does not implement custom FROST cryptography.
 
+### Browser wallet connectivity
+
+Zerant now includes a lightweight injected-wallet adapter boundary. The current concrete browser extension integration follows the public Noir Zcash provider RPC contract, while Zerant's internal wallet interface remains vendor-neutral.
+
+Authentication uses only connection approval plus a derived Zcash signed-message identity. Zerant intentionally does not query balances or transaction history during sign-in. Other wallets can integrate through the same capability interface or through the ZecAuth wallet-app path.
+
 ### ZecAuth
 
 The Rust API implements the server-verification side of the ZecAuth v1 draft model:

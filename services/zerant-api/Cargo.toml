@@ -30,3 +30,4 @@ zerant-credential = { path = "../../crates/zerant-credential" }
 josekit = { workspace = true }
 zerant-disclosure = { path = "../../crates/zerant-disclosure" }
 zerant-core = { path = "../../crates/zerant-core" }
+secp256k1 = { version = "0.31", features = ["recovery"] }

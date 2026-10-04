@@ -16,6 +16,10 @@ use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
 use rand::rngs::OsRng;
 use reddsa::{Signature, VerificationKey, orchard::SpendAuth};
+use secp256k1::{
+    Message as SecpMessage, PublicKey as SecpPublicKey, Secp256k1,
+    ecdsa::{RecoverableSignature, RecoveryId},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -222,9 +226,20 @@ struct VerifyZecAuth {
     granted: Vec<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VerifyWalletMessage {
+    pubkey: String,
+    signature: String,
+    message: String,
+    granted: Vec<String>,
+    signing_mode: String,
+}
+
 struct ChallengeRow {
     id: Uuid,
     requested_scopes: Value,
+    chain: String,
 }
 
 #[derive(Serialize)]
@@ -1202,12 +1217,84 @@ fn verify_redpallas(pubkey: &str, signature: &str, message: &[u8]) -> Result<[u8
     Ok(key_bytes)
 }
 
+fn encode_compact_size(size: usize, out: &mut Vec<u8>) -> Result<(), ApiError> {
+    if size <= 0xfc {
+        out.push(size as u8);
+    } else if size <= 0xffff {
+        out.push(0xfd);
+        out.extend_from_slice(&(size as u16).to_le_bytes());
+    } else if size <= u32::MAX as usize {
+        out.push(0xfe);
+        out.extend_from_slice(&(size as u32).to_le_bytes());
+    } else {
+        return Err(ApiError::Invalid);
+    }
+    Ok(())
+}
+
+fn zcash_signed_message_hash(message: &str) -> Result<[u8; 32], ApiError> {
+    if !message.is_ascii() || message.len() > 16 * 1024 {
+        return Err(ApiError::Invalid);
+    }
+    const PREFIX: &[u8] = b"Zcash Signed Message:\n";
+    let mut payload = Vec::with_capacity(PREFIX.len() + message.len() + 10);
+    encode_compact_size(PREFIX.len(), &mut payload)?;
+    payload.extend_from_slice(PREFIX);
+    encode_compact_size(message.len(), &mut payload)?;
+    payload.extend_from_slice(message.as_bytes());
+    let first = Sha256::digest(&payload);
+    let second = Sha256::digest(first);
+    let mut digest = [0_u8; 32];
+    digest.copy_from_slice(&second);
+    Ok(digest)
+}
+
+fn verify_zcash_wallet_message(
+    pubkey: &str,
+    signature: &str,
+    message: &str,
+) -> Result<[u8; 33], ApiError> {
+    let clean_pubkey = pubkey.strip_prefix("0x").unwrap_or(pubkey);
+    let pubkey_bytes = hex::decode(clean_pubkey).map_err(|_| ApiError::Invalid)?;
+    if pubkey_bytes.len() != 33 && pubkey_bytes.len() != 65 {
+        return Err(ApiError::Invalid);
+    }
+    let expected = SecpPublicKey::from_slice(&pubkey_bytes).map_err(|_| ApiError::Unauthorized)?;
+
+    let clean_signature = signature.strip_prefix("0x").unwrap_or(signature);
+    let signature_bytes = hex::decode(clean_signature).map_err(|_| ApiError::Invalid)?;
+    if signature_bytes.len() != 65 {
+        return Err(ApiError::Invalid);
+    }
+    let header = signature_bytes[0];
+    if !(27..=34).contains(&header) {
+        return Err(ApiError::Invalid);
+    }
+    let recovery = if header >= 31 {
+        header - 31
+    } else {
+        header - 27
+    };
+    let recovery_id = RecoveryId::try_from(i32::from(recovery)).map_err(|_| ApiError::Invalid)?;
+    let recoverable = RecoverableSignature::from_compact(&signature_bytes[1..], recovery_id)
+        .map_err(|_| ApiError::Unauthorized)?;
+    let digest = zcash_signed_message_hash(message)?;
+    let secp_message = SecpMessage::from_digest(digest);
+    let recovered = Secp256k1::verification_only()
+        .recover_ecdsa(secp_message, &recoverable)
+        .map_err(|_| ApiError::Unauthorized)?;
+    if recovered != expected {
+        return Err(ApiError::Unauthorized);
+    }
+    Ok(recovered.serialize())
+}
+
 async fn consume_challenge(tx: &Transaction<'_>, message: &str) -> Result<ChallengeRow, ApiError> {
     tx.query_opt(
         "UPDATE zecauth_challenges
          SET consumed_at = NOW()
          WHERE message = $1 AND consumed_at IS NULL AND expires_at > NOW()
-         RETURNING id, requested_scopes",
+         RETURNING id, requested_scopes, chain",
         &[&message],
     )
     .await
@@ -1215,6 +1302,7 @@ async fn consume_challenge(tx: &Transaction<'_>, message: &str) -> Result<Challe
     .map(|row| ChallengeRow {
         id: row.get(0),
         requested_scopes: row.get(1),
+        chain: row.get(2),
     })
     .ok_or(ApiError::Unauthorized)
 }
@@ -1301,6 +1389,103 @@ async fn zecauth_verify(
     Ok(Json(Authenticated {
         authenticated: true,
         identity: hex::encode(verification_key),
+        zerant_id,
+        scopes,
+    })
+    .into_response())
+}
+
+async fn wallet_message_verify(
+    State(state): State<AppState>,
+    Json(input): Json<VerifyWalletMessage>,
+) -> Result<Response, ApiError> {
+    if input.message.len() > 16 * 1024
+        || input.granted.len() > 16
+        || input.signing_mode != "derived"
+    {
+        return Err(ApiError::Invalid);
+    }
+
+    let public_key = verify_zcash_wallet_message(&input.pubkey, &input.signature, &input.message)?;
+
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let challenge = consume_challenge(&tx, &input.message).await?;
+
+    let requested: ScopeSet =
+        serde_json::from_value(challenge.requested_scopes).map_err(|_| ApiError::Unavailable)?;
+    let requested: BTreeSet<_> = requested
+        .required
+        .into_iter()
+        .map(|scope| scope.scope_type)
+        .collect();
+    let granted: BTreeSet<String> = input
+        .granted
+        .iter()
+        .filter_map(|scope| scope_alias(scope).map(ToOwned::to_owned))
+        .filter(|scope| requested.contains(scope))
+        .collect();
+    if !granted.contains("auth") {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let existing = tx
+        .query_opt(
+            "SELECT account_id
+             FROM wallet_message_identities
+             WHERE chain = $1 AND public_key = $2",
+            &[&challenge.chain, &public_key.as_slice()],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let account = match existing {
+        Some(row) => row.get::<_, Uuid>(0),
+        None => {
+            let account = Uuid::new_v4();
+            tx.execute("INSERT INTO accounts(id) VALUES ($1)", &[&account])
+                .await
+                .map_err(|_| ApiError::Unavailable)?;
+            tx.execute(
+                "INSERT INTO wallet_message_identities(account_id, chain, public_key)
+                 VALUES ($1, $2, $3)",
+                &[&account, &challenge.chain, &public_key.as_slice()],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+            account
+        }
+    };
+
+    let mut identity_material = Vec::with_capacity(challenge.chain.len() + public_key.len());
+    identity_material.extend_from_slice(challenge.chain.as_bytes());
+    identity_material.extend_from_slice(&public_key);
+    let zerant_id = zerant_public_handle(&identity_material);
+    tx.execute(
+        "UPDATE accounts SET public_handle = COALESCE(public_handle, $2) WHERE id = $1",
+        &[&account, &zerant_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    let scopes: Vec<_> = granted.into_iter().collect();
+    let scopes_json = serde_json::to_value(&scopes).map_err(|_| ApiError::Unavailable)?;
+    tx.execute(
+        "UPDATE zecauth_challenges
+         SET authenticated_account_id = $1, authenticated_scopes = $2
+         WHERE id = $3 AND authenticated_account_id IS NULL",
+        &[&account, &scopes_json, &challenge.id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+    Ok(Json(Authenticated {
+        authenticated: true,
+        identity: zerant_id.clone(),
         zerant_id,
         scopes,
     })
@@ -3576,9 +3761,8 @@ async fn session_info(
     let client = db_client(&state.db).await?;
     let row = client
         .query_opt(
-            "SELECT encode(i.verification_key, 'hex'), a.public_handle, s.scopes
+            "SELECT a.public_handle, s.scopes
              FROM sessions s
-             JOIN zecauth_identities i ON i.account_id = s.account_id
              JOIN accounts a ON a.id = s.account_id
              WHERE s.token_hash = $1 AND s.expires_at > NOW()",
             &[&hash],
@@ -3586,14 +3770,13 @@ async fn session_info(
         .await
         .map_err(|_| ApiError::Unavailable)?
         .ok_or(ApiError::Unauthorized)?;
-    let identity: String = row.get(0);
-    let zerant_id: Option<String> = row.get(1);
-    let scopes_value: Value = row.get(2);
+    let zerant_id: Option<String> = row.get(0);
+    let scopes_value: Value = row.get(1);
     let scopes: Vec<String> =
         serde_json::from_value(scopes_value).map_err(|_| ApiError::Unavailable)?;
     Ok(Json(SessionInfo {
         authenticated: true,
-        identity,
+        identity: zerant_id.clone().ok_or(ApiError::Unavailable)?,
         zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
         scopes,
     }))
@@ -3684,6 +3867,8 @@ fn app(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/v1/auth/zecauth/challenge", get(zecauth_challenge))
         .route("/v1/auth/zecauth/verify", post(zecauth_verify))
+        .route("/v1/auth/wallet/verify", post(wallet_message_verify))
+        .route("/v1/auth/session", get(redeem_zecauth_session))
         .route("/v1/auth/zecauth/session", get(redeem_zecauth_session))
         .route("/v1/session", get(session_info).delete(logout))
         .route("/v1/account", get(account_summary).delete(delete_account))
@@ -3766,6 +3951,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0011_pairwise_holder_keys.sql"),
             include_str!("../migrations/0012_issuer_key_lifecycle.sql"),
             include_str!("../migrations/0013_verifier_key_lifecycle.sql"),
+            include_str!("../migrations/0014_wallet_message_auth.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -3944,6 +4130,46 @@ mod tests {
     fn malformed_redpallas_inputs_fail_before_verification() {
         assert!(verify_redpallas("00", &"00".repeat(64), b"message").is_err());
         assert!(verify_redpallas(&"00".repeat(32), "00", b"message").is_err());
+    }
+
+    #[test]
+    fn zcash_wallet_message_signature_recovers_expected_key() {
+        use secp256k1::SecretKey;
+
+        let secp = Secp256k1::new();
+        let secret = SecretKey::from_byte_array([7_u8; 32]).unwrap();
+        let public = SecpPublicKey::from_secret_key(&secp, &secret);
+        let message = canonical_challenge_message(
+            "zerant.example",
+            "https://zerant.example/app",
+            "zcash:mainnet",
+            "nonce1234567890123456",
+            "2026-10-04T08:00:00Z",
+            "2026-10-04T08:05:00Z",
+            "Authenticate to Zerant.",
+        );
+        let digest = zcash_signed_message_hash(&message).unwrap();
+        let signature = secp.sign_ecdsa_recoverable(SecpMessage::from_digest(digest), &secret);
+        let (recovery_id, compact) = signature.serialize_compact();
+        let mut encoded = Vec::with_capacity(65);
+        encoded.push(31 + i32::from(recovery_id) as u8);
+        encoded.extend_from_slice(&compact);
+
+        let verified = verify_zcash_wallet_message(
+            &hex::encode(public.serialize_uncompressed()),
+            &hex::encode(&encoded),
+            &message,
+        )
+        .unwrap();
+        assert_eq!(verified, public.serialize());
+        assert!(
+            verify_zcash_wallet_message(
+                &hex::encode(public.serialize_uncompressed()),
+                &hex::encode(&encoded),
+                &(message + "tampered"),
+            )
+            .is_err()
+        );
     }
 
     #[test]
