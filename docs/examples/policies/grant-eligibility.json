@@ -1,0 +1,25 @@
+{
+  "policy_id": "zerant:grant-eligibility:eligibility",
+  "version": "0.1",
+  "context_id": "grant-eligibility",
+  "source_schema_id": "zerant:source:grant-eligibility",
+  "source_schema_version": "0.1",
+  "issuer_id": "zerant:issuer:local-demo",
+  "window_seconds": 7776000,
+  "category_rules": {
+    "eligibility_checked": {
+      "weight": 20,
+      "max_events": 1
+    },
+    "milestone_accepted": {
+      "weight": 10,
+      "max_events": 4
+    }
+  },
+  "score_cap": 60,
+  "supported_thresholds": [
+    20,
+    40
+  ],
+  "operator": "gte"
+}

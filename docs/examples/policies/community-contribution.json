@@ -1,0 +1,25 @@
+{
+  "policy_id": "zerant:community-contribution:eligibility",
+  "version": "0.1",
+  "context_id": "community-contribution",
+  "source_schema_id": "zerant:source:community-contribution",
+  "source_schema_version": "0.1",
+  "issuer_id": "zerant:issuer:local-demo",
+  "window_seconds": 7776000,
+  "category_rules": {
+    "contribution_accepted": {
+      "weight": 10,
+      "max_events": 6
+    },
+    "mentorship_completed": {
+      "weight": 20,
+      "max_events": 2
+    }
+  },
+  "score_cap": 100,
+  "supported_thresholds": [
+    20,
+    40
+  ],
+  "operator": "gte"
+}

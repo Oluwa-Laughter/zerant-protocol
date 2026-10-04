@@ -1,17 +1,31 @@
 # Zerant Protocol
 
-Zerant is a proposed privacy-preserving credential and contextual reputation protocol for the Zcash ecosystem. A holder should prove eligibility, credentials, or trust while exposing only what the requesting application needs.
+Zerant is general-purpose privacy-preserving trust infrastructure for applications in the Zcash ecosystem. It lets an issuer attest to a fact it can substantiate, a holder keep evidence privately and choose what to disclose, and a verifier ask for one narrowly defined result instead of collecting a person's complete history.
 
-Issuers sign assertions they can substantiate. Holders keep credentials privately and approve disclosure. Verifiers request narrowly defined results and validate evidence against their own trust policy. A signature authenticates an issuer's assertion; it does not establish that the issuer is honest.
+Zerant is not an OSS-only reputation product and it does not define a universal social score. The same protocol primitives can support freelancers, businesses and vendors, communities, grants, marketplaces, organizations, open-source ecosystems, paid-invoice receipts, and future autonomous software.
 
-## Initial market wedge
+## Product model
 
-Start with developer ecosystems and OSS communities: contribution eligibility, grant applications, hackathon participation, and accelerator admissions. A grants verifier might ask whether an applicant meets a community contribution threshold without receiving an exact score or contribution history. Reputation belongs to a named context and policy; it must never become a universal social score or an exchangeable ranking of people.
+The reusable primitives are atomic signed credentials and attestations; issuer authorization scoped to claims, contexts, schemas and policies; contextual immutable policies evaluated locally; exact verifier requests with purpose, audience, challenge, nonce and expiry; request-specific holder consent; minimal signed responses; revocation and replay protection; independent audience keys; and optional payment-specific claims without turning wallet history into identity.
 
-Holders remain free. Eventual revenue comes from B2B verifier/issuer infrastructure, integration support, and public metadata services. Revenue must not depend on selling holder profiles or tracking disclosure across applications. Pricing, product-market fit, and hosted services are not M1 commitments.
+A signature authenticates an assertion; it does not establish that an issuer is honest. A local score helps a holder understand a policy; it is not verifier proof. Threshold attestations are issuer-backed signed booleans, not hidden-input zero-knowledge proofs.
 
-## Foundation and success
+## Example use cases
 
-M1 is a local demonstration: issuance, encrypted holder storage, deterministic contextual scoring, domain-bound consent, minimal signed response, and fail-closed verification. It is successful when the negative privacy and security cases in the milestone specification pass, not when a wallet connects.
+A freelancer can prove one completed engagement without exposing other clients. A vendor can prove one qualification. A community can verify membership or a contribution threshold. A grant program can verify eligibility without receiving a full history. A marketplace can verify fulfillment. An organization can verify one role. A payment issuer can attest that one invoice condition is satisfied without returning wallet balances, addresses or transaction history.
 
-M1 has no Zcash testnet integration or ZK predicates. Stronger predicates and Zcash testnet identity are later work with separate security decisions. The protocol must remain usable without Zcash. See [scope](docs/scope/milestone-01.md) and [privacy limits](docs/PRIVACY.md).
+These examples reuse one protocol. New use cases should add reviewed schemas/policies and trust configuration rather than fork the core.
+
+## Zcash boundary
+
+Zcash is an integration and settlement layer, not a generic identity field. The generic protocol does not require wallet addresses, balances or transactions.
+
+The current Zcash adapter is regtest-oriented and read-only: it discovers current Z3 RPC capabilities and projects minimal chain/wallet readiness. Payment sending is deliberately disabled until the current Zallet payment RPC contract is exercised end-to-end on official Z3 regtest. Zcash privacy properties do not automatically apply to Zerant credentials.
+
+FROST is an optional future organizational signing/custody capability for teams or issuer keys, not a requirement for holder flows.
+
+## Success criteria
+
+Zerant succeeds when applications can ask for a narrow fact, holders can understand and approve exactly what leaves their device, and verifiers can fail closed on tampering, expiry, revocation, domain substitution and replay—without creating a centralized holder profile.
+
+No claim of anonymity, unlinkability, zero knowledge or production Zcash payment privacy should exceed the mechanism that is actually implemented and tested.

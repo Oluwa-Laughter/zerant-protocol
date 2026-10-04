@@ -1,0 +1,25 @@
+{
+  "policy_id": "zerant:freelance-service:eligibility",
+  "version": "0.1",
+  "context_id": "service-completion",
+  "source_schema_id": "zerant:source:freelance-service",
+  "source_schema_version": "0.1",
+  "issuer_id": "zerant:issuer:local-demo",
+  "window_seconds": 7776000,
+  "category_rules": {
+    "service_completed": {
+      "weight": 20,
+      "max_events": 4
+    },
+    "client_acceptance": {
+      "weight": 10,
+      "max_events": 2
+    }
+  },
+  "score_cap": 100,
+  "supported_thresholds": [
+    20,
+    60
+  ],
+  "operator": "gte"
+}

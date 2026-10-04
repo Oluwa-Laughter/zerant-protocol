@@ -1,0 +1,25 @@
+{
+  "policy_id": "zerant:marketplace-fulfillment:eligibility",
+  "version": "0.1",
+  "context_id": "service-fulfillment",
+  "source_schema_id": "zerant:source:marketplace-fulfillment",
+  "source_schema_version": "0.1",
+  "issuer_id": "zerant:issuer:local-demo",
+  "window_seconds": 7776000,
+  "category_rules": {
+    "fulfillment_completed": {
+      "weight": 10,
+      "max_events": 5
+    },
+    "delivery_accepted": {
+      "weight": 10,
+      "max_events": 5
+    }
+  },
+  "score_cap": 100,
+  "supported_thresholds": [
+    20,
+    60
+  ],
+  "operator": "gte"
+}

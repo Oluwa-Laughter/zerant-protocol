@@ -28,9 +28,11 @@ Axum/PostgreSQL are optional later choices only if public issuer keys, schemas, 
 6. **Durable replay state.** Verifier owns pending requests and atomically consumes them after full verification; expiry and restart rules are in disclosure spec.
 7. **No generic wallet identity.** No wallet addresses, balances or transactions enter generic schemas.
 
-## Future Zcash boundary
+## Zcash boundary
 
-M2 must choose what testnet identity means, who verifies possession, the observable data, and how wallet keys remain separate from holder keys. No architectural dependency on a Zcash node exists in M1. Evaluate supported 2026 [librustzcash](https://github.com/zcash/librustzcash) libraries and current wallet interfaces when M2 starts, pin versions, and document capabilities. [zcashd is deprecated](https://z.cash/support/zcashd-deprecation/); do not assume its retired embedded-wallet RPCs or build around it. Evaluate maintained node/wallet tooling such as Zebra and Zallet only as needed. Using Zcash tooling does not confer its privacy properties on Zerant credentials.
+Zcash remains isolated behind `zerant-zcash`; generic credentials and contextual policies do not depend on wallet state. The current adapter is regtest-oriented and read-only: it can discover the local Z3 RPC contract and project minimal Zebra/Zallet readiness without exporting balances, addresses, seed fingerprints or transaction history. The official Z3 regtest router has been exercised for read-only capability/status calls; no payment-send path is enabled.
+
+Any future wallet-identity or payment authorization feature must separately define possession, observability, confirmation/reorg policy and key separation. [zcashd is deprecated](https://z.cash/support/zcashd-deprecation/); do not assume its retired embedded-wallet RPCs. Using Zcash tooling does not confer Zcash transaction-privacy properties on Zerant credentials.
 
 ## Decision gate before code
 
@@ -40,7 +42,7 @@ Validate maintained JOSE/JCS and Web Crypto library compatibility, finalize exac
 
 M1A introduces `apps/web`, a statically exportable Next.js interface deployed as public assets on Vercel. Its role views use invented, typed public fixtures; they do not implement protocol parsers, origin authentication, signing, encrypted storage, issuance, verification, replay state, or revocation. Review and decline controls change only transient React state. Reloading resets that state; no browser persistence, analytics, wallet connection, backend, or credential transport is introduced. All displayed origins, keys and identifiers are illustrative placeholders, not authenticated evidence.
 
-The hosting boundary serves public product copy and demo assets only. No holder secrets are accepted or rendered. Existing cryptographic profiles, subject binding, consent, storage, key lifecycle, revocation, replay and retention decisions remain requirements for M1B/M1C. Static hosting is not a protocol verifier or an isolation boundary between the demo roles. Production protocol implementation still requires the decision gate above. M1A does not complete M1 security acceptance criteria.
+The hosting boundary serves public product copy and demo assets only. No holder secrets are accepted or rendered. Static hosting is not a protocol verifier or an isolation boundary between the demo roles. Native Rust code implements credential, policy, disclosure and replay rules, but production browser integration still requires secure key/vault lifecycle, authenticated transport, consent wiring and deployment review.
 
 ## M1B Rust credential core (implemented)
 
@@ -48,6 +50,76 @@ The first protocol-critical implementation now lives in Rust. `zerant-core` owns
 
 The cryptographic boundary uses maintained libraries: `josekit 0.10.3` for JOSE/JWS EdDSA and `serde_json_canonicalizer 0.3.2` for RFC 8785 payload canonicalization. Zerant does not implement Ed25519 or JWS itself. Protected JOSE headers are restricted to `alg=EdDSA`, exact `kid`, and exact message-specific `typ`; signed Zerant payloads are JCS canonical.
 
-M1B remains native Rust. Browser/WASM integration is intentionally deferred until there is a concrete M1C product boundary and shared vectors can prove parity. Holder vault storage, key enrollment/possession, reputation evaluation, disclosure responses, replay persistence, authenticated transport, and Zcash remain unimplemented.
+Protocol-critical logic remains native Rust. Contextual policy evaluation, disclosure v0.2, replay persistence and the read-only Z3 adapter are implemented and covered by shared vectors/tests. Browser/WASM integration, holder vault storage, enrollment/key-possession UX, authenticated browser transport, payment sending/settlement and live FROST wiring remain unimplemented.
 
 See [M1B implementation](specs/implementation-m1b.md).
+
+## General-purpose executable boundaries (2026-10-04)
+
+Policies remain immutable contextual rules, with bounded integer category weights;
+OSS is one fixture among service, business, community, grant, marketplace, role and
+payment examples. The evaluator requires caller-verified credentials against pinned
+issuer trust and fresh signed revocation at the explicit evaluation time. Conflicting
+IDs, foreign contexts/subjects and unsupported evidence fail unavailable. Local scores
+are private calculations, never verifier proof.
+
+Disclosure reuses the existing JOSE/JCS profile. A pinned verifier key authenticates a
+single-result request; the caller separately supplies an authenticated transport origin.
+Approval signs exactly one verified matching attestation with its audience subject key.
+No source fallback, denial reason, score, wallet history or portfolio is transmitted.
+Request policy digest is explicitly included to prevent immutable policy substitution;
+this is the versioned disclosure v0.2 profile. Issuer authorization remains mandatory.
+Keys and transport authentication remain application responsibilities; no vault is implied.
+
+Replay stores register the exact signed request digest before delivery and atomically
+consume only after every verification check. A SQLite implementation uses conditional
+UPDATE for process/restart safety; no response bodies are stored. Expired rows may be
+purged; absent state fails closed. Revocation watermarks must be persisted by callers.
+SQLite is a necessary local persistence dependency for this requested replay boundary.
+
+Zcash is isolated in zerant-zcash. Only regtest adapters are enabled here. Documented
+read-only RPCs and OpenRPC discovery are allowlisted. Wallet RPC output is projected
+into readiness/status without exporting fingerprints, balances or history. Payment
+confirmation alone does not establish recipient, amount or invoice fulfillment; these
+must be checked by an authorized issuer before signing a payment claim. No seeds are
+accepted. Sending and production payment settlement are separate capabilities, enabled
+only after a demonstrated supported contract. Optional organizational signing has an
+interface only; no FROST algorithm or compatibility claim is implemented.
+
+The browser playground uses shared public policy examples and transient consent state.
+It is a simulation, not a native verifier, authenticated transport or encrypted vault.
+No real credentials or wallet secrets are accepted; scenario changes reset consent.
+
+## Policy and disclosure implementation contract (2026-10-04)
+
+The native policy API accepts already-verified CredentialPayload values; callers must
+verify issuer authorization, signature and fresh revocation at as_of before calling.
+It rechecks structure, time, context, source schema, issuer and subject consistency.
+It exposes a local count/exclusion summary without payloads or identifiers. Empty
+evidence is zero; conflicts and invalid evidence are unavailable, never silently zero.
+Weights may be zero; every rule has a nonzero bounded count. Supported thresholds
+are unique safe integers within the cap (including zero); output sorts thresholds.
+
+Disclosure v0.2 requires an immutable policy digest for threshold requests. Native
+libraries accept pinned verifier trust and an independently authenticated origin;
+they do not authenticate a browser session. Holder signing is a low-level operation
+requiring application consent. Enrollment, key generation/rotation and encrypted
+key storage remain application responsibilities; compromise flags reject known bad
+keys. Issuer trust and signed revocation remain required at response acceptance.
+
+Replay rows contain ID, exact ASCII request digest, origin, expiry and status only.
+The exact signed request must additionally be retained by the caller and supplied
+when verifying; its hash must match the persisted row. SQLite conditional updates
+provide single acceptance across threads, connections and restart. Never overwrite
+an existing request ID, even consumed or expired. No response bodies or scores are
+stored. Caller-controlled deletion of expired rows must never restore old requests;
+register only freshly issued, independently random IDs. Revocation watermarks and
+clock health are caller responsibilities. No vault, authenticated browser transport
+or transaction privacy is implemented by the policy/disclosure components.
+
+The concrete regtest HTTP transport uses reqwest blocking HTTP without TLS (fixed
+loopback router only), disables redirects and proxies, enforces a 15-second deadline
+and 1 MiB response limit, and allowlists three read-only RPCs: rpc.discover,
+getblockchaininfo and getwalletinfo. Authentication stays
+inside the client and errors omit raw wallet responses. No remote endpoint or spending
+method is exposed. A missing Zebra IBD field is unknown, never inferred ready/false.

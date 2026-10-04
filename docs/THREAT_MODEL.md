@@ -26,3 +26,17 @@ Trust boundaries separate issuer, holder browser/vault, verifier session/state, 
 M1 does not solve sybil resistance, issuer honesty, malicious device control, traffic anonymity, coercion, credential lending or global completeness of evidence. Loss of holder keys requires issuer reissuance after enrollment checks; no universal wallet-derived recovery. Compromised issuer keys require trust metadata update, rejection and reissuance. Revocation/distribution outages fail closed rather than expose extra attributes.
 
 Before implementation, turn mitigations into independent acceptance fixtures, validate maintained crypto library behavior, and document chosen local persistence and authenticated-origin transport. Before hosted or Zcash testnet work, extend this model for deployment, metadata observability, service authentication, retention and wallet-specific authority. No security/privacy claim should exceed tested behavior.
+
+## Zcash/payment integration threats
+
+- **RPC overreach:** Zcash-specific access stays behind `zerant-zcash`; no seed phrase is accepted and generic credentials do not import wallet-wide balances/history. A compromised wallet/operator or RPC endpoint remains a deployment risk.
+- **Payment-claim overreach:** a payment issuer must validate its own expected recipient, amount, network, transaction binding and confirmation/reorg policy before signing a narrow payment claim. A signed claim can still be dishonest if the issuer is dishonest or misconfigured.
+- **Capability confusion:** discovering `z_sendmany` means the current Zallet RPC advertises that capability; it does not prove Zerant has safely executed a shielded payment. Live payment behavior must be demonstrated on official regtest before product claims change.
+
+The local Z3 HTTP client disables proxies/redirects, bounds responses and allowlists
+read-only methods. Loopback reachability alone does not authenticate a regtest network;
+the operator must point it at the isolated official regtest deployment. Payment demo
+helpers must prove regtest-only mining works before wallet mutations and use only
+synthetic funds. Wallet readiness and confirmation count cannot prove amount/recipient
+or settlement finality. Raw wallet responses, account fingerprints and transaction
+memos must never be logged or included in generic attestations.

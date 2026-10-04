@@ -1,0 +1,16 @@
+[package]
+name = "zerant-disclosure"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+zerant-core = { path = "../zerant-core" }
+zerant-credential = { path = "../zerant-credential" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+josekit = { workspace = true }
+rusqlite = { version = "0.38", features = ["bundled"] }
+
+[dev-dependencies]
+zerant-policy = { path = "../zerant-policy" }

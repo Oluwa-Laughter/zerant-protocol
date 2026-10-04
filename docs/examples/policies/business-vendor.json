@@ -1,0 +1,25 @@
+{
+  "policy_id": "zerant:business-vendor:eligibility",
+  "version": "0.1",
+  "context_id": "vendor-qualification",
+  "source_schema_id": "zerant:source:business-vendor",
+  "source_schema_version": "0.1",
+  "issuer_id": "zerant:issuer:local-demo",
+  "window_seconds": 7776000,
+  "category_rules": {
+    "qualification_checked": {
+      "weight": 30,
+      "max_events": 1
+    },
+    "delivery_accepted": {
+      "weight": 10,
+      "max_events": 5
+    }
+  },
+  "score_cap": 80,
+  "supported_thresholds": [
+    30,
+    60
+  ],
+  "operator": "gte"
+}

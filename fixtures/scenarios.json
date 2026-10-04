@@ -1,0 +1,242 @@
+[
+  {
+    "id": "freelancer",
+    "label": "Freelancer",
+    "purpose": "Verify one completed paid engagement",
+    "private": [
+      "Unrelated clients and engagements",
+      "Source evidence and exact local score",
+      "Wallet addresses, balances and history"
+    ],
+    "policy": {
+      "policy_id": "zerant:freelancer:eligibility",
+      "version": "0.1",
+      "context_id": "freelancer",
+      "source_schema_id": "zerant:source:freelancer",
+      "source_schema_version": "0.1",
+      "issuer_id": "zerant:issuer:local-demo",
+      "window_seconds": 7776000,
+      "category_rules": {
+        "paid_engagement_completed": {
+          "weight": 10,
+          "max_events": 1
+        }
+      },
+      "score_cap": 10,
+      "supported_thresholds": [
+        10
+      ],
+      "operator": "gte"
+    }
+  },
+  {
+    "id": "business",
+    "label": "Business / vendor",
+    "purpose": "Check vendor qualification",
+    "private": [
+      "Unrelated clients and engagements",
+      "Source evidence and exact local score",
+      "Wallet addresses, balances and history"
+    ],
+    "policy": {
+      "policy_id": "zerant:business:eligibility",
+      "version": "0.1",
+      "context_id": "business",
+      "source_schema_id": "zerant:source:business",
+      "source_schema_version": "0.1",
+      "issuer_id": "zerant:issuer:local-demo",
+      "window_seconds": 7776000,
+      "category_rules": {
+        "qualification_checked": {
+          "weight": 10,
+          "max_events": 1
+        }
+      },
+      "score_cap": 10,
+      "supported_thresholds": [
+        10
+      ],
+      "operator": "gte"
+    }
+  },
+  {
+    "id": "community",
+    "label": "Community",
+    "purpose": "Check active community membership",
+    "private": [
+      "Unrelated clients and engagements",
+      "Source evidence and exact local score",
+      "Wallet addresses, balances and history"
+    ],
+    "policy": {
+      "policy_id": "zerant:community:eligibility",
+      "version": "0.1",
+      "context_id": "community",
+      "source_schema_id": "zerant:source:community",
+      "source_schema_version": "0.1",
+      "issuer_id": "zerant:issuer:local-demo",
+      "window_seconds": 7776000,
+      "category_rules": {
+        "membership_active": {
+          "weight": 10,
+          "max_events": 1
+        }
+      },
+      "score_cap": 10,
+      "supported_thresholds": [
+        10
+      ],
+      "operator": "gte"
+    }
+  },
+  {
+    "id": "grant",
+    "label": "Grant eligibility",
+    "purpose": "Check eligibility for this grant",
+    "private": [
+      "Unrelated clients and engagements",
+      "Source evidence and exact local score",
+      "Wallet addresses, balances and history"
+    ],
+    "policy": {
+      "policy_id": "zerant:grant:eligibility",
+      "version": "0.1",
+      "context_id": "grant",
+      "source_schema_id": "zerant:source:grant",
+      "source_schema_version": "0.1",
+      "issuer_id": "zerant:issuer:local-demo",
+      "window_seconds": 7776000,
+      "category_rules": {
+        "eligibility_checked": {
+          "weight": 10,
+          "max_events": 1
+        }
+      },
+      "score_cap": 10,
+      "supported_thresholds": [
+        10
+      ],
+      "operator": "gte"
+    }
+  },
+  {
+    "id": "oss",
+    "label": "Open-source contribution",
+    "purpose": "Check contribution eligibility",
+    "private": [
+      "Unrelated clients and engagements",
+      "Source evidence and exact local score",
+      "Wallet addresses, balances and history"
+    ],
+    "policy": {
+      "policy_id": "zerant:oss:eligibility",
+      "version": "0.1",
+      "context_id": "oss",
+      "source_schema_id": "zerant:source:oss",
+      "source_schema_version": "0.1",
+      "issuer_id": "zerant:issuer:local-demo",
+      "window_seconds": 7776000,
+      "category_rules": {
+        "merged_contribution": {
+          "weight": 10,
+          "max_events": 1
+        }
+      },
+      "score_cap": 10,
+      "supported_thresholds": [
+        10
+      ],
+      "operator": "gte"
+    }
+  },
+  {
+    "id": "marketplace",
+    "label": "Marketplace / service",
+    "purpose": "Check service fulfillment",
+    "private": [
+      "Unrelated clients and engagements",
+      "Source evidence and exact local score",
+      "Wallet addresses, balances and history"
+    ],
+    "policy": {
+      "policy_id": "zerant:marketplace:eligibility",
+      "version": "0.1",
+      "context_id": "marketplace",
+      "source_schema_id": "zerant:source:marketplace",
+      "source_schema_version": "0.1",
+      "issuer_id": "zerant:issuer:local-demo",
+      "window_seconds": 7776000,
+      "category_rules": {
+        "fulfillment_completed": {
+          "weight": 10,
+          "max_events": 1
+        }
+      },
+      "score_cap": 10,
+      "supported_thresholds": [
+        10
+      ],
+      "operator": "gte"
+    }
+  },
+  {
+    "id": "organization",
+    "label": "Organization / role",
+    "purpose": "Check a team role",
+    "private": [
+      "Unrelated clients and engagements",
+      "Source evidence and exact local score",
+      "Wallet addresses, balances and history"
+    ],
+    "policy": {
+      "policy_id": "zerant:organization:eligibility",
+      "version": "0.1",
+      "context_id": "organization",
+      "source_schema_id": "zerant:source:organization",
+      "source_schema_version": "0.1",
+      "issuer_id": "zerant:issuer:local-demo",
+      "window_seconds": 7776000,
+      "category_rules": {
+        "role_active": {
+          "weight": 10,
+          "max_events": 1
+        }
+      },
+      "score_cap": 10,
+      "supported_thresholds": [
+        10
+      ],
+      "operator": "gte"
+    }
+  },
+  {
+    "id": "payment",
+    "label": "Payment receipt",
+    "purpose": "Check one paid invoice",
+    "private": [
+      "Unrelated clients and engagements",
+      "Source evidence and exact local score",
+      "Wallet addresses, balances and history"
+    ],
+    "policy": {
+      "policy_id": "zerant:payment:eligibility",
+      "version": "0.1",
+      "context_id": "payment",
+      "source_schema_id": "zerant:source:payment",
+      "source_schema_version": "0.1",
+      "issuer_id": "zerant:issuer:local-demo",
+      "window_seconds": 7776000,
+      "category_rules": {
+        "invoice_paid": {
+          "weight": 10,
+          "max_events": 1
+        }
+      },
+      "score_cap": 10,
+      "supported_thresholds": [
+        10
+      ],
+      "operator": "gte"
+    }
+  }
+]

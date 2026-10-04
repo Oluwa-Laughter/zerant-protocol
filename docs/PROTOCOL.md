@@ -1,6 +1,6 @@
 # Protocol overview
 
-Version 0.1 is a proposed M1 application protocol, not a claim of W3C VC compatibility or an implemented system. MUST/MUST NOT are normative requirements. Exact field contracts live in the three specs; privacy and threat documents define their limits.
+Zerant is a versioned application protocol, not a claim of W3C VC compatibility. The native Rust credential profile and disclosure v0.2 profile are implemented; browser transport, vault storage and hosted deployment remain separate concerns. MUST/MUST NOT language is an implemented guarantee only where matching code and tests exist.
 
 ## Local lifecycle
 
@@ -25,3 +25,13 @@ All roles use strict parsers, bounded payloads, explicit version negotiation and
 Use UTF-8 JSON canonicalized with [RFC 8785 JCS](https://www.rfc-editor.org/rfc/rfc8785). Reject duplicate keys, noncanonical payload bytes, floats, unsafe integers and invalid Unicode. Times are integer UTC Unix seconds. IDs are independent 128-bit CSPRNG values encoded base64url without padding; challenges/nonces are independent 256-bit values. Protocol origin strings follow the disclosure spec. Context/schema/policy identifiers are immutable local registry strings, not network fetch instructions.
 
 Sign with standard compact JWS using Ed25519 and a maintained JOSE library; follow [RFC 8037](https://www.rfc-editor.org/rfc/rfc8037) and its algorithm update [RFC 9864](https://www.rfc-editor.org/rfc/rfc9864). The v0.1 profile pins `alg: EdDSA` (no algorithm negotiation), `kid`, and a message-specific `typ`, all protected. Reject unprotected headers, `none`, other algorithms, `crit`, detached payloads, and extra headers. JWS signs the standard encoded protected-header and payload signing input, not an invented concatenation. No private JWK `d` appears on the wire.
+
+## General-purpose contexts
+
+The protocol does not privilege one industry or community. Context and policy identifiers define the business meaning. The same source-credential, attestation, disclosure and replay machinery can represent freelance service completion, vendor qualification, community participation, grant eligibility, open-source contribution, marketplace fulfillment, organization roles and payment receipts.
+
+A context-specific policy must not be silently reused as a global score. Exact local scores are not verifier evidence. Applications should request the narrowest supported atomic claim or threshold needed for their decision.
+
+## Executable disclosure profile
+
+The current native disclosure profile is v0.2. It adds the pinned policy digest to threshold requests and binds responses to the exact request digest, origin, challenge, nonce and audience-specific holder key. See `docs/specs/disclosure-v0.2.md`.

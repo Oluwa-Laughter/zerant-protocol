@@ -1,0 +1,25 @@
+{
+  "policy_id": "zerant:organization-membership:eligibility",
+  "version": "0.1",
+  "context_id": "organization-role",
+  "source_schema_id": "zerant:source:organization-membership",
+  "source_schema_version": "0.1",
+  "issuer_id": "zerant:issuer:local-demo",
+  "window_seconds": 7776000,
+  "category_rules": {
+    "membership_active": {
+      "weight": 10,
+      "max_events": 1
+    },
+    "role_authorized": {
+      "weight": 20,
+      "max_events": 1
+    }
+  },
+  "score_cap": 30,
+  "supported_thresholds": [
+    10,
+    30
+  ],
+  "operator": "gte"
+}

@@ -1,0 +1,8 @@
+{
+  "source": "live read-only sanitized projection",
+  "date": "2026-10-04",
+  "chain": "test",
+  "blocks": 2,
+  "wallet_rpc_reachable": true,
+  "payment_exercised": false
+}

@@ -1,0 +1,28 @@
+{
+  "policy_id": "zerant:oss:contribution",
+  "version": "0.1",
+  "context_id": "oss-community",
+  "source_schema_id": "zerant:source:oss-contribution",
+  "source_schema_version": "0.1",
+  "issuer_id": "zerant:issuer:local-demo",
+  "window_seconds": 7776000,
+  "category_rules": {
+    "merged_contribution": {
+      "weight": 10,
+      "max_events": 6
+    },
+    "review": {
+      "weight": 5,
+      "max_events": 4
+    },
+    "mentorship": {
+      "weight": 20,
+      "max_events": 1
+    }
+  },
+  "score_cap": 100,
+  "supported_thresholds": [
+    40
+  ],
+  "operator": "gte"
+}

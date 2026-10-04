@@ -1,0 +1,129 @@
+{
+  "date": "2026-10-04",
+  "methods": [
+    {
+      "name": "generatetoaddress",
+      "params": [
+        {
+          "name": "num_blocks",
+          "required": true
+        },
+        {
+          "name": "address",
+          "required": true
+        }
+      ],
+      "server": "zebra"
+    },
+    {
+      "name": "getblockchaininfo",
+      "params": [],
+      "server": "zebra"
+    },
+    {
+      "name": "z_listunifiedreceivers",
+      "params": [
+        {
+          "name": "address",
+          "required": true
+        }
+      ],
+      "server": "zebra"
+    },
+    {
+      "name": "z_getoperationresult",
+      "params": [
+        {
+          "name": "operationid",
+          "required": false
+        }
+      ],
+      "server": "zallet"
+    },
+    {
+      "name": "z_getoperationstatus",
+      "params": [
+        {
+          "name": "operationid",
+          "required": false
+        }
+      ],
+      "server": "zallet"
+    },
+    {
+      "name": "z_sendmany",
+      "params": [
+        {
+          "name": "fromaddress",
+          "required": true
+        },
+        {
+          "name": "amounts",
+          "required": true
+        },
+        {
+          "name": "minconf",
+          "required": false
+        },
+        {
+          "name": "fee",
+          "required": false
+        },
+        {
+          "name": "privacy_policy",
+          "required": false
+        }
+      ],
+      "server": "zallet"
+    },
+    {
+      "name": "getwalletinfo",
+      "params": [],
+      "server": "zallet"
+    },
+    {
+      "name": "z_getaddressforaccount",
+      "params": [
+        {
+          "name": "account",
+          "required": true
+        },
+        {
+          "name": "receiver_types",
+          "required": false
+        },
+        {
+          "name": "diversifier_index",
+          "required": false
+        }
+      ],
+      "server": "zallet"
+    },
+    {
+      "name": "z_getnewaccount",
+      "params": [
+        {
+          "name": "account_name",
+          "required": true
+        },
+        {
+          "name": "seedfp",
+          "required": false
+        }
+      ],
+      "server": "zallet"
+    },
+    {
+      "name": "z_listunifiedreceivers",
+      "params": [
+        {
+          "name": "unified_address",
+          "required": true
+        }
+      ],
+      "server": "zallet"
+    }
+  ],
+  "source": "live rpc.discover at local official Z3 regtest router",
+  "z3_commit": "e84ce9fd8e864ff0b2a8a62f6ce14392145db0fb"
+}

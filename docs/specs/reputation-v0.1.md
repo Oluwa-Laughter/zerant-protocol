@@ -1,12 +1,12 @@
 # Reputation v0.1
 
-Status: normative draft for deterministic contextual scoring. No universal score, AI model, hidden weighting or cross-context ranking.
+Status: implemented generic native policy parser/evaluator; vault and issuer dependency ledger remain application responsibilities. No universal score, AI model, hidden weighting or cross-context ranking.
 
 ## Policy contract
 
 Immutable policy JSON has exactly `policy_id`, `version`, `context_id`, `source_schema_id`, `source_schema_version`, `issuer_id`, `window_seconds`, `category_rules`, `score_cap`, `supported_thresholds`, `operator`. The policy digest is SHA-256 of its JCS bytes. Verifier/holder/issuer pin the same bytes; a digest alone is not authorization. Policies are public local metadata; never fetch URLs from requests.
 
-Initial fixture: `policy_id: zerant:oss:contribution`, `version: 0.1`, `context_id: oss-community`, source schema `zerant:source:oss-contribution` version `0.1`, and `issuer_id: zerant:issuer:local-demo`. `window_seconds` is 7,776,000 (90 days), `score_cap` is 100, `supported_thresholds` is `[40]`, `operator` is `gte`. `category_rules` is exactly:
+One example fixture: `policy_id: zerant:oss:contribution`, `version: 0.1`, `context_id: oss-community`, source schema `zerant:source:oss-contribution` version `0.1`, and `issuer_id: zerant:issuer:local-demo`. `window_seconds` is 7,776,000 (90 days), `score_cap` is 100, `supported_thresholds` is `[40]`, `operator` is `gte`. `category_rules` is exactly:
 
 | Category | Integer weight | Maximum counted events |
 | --- | --- | --- |
@@ -31,3 +31,14 @@ The holder keeps an encrypted local audit trace with policy digest, evaluation t
 Attestation `as_of` equals issuance. Its expiry is bounded by 24 hours, source expiry, and the next time a counted event leaves the window. Revoking a source propagates to dependent attestations through the issuer's revocation ledger, subject to the snapshot lag. Verifier checks current attestation validity and pinned policy; it does not reconstruct score inputs. It trusts the issuer's evaluation and limited freshness, not a hidden-input proof.
 
 M1 supports one issuer and the fixed threshold per policy. No arbitrary threshold probing, exact-score responses or multi-issuer aggregation. Holder can omit evidence, so an assertion does not establish completeness of a global history. Do not use this policy for negative-history predicates. Issuer fraud, sybil enrollment, event quality and issuer bias remain trust/governance questions outside M1 automation. Future policies require immutable versions, documented rationale and evaluation; never silently repurpose this score in another context.
+
+## Generic implementation
+
+`zerant-policy` applies this schema to all contexts. Public examples live in
+`fixtures/scenarios.json`; no use-case branch exists in the runtime. `evaluate` accepts
+payloads already verified by its caller for issuer signatures, authorization and fresh
+revocation at the explicit evaluation time. Local `Evaluation` and
+`AuditSummary` are intentionally not serialized as verifier responses. Rules are bounded
+to 64 categories, 64 unique thresholds and 4096 evidence records. Zero weights
+and zero supported thresholds are allowed; safe integer bounds and wide intermediate arithmetic
+prevent overflow. Exact-score wire disclosure is not implemented.
