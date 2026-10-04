@@ -27,6 +27,10 @@ Zerant also supports purpose-specific Zcash authentication and compatible wallet
 
 A user can add passkeys without changing the existing Zerant ID, credentials, issuer memberships, verifier profile, or Zcash configuration.
 
+An existing account can link Zcash sign-in through `POST /v1/account/zcash/challenge` and the matching account verification endpoint. The challenge is bound server-side to the current account and exact recent session, expires after five minutes, and is consumed once. The same challenge format accepts ZecAuth RedPallas or an injected wallet's derived message signature. Link verification never creates an account, never changes the Zerant ID, and refuses an identity owned by another account or a different identity already occupying the same sign-in slot. Linking requires a session created within the last 15 minutes at both start and finish; a revoked or expired session cannot finish it.
+
+Account settings list only the linked method, chain where stored, and creation time. The current UI links an installed browser wallet. ZecAuth wallet-app verification is supported by the backend, but a safe browser-return handoff that preserves the initiating session is still needed before enabling that account UI path. The normal unauthenticated wallet sign-in routes continue to create or resolve accounts as before.
+
 ## Privacy boundary
 
 Passkeys are an account-access mechanism only. They are not credentials, reputation signals, payment identities, or proof inputs. Zerant does not expose WebAuthn credential IDs through the customer UI or verifier APIs.

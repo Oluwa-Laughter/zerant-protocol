@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { PasskeyManager, type PasskeyView } from "@/components/passkey-manager";
 import { SessionManager, type AccountSessionView } from "@/components/session-manager";
+import { ZcashSignInManager, type LinkedZcashMethod } from "@/components/zcash-sign-in-manager";
 
 export type AccountSummary = {
   zerant_id: string;
@@ -23,12 +24,14 @@ export function AccountSettings({
   summary,
   initialPasskeys,
   initialSessions,
+  initialZcashMethods,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
   summary: AccountSummary | null;
   initialPasskeys: PasskeyView[];
   initialSessions: AccountSessionView[];
+  initialZcashMethods: LinkedZcashMethod[];
 }) {
   const router = useRouter();
   const [confirmText, setConfirmText] = useState("");
@@ -150,6 +153,8 @@ export function AccountSettings({
 
 
         <PasskeyManager initialPasskeys={initialPasskeys} />
+
+        <ZcashSignInManager initialMethods={initialZcashMethods} />
 
         <SessionManager initialSessions={initialSessions} />
 

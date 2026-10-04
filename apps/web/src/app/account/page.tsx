@@ -7,6 +7,7 @@ import {
 import { fetchZerantBackend } from "@/lib/server-api";
 import type { PasskeyView } from "@/components/passkey-manager";
 import type { AccountSessionView } from "@/components/session-manager";
+import type { LinkedZcashMethod } from "@/components/zcash-sign-in-manager";
 
 export const metadata: Metadata = {
   title: "Account",
@@ -24,6 +25,7 @@ export default async function AccountPage() {
   let summary: AccountSummary | null = null;
   let passkeys: PasskeyView[] = [];
   let sessions: AccountSessionView[] = [];
+  let zcashMethods: LinkedZcashMethod[] = [];
 
   try {
     const sessionResponse = await fetchZerantBackend("/v1/session", cookieHeader);
@@ -43,6 +45,10 @@ export default async function AccountPage() {
       if (sessionListResponse?.ok) {
         sessions = (await sessionListResponse.json()) as AccountSessionView[];
       }
+      const zcashResponse = await fetchZerantBackend("/v1/account/zcash/methods", cookieHeader);
+      if (zcashResponse?.ok) {
+        zcashMethods = (await zcashResponse.json()) as LinkedZcashMethod[];
+      }
     }
   } catch {
     backendAvailable = false;
@@ -55,6 +61,7 @@ export default async function AccountPage() {
       summary={summary}
       initialPasskeys={passkeys}
       initialSessions={sessions}
+      initialZcashMethods={zcashMethods}
     />
   );
 }

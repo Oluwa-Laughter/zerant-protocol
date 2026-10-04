@@ -32,7 +32,7 @@ Noir Wallet is currently one concrete injected adapter. It is not Zerant's walle
 
 Some Zcash wallets may understand Zcash addresses and ZIP-321 payments but not ZecAuth or browser message signing. Zerant must not misrepresent those wallets as unsupported Zcash wallets. They can still participate in portable Zcash payment flows.
 
-A wallet-independent Zerant account-entry method is the next interoperability layer so holders are not excluded merely because their wallet does not implement an authentication extension.
+Passkeys now provide wallet-independent Zerant account entry, so holders can use an account even when their wallet has no authentication extension. An authenticated holder can link supported Zcash sign-in to that same account. The account UI currently supports injected-wallet linking; wallet-app linking awaits a safe browser-return handoff.
 
 ## Security rules
 

@@ -149,6 +149,8 @@ individual PCZT methods are available on the operator's current Zallet build.
 
 ## ZecAuth server authentication
 
+Authenticated account linking also uses the existing five-minute ZecAuth challenge message. Its dedicated account endpoint stores the target account and initiating recent session on the server and accepts either RedPallas wallet-app or derived injected-wallet verification. The ordinary sign-in verifier cannot consume a link challenge. A linked key cannot be moved from another account or silently replace a different key, and the account's public handle stays fixed. Only the injected-wallet link control is currently exposed in account settings; ZecAuth wallet-app linking needs a browser-return flow that retains and rechecks the initiating session. Passkeys already provide wallet-independent account entry.
+
 `zerant-api` implements the server-verification side of the ZecAuth v1 draft profile. It issues five-minute domain/chain/nonce challenges, verifies RedPallas public keys and signatures with `reddsa`, consumes each challenge once, and creates opaque HttpOnly sessions only after the browser redeems its completed server-side authentication attempt.
 
 The default capability allow-list is `auth` plus `request_payment`. Broader viewing capabilities must be explicitly enabled by the operator. The authentication key is a pseudonymous login identity only and is never interpreted as a Zcash address or spending key.
@@ -171,7 +173,7 @@ Noir Wallet is currently one concrete injected adapter. It is not a protocol dep
 
 ### Wallets with payment support but no authentication extension
 
-A wallet may support Zcash addresses and ZIP-321 payment requests without implementing ZecAuth or browser message signing. Zerant treats that as a capability difference, not as a non-Zcash wallet. Portable payment interoperability remains available. A wallet-independent Zerant account-entry path is the next compatibility layer.
+A wallet may support Zcash addresses and ZIP-321 payment requests without implementing ZecAuth or browser message signing. Zerant treats that as a capability difference, not as a non-Zcash wallet. Portable payment interoperability remains available. Passkeys provide wallet-independent Zerant account entry.
 
 See `docs/WALLET_COMPATIBILITY.md` for the adapter and security contract.
 
