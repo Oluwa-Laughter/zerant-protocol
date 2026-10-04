@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import {
   IssuerWorkspace,
+  type CredentialSchema,
   type IssuedCredential,
   type IssuerProfile,
 } from "@/components/issuer-workspace";
@@ -22,6 +23,7 @@ export default async function IssuerPage() {
   let authenticated = false;
   let profile: IssuerProfile | null = null;
   let issued: IssuedCredential[] = [];
+  let schemas: CredentialSchema[] = [];
 
   try {
     const sessionResponse = await fetchZerantBackend("/v1/session", cookieHeader);
@@ -32,9 +34,17 @@ export default async function IssuerPage() {
       const profileResponse = await fetchZerantBackend("/v1/issuer", cookieHeader);
       if (profileResponse?.ok) {
         profile = (await profileResponse.json()) as IssuerProfile;
-        const issuedResponse = await fetchZerantBackend("/v1/issuer/credentials", cookieHeader);
+
+        const [issuedResponse, schemasResponse] = await Promise.all([
+          fetchZerantBackend("/v1/issuer/credentials", cookieHeader),
+          fetchZerantBackend("/v1/issuer/schemas", cookieHeader),
+        ]);
+
         if (issuedResponse?.ok) {
           issued = (await issuedResponse.json()) as IssuedCredential[];
+        }
+        if (schemasResponse?.ok) {
+          schemas = (await schemasResponse.json()) as CredentialSchema[];
         }
       }
     }
@@ -48,6 +58,7 @@ export default async function IssuerPage() {
       backendAvailable={backendAvailable}
       initialProfile={profile}
       initialIssued={issued}
+      initialSchemas={schemas}
     />
   );
 }

@@ -9,6 +9,7 @@ export type HolderVerificationRequest = {
   verifier_name: string;
   verifier_origin: string;
   purpose: string;
+  credential_name: string | null;
   claim_type: string;
   context: string;
   created_at: string;
@@ -96,7 +97,7 @@ export function HolderRequests({
             <div className="holder-request-heading">
               <div>
                 <span className="eyebrow">{request.verifier_name}</span>
-                <h2>{request.claim_type}</h2>
+                <h2>{request.credential_name ?? "Legacy credential"}</h2>
               </div>
               <span className="pill">{request.context}</span>
             </div>

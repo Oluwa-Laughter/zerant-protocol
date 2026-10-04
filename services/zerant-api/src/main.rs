@@ -239,9 +239,10 @@ struct IssuerProfileView {
 #[serde(deny_unknown_fields)]
 struct IssueCredential {
     holder_zerant_id: String,
-    claim_type: String,
+    credential_schema_id: Option<Uuid>,
+    claim_type: Option<String>,
     value: String,
-    context: String,
+    context: Option<String>,
     occurred_at: Option<u64>,
     expires_in_days: Option<u16>,
 }
@@ -250,11 +251,45 @@ struct IssueCredential {
 struct IssuedCredentialView {
     credential_id: String,
     holder_zerant_id: String,
+    credential_schema_id: Option<Uuid>,
     claim_type: String,
     context: String,
     issued_at: OffsetDateTime,
     expires_at: OffsetDateTime,
     revoked: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateCredentialSchema {
+    display_name: String,
+    description: String,
+    claim_type: Option<String>,
+    context: String,
+    default_expiry_days: u16,
+}
+
+#[derive(Serialize)]
+struct CredentialSchemaView {
+    id: Uuid,
+    issuer_id: String,
+    issuer_name: String,
+    display_name: String,
+    description: String,
+    claim_type: String,
+    context: String,
+    default_expiry_days: i32,
+    active: bool,
+    created_at: OffsetDateTime,
+}
+
+struct ResolvedCredentialSchema {
+    id: Uuid,
+    issuer_id: String,
+    display_name: String,
+    claim_type: String,
+    context: String,
+    default_expiry_days: u16,
 }
 
 #[derive(Deserialize)]
@@ -275,6 +310,7 @@ struct VerifierProfileView {
 struct IssuerDirectoryEntry {
     display_name: String,
     issuer_id: String,
+    schemas: Vec<CredentialSchemaView>,
 }
 
 #[derive(Deserialize)]
@@ -282,8 +318,9 @@ struct IssuerDirectoryEntry {
 struct CreateVerificationRequest {
     holder_zerant_id: String,
     purpose: String,
-    claim_type: String,
-    context: String,
+    credential_schema_id: Option<Uuid>,
+    claim_type: Option<String>,
+    context: Option<String>,
     accepted_issuer_ids: Vec<String>,
 }
 
@@ -293,6 +330,7 @@ struct HolderRequestView {
     verifier_name: String,
     verifier_origin: String,
     purpose: String,
+    credential_name: Option<String>,
     claim_type: String,
     context: String,
     created_at: OffsetDateTime,
@@ -304,6 +342,8 @@ struct VerifierRequestView {
     id: Uuid,
     holder_zerant_id: String,
     purpose: String,
+    credential_schema_id: Option<Uuid>,
+    credential_name: Option<String>,
     claim_type: String,
     context: String,
     status: String,
@@ -1323,6 +1363,253 @@ async fn signed_issuer_revocation_snapshot(
     sign_revocation_snapshot(&snapshot, issuer_private).map_err(|_| ApiError::Invalid)
 }
 
+fn schema_slug(display_name: &str) -> String {
+    let mut slug = String::with_capacity(display_name.len());
+    let mut last_dash = false;
+    for ch in display_name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash && !slug.is_empty() {
+            slug.push('-');
+            last_dash = true;
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    slug
+}
+
+async fn resolve_issuer_schema(
+    db: &Pool,
+    account: Uuid,
+    schema_id: Uuid,
+) -> Result<ResolvedCredentialSchema, ApiError> {
+    let client = db_client(db).await?;
+    let row = client
+        .query_opt(
+            "SELECT s.id, s.issuer_profile_id, p.issuer_id, p.display_name, s.display_name,
+                    s.claim_type, s.context, s.default_expiry_days
+             FROM credential_schemas s
+             JOIN issuer_profiles p ON p.id = s.issuer_profile_id
+             WHERE s.id = $1 AND p.account_id = $2 AND s.active = TRUE",
+            &[&schema_id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let days: i32 = row.get(7);
+    let default_expiry_days = u16::try_from(days).map_err(|_| ApiError::Unavailable)?;
+    Ok(ResolvedCredentialSchema {
+        id: row.get(0),
+        issuer_id: row.get(2),
+        display_name: row.get(4),
+        claim_type: row.get(5),
+        context: row.get(6),
+        default_expiry_days,
+    })
+}
+
+async fn resolve_public_schema(
+    db: &Pool,
+    schema_id: Uuid,
+) -> Result<ResolvedCredentialSchema, ApiError> {
+    let client = db_client(db).await?;
+    let row = client
+        .query_opt(
+            "SELECT s.id, s.issuer_profile_id, p.issuer_id, p.display_name, s.display_name,
+                    s.claim_type, s.context, s.default_expiry_days
+             FROM credential_schemas s
+             JOIN issuer_profiles p ON p.id = s.issuer_profile_id
+             WHERE s.id = $1 AND s.active = TRUE",
+            &[&schema_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let days: i32 = row.get(7);
+    let default_expiry_days = u16::try_from(days).map_err(|_| ApiError::Unavailable)?;
+    Ok(ResolvedCredentialSchema {
+        id: row.get(0),
+        issuer_id: row.get(2),
+        display_name: row.get(4),
+        claim_type: row.get(5),
+        context: row.get(6),
+        default_expiry_days,
+    })
+}
+
+async fn deactivate_issuer_schema(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(schema_id): Path<Uuid>,
+) -> Result<Json<CredentialSchemaView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "credential_schema_deactivate", 20).await?;
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            "UPDATE credential_schemas s
+             SET active = FALSE, updated_at = NOW()
+             FROM issuer_profiles p
+             WHERE s.issuer_profile_id = p.id
+               AND p.account_id = $1
+               AND s.id = $2
+               AND s.active = TRUE
+             RETURNING s.id, p.issuer_id, p.display_name, s.display_name, s.description,
+                       s.claim_type, s.context, s.default_expiry_days, s.active, s.created_at",
+            &[&account, &schema_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Conflict)?;
+
+    Ok(Json(CredentialSchemaView {
+        id: row.get(0),
+        issuer_id: row.get(1),
+        issuer_name: row.get(2),
+        display_name: row.get(3),
+        description: row.get(4),
+        claim_type: row.get(5),
+        context: row.get(6),
+        default_expiry_days: row.get(7),
+        active: row.get(8),
+        created_at: row.get(9),
+    }))
+}
+
+async fn list_issuer_schemas(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<CredentialSchemaView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let rows = client
+        .query(
+            "SELECT s.id, p.issuer_id, p.display_name, s.display_name, s.description,
+                    s.claim_type, s.context, s.default_expiry_days, s.active, s.created_at
+             FROM credential_schemas s
+             JOIN issuer_profiles p ON p.id = s.issuer_profile_id
+             WHERE p.account_id = $1
+             ORDER BY s.created_at DESC
+             LIMIT 128",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|row| CredentialSchemaView {
+                id: row.get(0),
+                issuer_id: row.get(1),
+                issuer_name: row.get(2),
+                display_name: row.get(3),
+                description: row.get(4),
+                claim_type: row.get(5),
+                context: row.get(6),
+                default_expiry_days: row.get(7),
+                active: row.get(8),
+                created_at: row.get(9),
+            })
+            .collect(),
+    ))
+}
+
+async fn create_issuer_schema(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CreateCredentialSchema>,
+) -> Result<(StatusCode, Json<CredentialSchemaView>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "credential_schema_create", 20).await?;
+
+    let display_name = input.display_name.trim().to_owned();
+    let description = input.description.trim().to_owned();
+    let context = input.context.trim().to_owned();
+    let slug = schema_slug(&display_name);
+    let claim_type = input
+        .claim_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("credential.{slug}"));
+    if !valid_short_text(&display_name, 2, 120)
+        || !valid_short_text(&description, 2, 512)
+        || !valid_short_text(&claim_type, 2, 120)
+        || claim_type == "reputation.threshold"
+        || !valid_short_text(&context, 2, 120)
+        || !(1..=365).contains(&input.default_expiry_days)
+    {
+        return Err(ApiError::Invalid);
+    }
+    if slug.len() < 2 || slug.len() > 120 {
+        return Err(ApiError::Invalid);
+    }
+
+    let client = db_client(&state.db).await?;
+    let issuer = client
+        .query_opt(
+            "SELECT id, issuer_id, display_name FROM issuer_profiles WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+    let profile_id: Uuid = issuer.get(0);
+    let issuer_id: String = issuer.get(1);
+    let issuer_name: String = issuer.get(2);
+    let days = i32::from(input.default_expiry_days);
+    let id = Uuid::new_v4();
+
+    let row = client
+        .query_one(
+            "INSERT INTO credential_schemas
+             (id, issuer_profile_id, slug, display_name, description, claim_type, context,
+              default_expiry_days)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+             RETURNING created_at",
+            &[
+                &id,
+                &profile_id,
+                &slug,
+                &display_name,
+                &description,
+                &claim_type,
+                &context,
+                &days,
+            ],
+        )
+        .await
+        .map_err(|error| {
+            if error
+                .as_db_error()
+                .is_some_and(|db| db.code().code() == "23505")
+            {
+                ApiError::Conflict
+            } else {
+                ApiError::Unavailable
+            }
+        })?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(CredentialSchemaView {
+            id,
+            issuer_id,
+            issuer_name,
+            display_name,
+            description,
+            claim_type,
+            context,
+            default_expiry_days: days,
+            active: true,
+            created_at: row.get(0),
+        }),
+    ))
+}
+
 async fn get_verifier_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1426,19 +1713,51 @@ async fn issuer_directory(
     let client = db_client(&state.db).await?;
     let rows = client
         .query(
-            "SELECT display_name, issuer_id FROM issuer_profiles ORDER BY display_name ASC LIMIT 256",
+            "SELECT p.display_name, p.issuer_id,
+                    s.id, s.display_name, s.description, s.claim_type, s.context,
+                    s.default_expiry_days, s.active, s.created_at
+             FROM issuer_profiles p
+             LEFT JOIN credential_schemas s
+               ON s.issuer_profile_id = p.id AND s.active = TRUE
+             ORDER BY p.display_name ASC, s.display_name ASC
+             LIMIT 1024",
             &[],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?;
-    Ok(Json(
-        rows.into_iter()
-            .map(|row| IssuerDirectoryEntry {
-                display_name: row.get(0),
-                issuer_id: row.get(1),
-            })
-            .collect(),
-    ))
+
+    let mut result: Vec<IssuerDirectoryEntry> = Vec::new();
+    for row in rows {
+        let issuer_id: String = row.get(1);
+        let index = match result.iter().position(|item| item.issuer_id == issuer_id) {
+            Some(index) => index,
+            None => {
+                result.push(IssuerDirectoryEntry {
+                    display_name: row.get(0),
+                    issuer_id: issuer_id.clone(),
+                    schemas: Vec::new(),
+                });
+                result.len() - 1
+            }
+        };
+
+        if let Some(id) = row.get::<_, Option<Uuid>>(2) {
+            let issuer_name = result[index].display_name.clone();
+            result[index].schemas.push(CredentialSchemaView {
+                id,
+                issuer_id: issuer_id.clone(),
+                issuer_name,
+                display_name: row.get(3),
+                description: row.get(4),
+                claim_type: row.get(5),
+                context: row.get(6),
+                default_expiry_days: row.get(7),
+                active: row.get(8),
+                created_at: row.get(9),
+            });
+        }
+    }
+    Ok(Json(result))
 }
 
 async fn create_verification_request(
@@ -1450,28 +1769,59 @@ async fn create_verification_request(
     enforce_account_rate_limit(&state.db, account, "verification_request", 60).await?;
     let holder_zerant_id = input.holder_zerant_id.trim().to_owned();
     let purpose = input.purpose.trim().to_owned();
-    let claim_type = input.claim_type.trim().to_owned();
-    let context = input.context.trim().to_owned();
     if !holder_zerant_id.starts_with("zr_")
         || !valid_short_text(&holder_zerant_id, 27, 27)
         || !valid_short_text(&purpose, 2, 1024)
-        || !valid_short_text(&claim_type, 2, 120)
-        || claim_type == "reputation.threshold"
-        || !valid_short_text(&context, 2, 120)
-        || input.accepted_issuer_ids.is_empty()
-        || input.accepted_issuer_ids.len() > 32
     {
         return Err(ApiError::Invalid);
     }
 
-    let mut accepted = input.accepted_issuer_ids;
+    let client = db_client(&state.db).await?;
+    let (credential_schema_id, credential_name, claim_type, context, mut accepted) =
+        if let Some(schema_id) = input.credential_schema_id {
+            let schema = resolve_public_schema(&state.db, schema_id).await?;
+            if !input.accepted_issuer_ids.is_empty()
+                && input.accepted_issuer_ids != vec![schema.issuer_id.clone()]
+            {
+                return Err(ApiError::Invalid);
+            }
+            (
+                Some(schema.id),
+                Some(schema.display_name),
+                schema.claim_type,
+                schema.context,
+                vec![schema.issuer_id],
+            )
+        } else {
+            let claim_type = input
+                .claim_type
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| valid_short_text(value, 2, 120))
+                .ok_or(ApiError::Invalid)?
+                .to_owned();
+            let context = input
+                .context
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| valid_short_text(value, 2, 120))
+                .ok_or(ApiError::Invalid)?
+                .to_owned();
+            if claim_type == "reputation.threshold"
+                || input.accepted_issuer_ids.is_empty()
+                || input.accepted_issuer_ids.len() > 32
+            {
+                return Err(ApiError::Invalid);
+            }
+            (None, None, claim_type, context, input.accepted_issuer_ids)
+        };
+
     accepted.sort();
     accepted.dedup();
     if accepted.is_empty() {
         return Err(ApiError::Invalid);
     }
 
-    let client = db_client(&state.db).await?;
     for issuer_id in &accepted {
         if client
             .query_opt(
@@ -1547,8 +1897,8 @@ async fn create_verification_request(
         .execute(
             "INSERT INTO verification_requests
              (id, verifier_profile_id, subject_account_id, request_id, request_jws, purpose,
-              claim_type, context, accepted_issuer_ids, expires_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+              claim_type, context, accepted_issuer_ids, expires_at, credential_schema_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
             &[
                 &db_id,
                 &profile_id,
@@ -1560,6 +1910,7 @@ async fn create_verification_request(
                 &context,
                 &accepted_value,
                 &expires_time,
+                &credential_schema_id,
             ],
         )
         .await
@@ -1571,6 +1922,8 @@ async fn create_verification_request(
             id: db_id,
             holder_zerant_id,
             purpose,
+            credential_schema_id,
+            credential_name,
             claim_type,
             context,
             status: "pending".into(),
@@ -1603,11 +1956,12 @@ async fn list_verifier_requests(
 
     let rows = client
         .query(
-            "SELECT r.id, a.public_handle, r.purpose, r.claim_type, r.context,
-                    r.status, r.created_at, r.expires_at
+            "SELECT r.id, a.public_handle, r.purpose, r.credential_schema_id, s.display_name,
+                    r.claim_type, r.context, r.status, r.created_at, r.expires_at
              FROM verification_requests r
              JOIN verifier_profiles p ON p.id = r.verifier_profile_id
              JOIN accounts a ON a.id = r.subject_account_id
+             LEFT JOIN credential_schemas s ON s.id = r.credential_schema_id
              WHERE p.account_id = $1
              ORDER BY r.created_at DESC
              LIMIT 256",
@@ -1618,18 +1972,20 @@ async fn list_verifier_requests(
 
     let mut result = Vec::with_capacity(rows.len());
     for row in rows {
-        let status: String = row.get(5);
+        let status: String = row.get(7);
         let holder: Option<String> = row.get(1);
         result.push(VerifierRequestView {
             id: row.get(0),
             holder_zerant_id: holder.ok_or(ApiError::Unavailable)?,
             purpose: row.get(2),
-            claim_type: row.get(3),
-            context: row.get(4),
+            credential_schema_id: row.get(3),
+            credential_name: row.get(4),
+            claim_type: row.get(5),
+            context: row.get(6),
             verified: status == "approved",
             status,
-            created_at: row.get(6),
-            expires_at: row.get(7),
+            created_at: row.get(8),
+            expires_at: row.get(9),
         });
     }
     Ok(Json(result))
@@ -1655,10 +2011,11 @@ async fn list_holder_requests(
 
     let rows = client
         .query(
-            "SELECT r.id, v.display_name, v.origin, r.purpose, r.claim_type, r.context,
-                    r.created_at, r.expires_at
+            "SELECT r.id, v.display_name, v.origin, r.purpose, s.display_name,
+                    r.claim_type, r.context, r.created_at, r.expires_at
              FROM verification_requests r
              JOIN verifier_profiles v ON v.id = r.verifier_profile_id
+             LEFT JOIN credential_schemas s ON s.id = r.credential_schema_id
              WHERE r.subject_account_id = $1
                AND r.status = 'pending'
                AND r.expires_at > NOW()
@@ -1676,10 +2033,11 @@ async fn list_holder_requests(
                 verifier_name: row.get(1),
                 verifier_origin: row.get(2),
                 purpose: row.get(3),
-                claim_type: row.get(4),
-                context: row.get(5),
-                created_at: row.get(6),
-                expires_at: row.get(7),
+                credential_name: row.get(4),
+                claim_type: row.get(5),
+                context: row.get(6),
+                created_at: row.get(7),
+                expires_at: row.get(8),
             })
             .collect(),
     ))
@@ -2123,21 +2481,11 @@ async fn issue_private_credential(
     let account = account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, account, "credential_issue", 30).await?;
     let holder_zerant_id = input.holder_zerant_id.trim().to_owned();
-    let claim_type = input.claim_type.trim().to_owned();
     let value = input.value.trim().to_owned();
-    let context = input.context.trim().to_owned();
-
     if !holder_zerant_id.starts_with("zr_")
         || !valid_short_text(&holder_zerant_id, 27, 27)
-        || !valid_short_text(&claim_type, 2, 120)
         || !valid_short_text(&value, 1, 512)
-        || !valid_short_text(&context, 2, 120)
     {
-        return Err(ApiError::Invalid);
-    }
-
-    let expires_days = input.expires_in_days.unwrap_or(90);
-    if !(1..=365).contains(&expires_days) {
         return Err(ApiError::Invalid);
     }
 
@@ -2153,6 +2501,38 @@ async fn issue_private_credential(
         .await
         .map_err(|_| ApiError::Unavailable)?
         .ok_or(ApiError::Unauthorized)?;
+
+    let (credential_schema_id, schema_display_name, claim_type, context, expires_days) =
+        if let Some(schema_id) = input.credential_schema_id {
+            let schema = resolve_issuer_schema(&state.db, account, schema_id).await?;
+            (
+                Some(schema.id),
+                Some(schema.display_name),
+                schema.claim_type,
+                schema.context,
+                schema.default_expiry_days,
+            )
+        } else {
+            let claim_type = input
+                .claim_type
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| valid_short_text(value, 2, 120))
+                .ok_or(ApiError::Invalid)?
+                .to_owned();
+            let context = input
+                .context
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| valid_short_text(value, 2, 120))
+                .ok_or(ApiError::Invalid)?
+                .to_owned();
+            let expires_days = input.expires_in_days.unwrap_or(90);
+            if !(1..=365).contains(&expires_days) {
+                return Err(ApiError::Invalid);
+            }
+            (None, None, claim_type, context, expires_days)
+        };
 
     let subject = client
         .query_opt(
@@ -2225,6 +2605,8 @@ async fn issue_private_credential(
         "type": "zerant.private-credential",
         "issuer": issuer_name,
         "credential_id": credential_id,
+        "credential_schema_id": credential_schema_id,
+        "credential_name": schema_display_name,
         "claim_type": claim_type,
         "value": value,
         "context": context,
@@ -2270,8 +2652,8 @@ async fn issue_private_credential(
     tx.execute(
         "INSERT INTO issued_credentials
          (id, issuer_profile_id, subject_account_id, credential_id, claim_type, context,
-          issued_at, expires_at, vault_record_id, revocation_digest)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+          issued_at, expires_at, vault_record_id, revocation_digest, credential_schema_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         &[
             &Uuid::new_v4(),
             &profile_id,
@@ -2283,6 +2665,7 @@ async fn issue_private_credential(
             &expiry_time,
             &vault_record_id,
             &source_revocation_digest,
+            &credential_schema_id,
         ],
     )
     .await
@@ -2304,6 +2687,7 @@ async fn issue_private_credential(
         Json(IssuedCredentialView {
             credential_id: payload.credential_id,
             holder_zerant_id,
+            credential_schema_id,
             claim_type,
             context,
             issued_at: issued_time,
@@ -2341,7 +2725,7 @@ async fn revoke_issued_credential(
                AND c.subject_account_id = a.id
                AND c.revoked_at IS NULL
              RETURNING c.issuer_profile_id, c.credential_id, a.public_handle,
-                       c.claim_type, c.context, c.issued_at, c.expires_at",
+                       c.credential_schema_id, c.claim_type, c.context, c.issued_at, c.expires_at",
             &[&account, &credential_id],
         )
         .await
@@ -2365,10 +2749,11 @@ async fn revoke_issued_credential(
     Ok(Json(IssuedCredentialView {
         credential_id: row.get(1),
         holder_zerant_id: holder.ok_or(ApiError::Unavailable)?,
-        claim_type: row.get(3),
-        context: row.get(4),
-        issued_at: row.get(5),
-        expires_at: row.get(6),
+        credential_schema_id: row.get(3),
+        claim_type: row.get(4),
+        context: row.get(5),
+        issued_at: row.get(6),
+        expires_at: row.get(7),
         revoked: true,
     }))
 }
@@ -2381,7 +2766,7 @@ async fn list_issued_credentials(
     let client = db_client(&state.db).await?;
     let rows = client
         .query(
-            "SELECT c.credential_id, a.public_handle, c.claim_type, c.context,
+            "SELECT c.credential_id, a.public_handle, c.credential_schema_id, c.claim_type, c.context,
                     c.issued_at, c.expires_at, c.revoked_at IS NOT NULL
              FROM issued_credentials c
              JOIN issuer_profiles p ON p.id = c.issuer_profile_id
@@ -2400,11 +2785,12 @@ async fn list_issued_credentials(
         result.push(IssuedCredentialView {
             credential_id: row.get(0),
             holder_zerant_id: holder.ok_or(ApiError::Unavailable)?,
-            claim_type: row.get(2),
-            context: row.get(3),
-            issued_at: row.get(4),
-            expires_at: row.get(5),
-            revoked: row.get(6),
+            credential_schema_id: row.get(2),
+            claim_type: row.get(3),
+            context: row.get(4),
+            issued_at: row.get(5),
+            expires_at: row.get(6),
+            revoked: row.get(7),
         });
     }
     Ok(Json(result))
@@ -2531,6 +2917,14 @@ fn app(state: AppState) -> Router {
         .route("/v1/session", get(session_info).delete(logout))
         .route("/v1/activity", get(list_activity))
         .route("/v1/issuer", get(get_issuer_profile).post(register_issuer))
+        .route(
+            "/v1/issuer/schemas",
+            get(list_issuer_schemas).post(create_issuer_schema),
+        )
+        .route(
+            "/v1/issuer/schemas/{schema_id}/deactivate",
+            post(deactivate_issuer_schema),
+        )
         .route("/v1/issuers", get(issuer_directory))
         .route(
             "/v1/verifier",

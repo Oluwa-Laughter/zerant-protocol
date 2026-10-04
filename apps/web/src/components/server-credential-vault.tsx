@@ -23,6 +23,8 @@ type PrivateCredential = {
   type: "zerant.private-credential";
   issuer: string;
   credential_id: string;
+  credential_schema_id?: string | null;
+  credential_name?: string | null;
   claim_type: string;
   value: string;
   context: string;
@@ -167,7 +169,7 @@ export function ServerCredentialVault({
               const credential = asPrivateCredential(item.credential);
               if (!credential) {
                 return (
-                  <article className="credential-card" key={item.id}>
+                  <article className={"credential-card" + (item.revoked ? " revoked" : "")} key={item.id}>
                     <div className="credential-card-top">
                       <div>
                         <span className="eyebrow">Private credential</span>
@@ -187,18 +189,17 @@ export function ServerCredentialVault({
                   <div className="credential-card-top">
                     <div>
                       <span className="eyebrow">{credential.issuer}</span>
-                      <h3>{credential.claim_type}</h3>
+                      <h3>{credential.credential_name ?? credential.claim_type}</h3>
                     </div>
                     <span className={item.revoked ? "credential-status revoked" : "pill"}>
                       {item.revoked ? "Revoked" : credential.context}
                     </span>
                   </div>
                   <p className={item.revoked ? "credential-value revoked-value" : "credential-value"}>{credential.value}</p>
-                  {item.revoked ? (
-                    <p className="small revoked-note">This credential was revoked by its issuer and cannot be used for new proofs.</p>
-                  ) : null}
-                  <p className="small muted">
-                    Valid until {new Date(credential.expires_at * 1000).toLocaleDateString()}
+                  <p className={item.revoked ? "small revoked-note" : "small muted"}>
+                    {item.revoked
+                      ? "This credential was revoked by its issuer and cannot be used for new proofs."
+                      : "Valid until " + new Date(credential.expires_at * 1000).toLocaleDateString()}
                   </p>
                   <Button variant="secondary" onClick={() => remove(item.id)}>Remove</Button>
                 </article>
