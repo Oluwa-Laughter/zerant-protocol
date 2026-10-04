@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { getPreferredInjectedZcashWallet } from "@/lib/zcash-wallet";
-import { submitZcashLink } from "@/lib/zcash-link";
+import { completeWalletAppLink, startWalletAppLink, submitZcashLink } from "@/lib/zcash-link";
 
 export type LinkedZcashMethod = {
   method: "zecauth" | "wallet_message";
@@ -15,6 +15,49 @@ export function ZcashSignInManager({ initialMethods }: { initialMethods: LinkedZ
   const [methods, setMethods] = useState(initialMethods);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+
+  async function refreshMethods() {
+    const refreshed = await fetch("/api/zerant/account/zcash/methods", {
+      credentials: "same-origin", cache: "no-store",
+    });
+    if (refreshed.ok) setMethods((await refreshed.json()) as LinkedZcashMethod[]);
+  }
+
+  async function linkWalletApp() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const uri = await startWalletAppLink(window.location.origin);
+      setStatus("Opening your Zcash wallet app. Approve the sign-in link there, then return here to check approval.");
+      window.location.assign(uri);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not open the Zcash wallet app.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function checkWalletAppApproval() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const response = await completeWalletAppLink();
+      if (response.status === 202) {
+        setStatus("No wallet app approval is ready yet. Approve it in your wallet, then check again.");
+      } else if (response.ok) {
+        await refreshMethods();
+        setStatus("Zcash sign-in linked to this Zerant account.");
+      } else {
+        setStatus(response.status === 409
+          ? "This Zcash sign-in is already linked elsewhere, or this account has a different wallet sign-in."
+          : "This request expired or your recent sign-in ended. Sign in again and retry.");
+      }
+    } catch {
+      setStatus("Could not check wallet app approval.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function linkWallet() {
     if (busy) return;
@@ -40,10 +83,7 @@ export function ZcashSignInManager({ initialMethods }: { initialMethods: LinkedZ
             : "Could not link this Zcash sign-in.");
         return;
       }
-      const refreshed = await fetch("/api/zerant/account/zcash/methods", {
-        credentials: "same-origin", cache: "no-store",
-      });
-      if (refreshed.ok) setMethods((await refreshed.json()) as LinkedZcashMethod[]);
+      await refreshMethods();
       setStatus("Zcash sign-in linked to this Zerant account.");
     } catch {
       setStatus("Wallet approval was not completed.");
@@ -71,6 +111,10 @@ export function ZcashSignInManager({ initialMethods }: { initialMethods: LinkedZ
       <Button onClick={linkWallet} disabled={busy}>
         {busy ? "Waiting for wallet…" : "Link installed wallet"}
       </Button>
+      <div className="vault-actions wrap">
+        <Button variant="secondary" onClick={linkWalletApp} disabled={busy}>Link wallet app</Button>
+        <Button variant="secondary" onClick={checkWalletAppApproval} disabled={busy}>Check wallet app approval</Button>
+      </div>
       {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
     </article>
   );

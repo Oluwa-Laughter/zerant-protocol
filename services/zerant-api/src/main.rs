@@ -64,6 +64,7 @@ mod vault_rotation;
 
 const SESSION_COOKIE: &str = "zerant_session";
 const AUTH_ATTEMPT_COOKIE: &str = "zerant_auth_attempt";
+const LINK_ATTEMPT_COOKIE: &str = "zerant_link_attempt";
 const PASSKEY_ATTEMPT_COOKIE: &str = "zerant_passkey_attempt";
 const MAX_CREDENTIAL_BYTES: usize = 256 * 1024;
 const MAX_ACCOUNT_CREDENTIALS: i64 = 256;
@@ -251,7 +252,7 @@ struct Scope {
     scope_type: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct VerifyZecAuth {
     pubkey: String,
@@ -2661,7 +2662,7 @@ async fn zecauth_challenge(
 async fn account_zcash_challenge(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<ZecAuthChallenge>, ApiError> {
+) -> Result<Response, ApiError> {
     let token_hash = Sha256::digest(session_token(&headers)?.as_bytes()).to_vec();
     let client = db_client(&state.db).await?;
     let row = client
@@ -2708,6 +2709,11 @@ async fn account_zcash_challenge(
         }],
     };
     let nonce_hash = Sha256::digest(nonce.as_bytes()).to_vec();
+    let mut attempt_bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut attempt_bytes);
+    let attempt = URL_SAFE_NO_PAD.encode(attempt_bytes);
+    attempt_bytes.fill(0);
+    let attempt_hash = Sha256::digest(attempt.as_bytes()).to_vec();
     client
         .execute(
             "DELETE FROM zecauth_challenges WHERE expires_at <= NOW() - INTERVAL '1 day'",
@@ -2724,13 +2730,13 @@ async fn account_zcash_challenge(
     }
     client.execute(
         "INSERT INTO zecauth_challenges
-         (id, nonce_hash, message, chain, requested_scopes, expires_at, link_account_id, link_session_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+         (id, nonce_hash, message, chain, requested_scopes, expires_at, link_account_id, link_session_id, link_attempt_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         &[&Uuid::new_v4(), &nonce_hash, &message, &state.zcash_chain,
           &serde_json::to_value(&scopes).map_err(|_| ApiError::Unavailable)?,
-          &expires, &account, &session_id],
+          &expires, &account, &session_id, &attempt_hash],
     ).await.map_err(|_| ApiError::Unavailable)?;
-    Ok(Json(ZecAuthChallenge {
+    let mut response = Json(ZecAuthChallenge {
         domain,
         uri,
         version: 1,
@@ -2741,7 +2747,17 @@ async fn account_zcash_challenge(
         statement,
         scopes,
         message,
-    }))
+    })
+    .into_response();
+    let cookie = format!(
+        "{LINK_ATTEMPT_COOKIE}={attempt}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age={}",
+        ZECAUTH_TTL_MINUTES * 60
+    );
+    response.headers_mut().insert(
+        SET_COOKIE,
+        HeaderValue::from_str(&cookie).map_err(|_| ApiError::Unavailable)?,
+    );
+    Ok(response)
 }
 
 async fn list_linked_zcash_methods(
@@ -2898,6 +2914,17 @@ async fn finalize_zcash_link(
     granted: &[String],
     identity: LinkIdentity,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    finalize_zcash_link_with_attempt(state, headers, message, granted, identity, None).await
+}
+
+async fn finalize_zcash_link_with_attempt(
+    state: &AppState,
+    headers: &HeaderMap,
+    message: &str,
+    granted: &[String],
+    identity: LinkIdentity,
+    attempt_hash: Option<&[u8]>,
+) -> Result<Json<serde_json::Value>, ApiError> {
     if message.len() > 16 * 1024 || granted.len() > 16 {
         return Err(ApiError::Invalid);
     }
@@ -2909,11 +2936,21 @@ async fn finalize_zcash_link(
         .map_err(|_| ApiError::Unavailable)?;
     let row = tx
         .query_opt(
-            "UPDATE zecauth_challenges SET consumed_at = NOW()
+            "UPDATE zecauth_challenges SET consumed_at = NOW(), link_attempt_hash = NULL,
+                pending_link_key = NULL, pending_link_at = NULL
          WHERE message = $1 AND consumed_at IS NULL AND expires_at > NOW()
            AND link_account_id IS NOT NULL AND link_session_id IS NOT NULL
+           AND (($2::bytea IS NULL AND pending_link_key IS NULL)
+             OR ($2::bytea IS NOT NULL AND link_attempt_hash = $2 AND pending_link_key = $3))
          RETURNING requested_scopes, chain, link_account_id, link_session_id",
-            &[&message],
+            &[
+                &message,
+                &attempt_hash,
+                &match &identity {
+                    LinkIdentity::ZecAuth(key) => Some(key.as_slice()),
+                    LinkIdentity::WalletMessage(_) => None,
+                },
+            ],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -3039,26 +3076,143 @@ async fn account_zecauth_verify(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(input): Json<VerifyZecAuth>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Response, ApiError> {
     if input.message.len() > 16 * 1024 || input.granted.len() > 16 {
         return Err(ApiError::Invalid);
     }
     let key = verify_redpallas(&input.pubkey, &input.signature, input.message.as_bytes())?;
-    finalize_zcash_link(
+    let linked = finalize_zcash_link(
         &state,
         &headers,
         &input.message,
         &input.granted,
         LinkIdentity::ZecAuth(key),
     )
-    .await
+    .await?;
+    let mut response = linked.into_response();
+    response.headers_mut().append(
+        SET_COOKIE,
+        HeaderValue::from_str(&clear_cookie_header(LINK_ATTEMPT_COOKIE))
+            .map_err(|_| ApiError::Unavailable)?,
+    );
+    Ok(response)
+}
+
+async fn account_zecauth_link_callback(
+    State(state): State<AppState>,
+    Json(input): Json<VerifyZecAuth>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    if input.message.len() > 16 * 1024 || input.granted.len() > 16 {
+        return Err(ApiError::Invalid);
+    }
+    let key = verify_redpallas(&input.pubkey, &input.signature, input.message.as_bytes())?;
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let row = tx
+        .query_opt(
+            "SELECT requested_scopes, pending_link_key FROM zecauth_challenges
+         WHERE message = $1 AND link_account_id IS NOT NULL AND link_session_id IS NOT NULL
+           AND link_attempt_hash IS NOT NULL AND consumed_at IS NULL AND expires_at > NOW()
+         FOR UPDATE",
+            &[&input.message],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+    let requested: ScopeSet =
+        serde_json::from_value(row.get(0)).map_err(|_| ApiError::Unavailable)?;
+    if !requested
+        .required
+        .iter()
+        .any(|scope| scope.scope_type == "auth")
+        || !input
+            .granted
+            .iter()
+            .filter_map(|scope| scope_alias(scope))
+            .any(|scope| scope == "auth")
+    {
+        return Err(ApiError::Unauthorized);
+    }
+    let pending: Option<Vec<u8>> = row.get(1);
+    if pending.as_deref().is_some_and(|existing| existing != key) {
+        return Err(ApiError::Conflict);
+    }
+    if pending.is_none() {
+        let updated = tx.execute(
+            "UPDATE zecauth_challenges SET pending_link_key = $2, pending_link_at = NOW()
+             WHERE message = $1 AND pending_link_key IS NULL AND consumed_at IS NULL AND expires_at > NOW()",
+            &[&input.message, &key.as_slice()],
+        ).await.map_err(|_| ApiError::Unavailable)?;
+        if updated != 1 {
+            return Err(ApiError::Conflict);
+        }
+    }
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+    Ok(Json(serde_json::json!({ "verified": true })))
+}
+
+async fn account_zecauth_link_complete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let attempt = cookie_value(&headers, LINK_ATTEMPT_COOKIE)?;
+    let attempt_hash = Sha256::digest(attempt.as_bytes()).to_vec();
+    let session_hash = Sha256::digest(session_token(&headers)?.as_bytes()).to_vec();
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            "SELECT c.message, c.pending_link_key FROM zecauth_challenges c
+         JOIN sessions s ON s.id = c.link_session_id AND s.account_id = c.link_account_id
+         WHERE c.link_attempt_hash = $1 AND c.link_account_id IS NOT NULL
+           AND c.consumed_at IS NULL AND c.expires_at > NOW()
+           AND s.token_hash = $2 AND s.expires_at > NOW()
+           AND s.created_at > NOW() - ($3::bigint * INTERVAL '1 minute')",
+            &[
+                &attempt_hash,
+                &session_hash,
+                &PASSKEY_SECURITY_REAUTH_MINUTES,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unauthorized)?;
+    let message: String = row.get(0);
+    let pending: Option<Vec<u8>> = row.get(1);
+    let Some(key) = pending else {
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(serde_json::json!({ "ready": false })),
+        )
+            .into_response());
+    };
+    let key: [u8; 32] = key.try_into().map_err(|_| ApiError::Unavailable)?;
+    let linked = finalize_zcash_link_with_attempt(
+        &state,
+        &headers,
+        &message,
+        &["auth".to_owned()],
+        LinkIdentity::ZecAuth(key),
+        Some(&attempt_hash),
+    )
+    .await?;
+    let mut response = linked.into_response();
+    response.headers_mut().append(
+        SET_COOKIE,
+        HeaderValue::from_static(
+            "zerant_link_attempt=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
+        ),
+    );
+    Ok(response)
 }
 
 async fn account_wallet_verify(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(input): Json<VerifyWalletMessage>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> Result<Response, ApiError> {
     if input.message.len() > 16 * 1024
         || input.granted.len() > 16
         || input.signing_mode != "derived"
@@ -3066,14 +3220,21 @@ async fn account_wallet_verify(
         return Err(ApiError::Invalid);
     }
     let key = verify_zcash_wallet_message(&input.pubkey, &input.signature, &input.message)?;
-    finalize_zcash_link(
+    let linked = finalize_zcash_link(
         &state,
         &headers,
         &input.message,
         &input.granted,
         LinkIdentity::WalletMessage(key),
     )
-    .await
+    .await?;
+    let mut response = linked.into_response();
+    response.headers_mut().append(
+        SET_COOKIE,
+        HeaderValue::from_str(&clear_cookie_header(LINK_ATTEMPT_COOKIE))
+            .map_err(|_| ApiError::Unavailable)?,
+    );
+    Ok(response)
 }
 
 async fn zecauth_verify(
@@ -8293,6 +8454,14 @@ fn app(state: AppState) -> Router {
         .route("/v1/account/zcash/methods", get(list_linked_zcash_methods))
         .route("/v1/account/zcash/challenge", post(account_zcash_challenge))
         .route(
+            "/v1/account/zcash/zecauth/callback",
+            post(account_zecauth_link_callback),
+        )
+        .route(
+            "/v1/account/zcash/zecauth/complete",
+            post(account_zecauth_link_complete),
+        )
+        .route(
             "/v1/account/zcash/zecauth/verify",
             post(account_zecauth_verify),
         )
@@ -8482,6 +8651,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0022_passkeys.sql"),
             include_str!("../migrations/0023_session_management.sql"),
             include_str!("../migrations/0024_zcash_identity_link.sql"),
+            include_str!("../migrations/0025_zecauth_link_handoff.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -8643,6 +8813,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
 
+    async fn challenge_message(response: Response) -> String {
+        let body = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
     // Run with ZERANT_TEST_DATABASE_URL pointing at a disposable PostgreSQL database.
     #[tokio::test]
     async fn zcash_link_database_contract() {
@@ -8713,6 +8893,11 @@ mod tests {
                 .await
                 .unwrap();
         }
+        let sessions_before: i64 = client
+            .query_one("SELECT COUNT(*) FROM sessions", &[])
+            .await
+            .unwrap()
+            .get(0);
         let cookie = |token: &str| {
             let mut headers = HeaderMap::new();
             headers.insert(
@@ -8746,11 +8931,12 @@ mod tests {
             .await
             .unwrap();
         let new_challenge = |headers: HeaderMap| async {
-            account_zcash_challenge(State(state.clone()), headers)
-                .await
-                .unwrap()
-                .0
-                .message
+            challenge_message(
+                account_zcash_challenge(State(state.clone()), headers)
+                    .await
+                    .unwrap(),
+            )
+            .await
         };
 
         let red = SigningKey::<SpendAuth>::new(OsRng);
@@ -8774,6 +8960,276 @@ mod tests {
             .await
             .unwrap()
             .get(0);
+        let handoff = account_zcash_challenge(State(state.clone()), first_headers.clone())
+            .await
+            .unwrap();
+        let set_cookie = handoff
+            .headers()
+            .get(SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let attempt = set_cookie.split(';').next().unwrap().to_owned();
+        let handoff_message = challenge_message(handoff).await;
+        let handoff_row = client.query_one(
+            "SELECT link_attempt_hash, pending_link_key FROM zecauth_challenges WHERE message = $1",
+            &[&handoff_message],
+        ).await.unwrap();
+        let stored_hash: Vec<u8> = handoff_row.get(0);
+        assert_eq!(
+            stored_hash,
+            Sha256::digest(attempt.split('=').nth(1).unwrap().as_bytes()).to_vec()
+        );
+        assert_ne!(stored_hash, attempt.as_bytes());
+        assert!(handoff_row.get::<_, Option<Vec<u8>>>(1).is_none());
+        let with_attempt = |token: &str| {
+            let mut headers = cookie(token);
+            headers.insert(
+                axum::http::header::COOKIE,
+                HeaderValue::from_str(&format!("{SESSION_COOKIE}={token}; {attempt}")).unwrap(),
+            );
+            headers
+        };
+        assert!(matches!(
+            account_zecauth_link_complete(State(state.clone()), first_headers.clone()).await,
+            Err(ApiError::Unauthorized)
+        ));
+        assert!(matches!(
+            account_zecauth_link_complete(State(state.clone()), with_attempt(&second_token)).await,
+            Err(ApiError::Unauthorized)
+        ));
+        let waiting =
+            account_zecauth_link_complete(State(state.clone()), with_attempt(&first_token))
+                .await
+                .unwrap();
+        assert_eq!(waiting.status(), StatusCode::ACCEPTED);
+        assert!(
+            client
+                .query_one(
+                    "SELECT consumed_at IS NULL FROM zecauth_challenges WHERE message = $1",
+                    &[&handoff_message],
+                )
+                .await
+                .unwrap()
+                .get::<_, bool>(0)
+        );
+        let race_message = new_challenge(first_headers.clone()).await;
+        let racing = SigningKey::<SpendAuth>::new(OsRng);
+        let racing_key: [u8; 32] = VerificationKey::from(&racing).into();
+        let first_response = sign_red(race_message.clone());
+        let second_response = VerifyZecAuth {
+            pubkey: hex::encode(racing_key),
+            signature: hex::encode(<[u8; 64]>::from(
+                racing.sign(OsRng, race_message.as_bytes()),
+            )),
+            message: race_message.clone(),
+            granted: vec!["auth".to_owned()],
+        };
+        let first_state = state.clone();
+        let first_input = first_response.clone();
+        let first_task = tokio::spawn(async move {
+            account_zecauth_link_callback(State(first_state), Json(first_input)).await
+        });
+        let second_state = state.clone();
+        let second_input = second_response.clone();
+        let second_task = tokio::spawn(async move {
+            account_zecauth_link_callback(State(second_state), Json(second_input)).await
+        });
+        let (first_result, second_result) = tokio::join!(first_task, second_task);
+        let first_result = first_result.unwrap();
+        let second_result = second_result.unwrap();
+        assert!(first_result.is_ok() != second_result.is_ok());
+        assert!(matches!(
+            first_result.as_ref().err().or(second_result.as_ref().err()),
+            Some(ApiError::Conflict)
+        ));
+        let (winner_key, winner_response) = if first_result.is_ok() {
+            (red_key, first_response)
+        } else {
+            (racing_key, second_response)
+        };
+        let pending: Vec<u8> = client
+            .query_one(
+                "SELECT pending_link_key FROM zecauth_challenges WHERE message = $1",
+                &[&race_message],
+            )
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(pending, winner_key);
+        assert!(
+            account_zecauth_link_callback(State(state.clone()), Json(winner_response))
+                .await
+                .is_ok()
+        );
+        client
+            .execute(
+                "UPDATE zecauth_challenges SET expires_at = NOW() - INTERVAL '1 second' WHERE message = $1",
+                &[&race_message],
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            account_zecauth_link_callback(
+                State(state.clone()),
+                Json(sign_red(race_message.clone()))
+            )
+            .await,
+            Err(ApiError::Unauthorized)
+        ));
+        let _ = account_zecauth_link_callback(
+            State(state.clone()),
+            Json(sign_red(handoff_message.clone())),
+        )
+        .await
+        .unwrap();
+        let _ = account_zecauth_link_callback(
+            State(state.clone()),
+            Json(sign_red(handoff_message.clone())),
+        )
+        .await
+        .unwrap();
+        let conflicting = SigningKey::<SpendAuth>::new(OsRng);
+        let conflicting_key: [u8; 32] = VerificationKey::from(&conflicting).into();
+        let conflicting_response = VerifyZecAuth {
+            pubkey: hex::encode(conflicting_key),
+            signature: hex::encode(<[u8; 64]>::from(
+                conflicting.sign(OsRng, handoff_message.as_bytes()),
+            )),
+            message: handoff_message.clone(),
+            granted: vec!["auth".to_owned()],
+        };
+        assert!(matches!(
+            account_zecauth_link_callback(State(state.clone()), Json(conflicting_response)).await,
+            Err(ApiError::Conflict)
+        ));
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM zecauth_identities WHERE verification_key = $1",
+                    &[&red_key.as_slice()]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            0
+        );
+        assert!(matches!(
+            zecauth_verify(
+                State(state.clone()),
+                Json(sign_red(handoff_message.clone()))
+            )
+            .await,
+            Err(ApiError::Unauthorized)
+        ));
+        client
+            .execute(
+                "UPDATE sessions SET created_at = NOW() - INTERVAL '16 minutes' WHERE id = $1",
+                &[&first_session],
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            account_zecauth_link_complete(State(state.clone()), with_attempt(&first_token)).await,
+            Err(ApiError::Unauthorized)
+        ));
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM zecauth_identities WHERE verification_key = $1",
+                    &[&red_key.as_slice()]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            0
+        );
+        client.execute("UPDATE sessions SET created_at = NOW(), expires_at = NOW() - INTERVAL '1 second' WHERE id = $1", &[&first_session]).await.unwrap();
+        assert!(matches!(
+            account_zecauth_link_complete(State(state.clone()), with_attempt(&first_token)).await,
+            Err(ApiError::Unauthorized)
+        ));
+        client
+            .execute(
+                "UPDATE sessions SET expires_at = NOW() + INTERVAL '1 day' WHERE id = $1",
+                &[&first_session],
+            )
+            .await
+            .unwrap();
+        let completed =
+            account_zecauth_link_complete(State(state.clone()), with_attempt(&first_token))
+                .await
+                .unwrap();
+        assert_eq!(completed.status(), StatusCode::OK);
+        assert!(
+            completed
+                .headers()
+                .get(SET_COOKIE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("Max-Age=0")
+        );
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT account_id FROM zecauth_identities WHERE verification_key = $1",
+                    &[&red_key.as_slice()]
+                )
+                .await
+                .unwrap()
+                .get::<_, Uuid>(0),
+            first
+        );
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT public_handle FROM accounts WHERE id = $1",
+                    &[&first]
+                )
+                .await
+                .unwrap()
+                .get::<_, Option<String>>(0)
+                .unwrap(),
+            first_handle
+        );
+        assert_eq!(
+            client
+                .query_one("SELECT COUNT(*) FROM accounts", &[])
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            accounts_before
+        );
+        assert_eq!(
+            client
+                .query_one("SELECT COUNT(*) FROM sessions", &[])
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            sessions_before
+        );
+        let completed_row = client
+            .query_one(
+                "SELECT consumed_at, link_attempt_hash, pending_link_key, pending_link_at FROM zecauth_challenges WHERE message = $1",
+                &[&handoff_message],
+            )
+            .await
+            .unwrap();
+        assert!(completed_row.get::<_, Option<OffsetDateTime>>(0).is_some());
+        assert!(completed_row.get::<_, Option<Vec<u8>>>(1).is_none());
+        assert!(completed_row.get::<_, Option<Vec<u8>>>(2).is_none());
+        assert!(completed_row.get::<_, Option<OffsetDateTime>>(3).is_none());
+        assert!(matches!(
+            account_zecauth_link_complete(State(state.clone()), with_attempt(&first_token)).await,
+            Err(ApiError::Unauthorized)
+        ));
+        assert!(matches!(
+            account_zecauth_link_callback(State(state.clone()), Json(sign_red(handoff_message)))
+                .await,
+            Err(ApiError::Unauthorized)
+        ));
         assert!(matches!(
             account_zecauth_verify(
                 State(state.clone()),
@@ -8832,14 +9288,28 @@ mod tests {
                 .unwrap()
                 .get::<_, bool>(0)
         );
-        let linked = account_zecauth_verify(
+        let linked_response = account_zecauth_verify(
             State(state.clone()),
             first_headers.clone(),
             Json(sign_red(message.clone())),
         )
         .await
-        .unwrap()
-        .0;
+        .unwrap();
+        assert_eq!(
+            linked_response
+                .headers()
+                .get(SET_COOKIE)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            clear_cookie_header(LINK_ATTEMPT_COOKIE)
+        );
+        let linked: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(linked_response.into_body(), 1 << 20)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
         assert_eq!(linked["zerant_id"], first_handle);
         assert_eq!(
             linked
@@ -8850,15 +9320,21 @@ mod tests {
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from(["linked", "zerant_id"])
         );
-        assert!(matches!(
-            account_zecauth_verify(
-                State(state.clone()),
-                first_headers.clone(),
-                Json(sign_red(message.clone()))
-            )
-            .await,
-            Err(ApiError::Unauthorized)
-        ));
+        let duplicate = account_zecauth_verify(
+            State(state.clone()),
+            first_headers.clone(),
+            Json(sign_red(message.clone())),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(duplicate, ApiError::Unauthorized));
+        assert!(
+            duplicate
+                .into_response()
+                .headers()
+                .get(SET_COOKIE)
+                .is_none()
+        );
         assert!(
             !client
                 .query_one(
@@ -8878,15 +9354,15 @@ mod tests {
         .await
         .unwrap(); // Same account is idempotent.
         let message = new_challenge(second_headers.clone()).await;
-        assert!(matches!(
-            account_zecauth_verify(
-                State(state.clone()),
-                second_headers.clone(),
-                Json(sign_red(message.clone()))
-            )
-            .await,
-            Err(ApiError::Conflict)
-        ));
+        let conflict = account_zecauth_verify(
+            State(state.clone()),
+            second_headers.clone(),
+            Json(sign_red(message.clone())),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(conflict, ApiError::Conflict));
+        assert!(conflict.into_response().headers().get(SET_COOKIE).is_none());
         assert!(
             client
                 .query_one(
@@ -8922,13 +9398,29 @@ mod tests {
                 .get::<_, bool>(0)
         );
         let message = new_challenge(first_headers.clone()).await;
-        let _ = account_wallet_verify(
+        let linked_response = account_wallet_verify(
             State(state.clone()),
             first_headers.clone(),
             Json(sign_wallet(message)),
         )
         .await
         .unwrap();
+        assert_eq!(
+            linked_response
+                .headers()
+                .get(SET_COOKIE)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            clear_cookie_header(LINK_ATTEMPT_COOKIE)
+        );
+        let linked: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(linked_response.into_body(), 1 << 20)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(linked["zerant_id"], first_handle);
         let message = new_challenge(first_headers.clone()).await;
         let _ = account_wallet_verify(
             State(state.clone()),
@@ -8938,15 +9430,15 @@ mod tests {
         .await
         .unwrap();
         let message = new_challenge(second_headers.clone()).await;
-        assert!(matches!(
-            account_wallet_verify(
-                State(state.clone()),
-                second_headers.clone(),
-                Json(sign_wallet(message.clone()))
-            )
-            .await,
-            Err(ApiError::Conflict)
-        ));
+        let conflict = account_wallet_verify(
+            State(state.clone()),
+            second_headers.clone(),
+            Json(sign_wallet(message.clone())),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(conflict, ApiError::Conflict));
+        assert!(conflict.into_response().headers().get(SET_COOKIE).is_none());
         assert!(
             client
                 .query_one(
@@ -8986,14 +9478,23 @@ mod tests {
                 .get::<_, bool>(0)
         );
 
+        // Keep this integration fixture from conflating link security cases with quota exhaustion.
+        client
+            .execute(
+                "DELETE FROM account_rate_limits WHERE account_id = $1 AND action = 'zcash_link_start'",
+                &[&first],
+            )
+            .await
+            .unwrap();
         let mut mainnet = state.clone();
         mainnet.zcash_chain = "zcash:mainnet".to_owned();
         let mainnet_challenge = |headers: HeaderMap| async {
-            account_zcash_challenge(State(mainnet.clone()), headers)
-                .await
-                .unwrap()
-                .0
-                .message
+            challenge_message(
+                account_zcash_challenge(State(mainnet.clone()), headers)
+                    .await
+                    .unwrap(),
+            )
+            .await
         };
         let mainnet_message = mainnet_challenge(first_headers.clone()).await;
         let _ = account_wallet_verify(
@@ -9060,6 +9561,117 @@ mod tests {
                 .get::<_, bool>(0)
         );
 
+        let conflict_handoff = account_zcash_challenge(State(state.clone()), first_headers.clone())
+            .await
+            .unwrap();
+        let conflict_attempt = conflict_handoff
+            .headers()
+            .get(SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        let conflict_message = challenge_message(conflict_handoff).await;
+        let conflict_signer = SigningKey::<SpendAuth>::new(OsRng);
+        let conflict_key: [u8; 32] = VerificationKey::from(&conflict_signer).into();
+        let conflict_input = VerifyZecAuth {
+            pubkey: hex::encode(conflict_key),
+            signature: hex::encode(<[u8; 64]>::from(
+                conflict_signer.sign(OsRng, conflict_message.as_bytes()),
+            )),
+            message: conflict_message.clone(),
+            granted: vec!["auth".to_owned()],
+        };
+        let _ = account_zecauth_link_callback(State(state.clone()), Json(conflict_input.clone()))
+            .await
+            .unwrap();
+        let mut conflict_headers = cookie(&first_token);
+        conflict_headers.insert(
+            axum::http::header::COOKIE,
+            HeaderValue::from_str(&format!(
+                "{SESSION_COOKIE}={first_token}; {conflict_attempt}"
+            ))
+            .unwrap(),
+        );
+        for _ in 0..2 {
+            let conflict =
+                account_zecauth_link_complete(State(state.clone()), conflict_headers.clone())
+                    .await
+                    .unwrap_err();
+            assert!(matches!(conflict, ApiError::Conflict));
+            assert!(conflict.into_response().headers().get(SET_COOKIE).is_none());
+        }
+        let conflict_row = client
+            .query_one(
+                "SELECT consumed_at, link_attempt_hash, pending_link_key FROM zecauth_challenges WHERE message = $1",
+                &[&conflict_message],
+            )
+            .await
+            .unwrap();
+        assert!(conflict_row.get::<_, Option<OffsetDateTime>>(0).is_none());
+        assert!(conflict_row.get::<_, Option<Vec<u8>>>(1).is_some());
+        assert_eq!(
+            conflict_row.get::<_, Option<Vec<u8>>>(2),
+            Some(conflict_key.to_vec())
+        );
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM zecauth_identities WHERE verification_key = $1",
+                    &[&conflict_key.as_slice()],
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            0
+        );
+        let _ = account_zecauth_link_callback(State(state.clone()), Json(conflict_input))
+            .await
+            .unwrap();
+
+        let expired_handoff = account_zcash_challenge(State(state.clone()), first_headers.clone())
+            .await
+            .unwrap();
+        let expired_attempt = expired_handoff
+            .headers()
+            .get(SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        let expired_message = challenge_message(expired_handoff).await;
+        let _ = account_zecauth_link_callback(
+            State(state.clone()),
+            Json(sign_red(expired_message.clone())),
+        )
+        .await
+        .unwrap();
+        client
+            .execute(
+                "UPDATE zecauth_challenges SET expires_at = NOW() - INTERVAL '1 second' WHERE message = $1",
+                &[&expired_message],
+            )
+            .await
+            .unwrap();
+        let mut expired_headers = cookie(&first_token);
+        expired_headers.insert(
+            axum::http::header::COOKIE,
+            HeaderValue::from_str(&format!(
+                "{SESSION_COOKIE}={first_token}; {expired_attempt}"
+            ))
+            .unwrap(),
+        );
+        assert!(matches!(
+            account_zecauth_link_complete(State(state.clone()), expired_headers).await,
+            Err(ApiError::Unauthorized)
+        ));
+
         let methods = list_linked_zcash_methods(State(state.clone()), first_headers.clone())
             .await
             .unwrap()
@@ -9120,6 +9732,15 @@ mod tests {
             message,
             granted: vec!["auth".to_owned()],
         };
+        let normal_for_link = normal_challenge().await;
+        assert!(matches!(
+            account_zecauth_link_callback(
+                State(state.clone()),
+                Json(sign_normal_red(normal_for_link.clone()))
+            )
+            .await,
+            Err(ApiError::Unauthorized)
+        ));
         let normal_red_message = normal_challenge().await;
         zecauth_verify(
             State(state.clone()),
@@ -9186,11 +9807,60 @@ mod tests {
         let other_wallet_account: Uuid = client.query_one("SELECT account_id FROM wallet_message_identities WHERE chain = $1 AND public_key = $2", &[&state.zcash_chain, &other_wallet_key.serialize().as_slice()]).await.unwrap().get(0);
         assert_ne!(other_wallet_account, first);
 
+        let revoked_handoff = account_zcash_challenge(State(state.clone()), second_headers.clone())
+            .await
+            .unwrap();
+        let revoked_attempt = revoked_handoff
+            .headers()
+            .get(SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        let revoked_message = challenge_message(revoked_handoff).await;
+        let _ = account_zecauth_link_callback(
+            State(state.clone()),
+            Json(VerifyZecAuth {
+                pubkey: hex::encode(other_key),
+                signature: hex::encode(<[u8; 64]>::from(
+                    other_red.sign(OsRng, revoked_message.as_bytes()),
+                )),
+                message: revoked_message.clone(),
+                granted: vec!["auth".to_owned()],
+            }),
+        )
+        .await
+        .unwrap();
+        let mut revoked_headers = cookie(&second_token);
+        revoked_headers.insert(
+            axum::http::header::COOKIE,
+            HeaderValue::from_str(&format!(
+                "{SESSION_COOKIE}={second_token}; {revoked_attempt}"
+            ))
+            .unwrap(),
+        );
         let revoked = new_challenge(second_headers.clone()).await;
         client
             .execute("DELETE FROM sessions WHERE id = $1", &[&second_session])
             .await
             .unwrap();
+        assert!(matches!(
+            account_zecauth_link_complete(State(state.clone()), revoked_headers).await,
+            Err(ApiError::Unauthorized)
+        ));
+        assert!(
+            client
+                .query_one(
+                    "SELECT consumed_at IS NULL FROM zecauth_challenges WHERE message = $1",
+                    &[&revoked_message],
+                )
+                .await
+                .unwrap()
+                .get::<_, bool>(0)
+        );
         assert!(matches!(
             finalize_zcash_link(
                 &state,

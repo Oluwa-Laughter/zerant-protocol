@@ -1,7 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { InjectedZcashWalletAdapter } from "./zcash-wallet";
-import { submitZcashLink } from "./zcash-link";
+import { completeWalletAppLink, startWalletAppLink, submitZcashLink } from "./zcash-link";
+
+test("wallet-app link uses the account challenge and dedicated callback without account identifiers", async () => {
+  const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+  const request = (async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init });
+    return Response.json({
+      domain: "zerant.example", uri: "https://zerant.example/app", version: 1,
+      chain: "zcash:testnet", nonce: "nonce", issued_at: "start", expiration_time: "end",
+      statement: "Link Zcash sign-in", scopes: { required: [{ type: "auth" }] },
+      message: "signed-message",
+    });
+  }) as typeof fetch;
+  const uri = new URL(await startWalletAppLink("https://zerant.example", request));
+  assert.equal(uri.searchParams.get("callback"), "https://zerant.example/api/zerant/account/zcash/zecauth/callback");
+  assert.deepEqual(calls.map(({ url, init }) => [url, init?.method]), [["/api/zerant/account/zcash/challenge", "POST"]]);
+  assert.equal(calls[0].init?.body, undefined);
+  assert.equal(uri.toString().includes("account_id"), false);
+  assert.equal(uri.toString().includes("session_id"), false);
+  calls.length = 0;
+  await completeWalletAppLink(request);
+  assert.deepEqual(calls.map(({ url, init }) => [url, init?.method]), [["/api/zerant/account/zcash/zecauth/complete", "POST"]]);
+  assert.equal(calls[0].init?.body, undefined);
+});
 
 test("wallet linking uses the account challenge and verify routes without an account id", async () => {
   const calls: Array<{ url: string; init: RequestInit | undefined }> = [];

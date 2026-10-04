@@ -1,4 +1,19 @@
-import type { InjectedZcashWalletAdapter } from "./zcash-wallet";
+import { buildZecAuthWalletUri, type InjectedZcashWalletAdapter, type ZecAuthWalletChallenge } from "./zcash-wallet";
+
+export async function startWalletAppLink(origin: string, request: typeof fetch = fetch): Promise<string> {
+  const response = await request("/api/zerant/account/zcash/challenge", {
+    method: "POST", credentials: "same-origin", cache: "no-store",
+  });
+  if (!response.ok) throw new Error(response.status === 403 ? "Sign in again to link a Zcash wallet." : "Could not start Zcash sign-in linking.");
+  const challenge = (await response.json()) as ZecAuthWalletChallenge;
+  return buildZecAuthWalletUri(challenge, origin + "/api/zerant/account/zcash/zecauth/callback");
+}
+
+export async function completeWalletAppLink(request: typeof fetch = fetch): Promise<Response> {
+  return request("/api/zerant/account/zcash/zecauth/complete", {
+    method: "POST", credentials: "same-origin", cache: "no-store",
+  });
+}
 
 export async function submitZcashLink(
   wallet: InjectedZcashWalletAdapter,
