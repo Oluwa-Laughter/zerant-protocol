@@ -14,6 +14,8 @@ Trust boundaries separate issuer authority, holder account state, verifier reque
 | Credential theft/transfer | Audience-key possession, encrypted vault, separate source key | Stolen signing key or voluntary sharing defeats possession; wrong-key test |
 | Stale/revoked evidence | Signed whole snapshots, 24-hour maximum freshness, sequence persistence, dependency revocation | Up to 24-hour revocation lag; stale/rollback/source-revoke tests |
 | Issuer compromise/rotation | Explicit compromise flags, old-key history, fail-closed reissuance | Attack before compromise known; key lifecycle tests |
+| Issuer team privilege escalation | Owner/admin/issuer/auditor RBAC, one issuer membership per account, explicit invitation acceptance, owner-only transfer, server-side authorization | Compromised privileged member can act within its role; role-matrix and ownership-transfer tests |
+| Ownership-transfer key loss | Rewrap issuer profile and signing-key ciphertext to the new owner before ownership changes | Service/KEK compromise remains; old-owner decrypt-failure regression test |
 | Cross-application correlation | Independent audience keys and IDs, minimal result, no global holder ID | Issuer collusion, rare metadata, IP and account correlation remain |
 | Credential-store compromise | Envelope encryption, PostgreSQL access control, KEK separation and server sessions | KEK/runtime compromise remains; encryption and session tests |
 | XSS, dependency or browser compromise | No credential HTML rendering, CSP review, dependency pinning, secrets outside SSR/logs | Same-origin malicious code can read unlocked data; implementation security review |

@@ -87,6 +87,8 @@ struct VaultCipher {
 enum ApiError {
     #[error("unauthorized")]
     Unauthorized,
+    #[error("forbidden")]
+    Forbidden,
     #[error("not found")]
     NotFound,
     #[error("invalid request")]
@@ -103,6 +105,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let status = match self {
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Forbidden => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::Invalid => StatusCode::BAD_REQUEST,
             Self::Conflict => StatusCode::CONFLICT,
@@ -179,6 +182,7 @@ struct AccountSummary {
     zerant_id: String,
     credential_count: i64,
     issuer_profile: Option<String>,
+    issuer_role: Option<String>,
     verifier_profile: Option<String>,
     can_delete: bool,
 }
@@ -346,6 +350,52 @@ struct IssuerProfileView {
     display_name: String,
     issuer_id: String,
     created_at: OffsetDateTime,
+}
+
+#[derive(Clone)]
+struct IssuerAccess {
+    profile_id: Uuid,
+    owner_account_id: Uuid,
+    role: String,
+}
+
+#[derive(Serialize)]
+struct IssuerMemberView {
+    zerant_id: String,
+    role: String,
+    owner: bool,
+    joined_at: OffsetDateTime,
+}
+
+#[derive(Serialize)]
+struct IssuerInvitationView {
+    id: Uuid,
+    issuer_name: String,
+    issuer_id: String,
+    invited_zerant_id: String,
+    role: String,
+    status: String,
+    created_at: OffsetDateTime,
+    expires_at: OffsetDateTime,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InviteIssuerMember {
+    zerant_id: String,
+    role: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DecideIssuerInvitation {
+    decision: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TransferIssuerOwnership {
+    zerant_id: String,
 }
 
 #[derive(Deserialize)]
@@ -865,6 +915,50 @@ async fn account_id(headers: &HeaderMap, db: &Pool) -> Result<Uuid, ApiError> {
         .map_err(|_| ApiError::Unavailable)?
         .map(|row| row.get(0))
         .ok_or(ApiError::Unauthorized)
+}
+
+async fn issuer_access(db: &Pool, account: Uuid) -> Result<IssuerAccess, ApiError> {
+    let client = db_client(db).await?;
+    let rows = client
+        .query(
+            "SELECT p.id, p.account_id,
+                    CASE WHEN p.account_id = $1 THEN 'owner' ELSE m.role END AS role
+             FROM issuer_profiles p
+             LEFT JOIN issuer_members m
+               ON m.issuer_profile_id = p.id
+              AND m.account_id = $1
+             WHERE p.account_id = $1 OR m.account_id = $1
+             ORDER BY CASE WHEN p.account_id = $1 THEN 0 ELSE 1 END, p.created_at ASC
+             LIMIT 2",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    if rows.is_empty() {
+        return Err(ApiError::NotFound);
+    }
+    if rows.len() != 1 {
+        return Err(ApiError::Conflict);
+    }
+    let row = &rows[0];
+    Ok(IssuerAccess {
+        profile_id: row.get(0),
+        owner_account_id: row.get(1),
+        role: row.get(2),
+    })
+}
+
+fn require_issuer_role(access: &IssuerAccess, allowed: &[&str]) -> Result<(), ApiError> {
+    if allowed.iter().any(|role| *role == access.role) {
+        Ok(())
+    } else {
+        Err(ApiError::Forbidden)
+    }
+}
+
+fn valid_issuer_member_role(role: &str) -> bool {
+    matches!(role, "admin" | "issuer" | "auditor")
 }
 
 async fn enforce_account_rate_limit(
@@ -1800,8 +1894,20 @@ async fn account_summary(
         .query_one(
             "SELECT a.public_handle,
                     (SELECT COUNT(*) FROM credential_envelopes e WHERE e.account_id = a.id),
-                    (SELECT display_name FROM issuer_profiles p WHERE p.account_id = a.id),
-                    (SELECT display_name FROM verifier_profiles v WHERE v.account_id = a.id)
+                    (SELECT p.display_name
+                       FROM issuer_profiles p
+                       LEFT JOIN issuer_members m
+                         ON m.issuer_profile_id = p.id AND m.account_id = a.id
+                      WHERE p.account_id = a.id OR m.account_id = a.id
+                      LIMIT 1),
+                    (SELECT CASE WHEN p.account_id = a.id THEN 'owner' ELSE m.role END
+                       FROM issuer_profiles p
+                       LEFT JOIN issuer_members m
+                         ON m.issuer_profile_id = p.id AND m.account_id = a.id
+                      WHERE p.account_id = a.id OR m.account_id = a.id
+                      LIMIT 1),
+                    (SELECT display_name FROM verifier_profiles v WHERE v.account_id = a.id),
+                    EXISTS(SELECT 1 FROM issuer_profiles p WHERE p.account_id = a.id)
              FROM accounts a
              WHERE a.id = $1",
             &[&account],
@@ -1811,12 +1917,15 @@ async fn account_summary(
 
     let zerant_id: Option<String> = row.get(0);
     let issuer_profile: Option<String> = row.get(2);
-    let verifier_profile: Option<String> = row.get(3);
+    let issuer_role: Option<String> = row.get(3);
+    let verifier_profile: Option<String> = row.get(4);
+    let owns_issuer: bool = row.get(5);
     Ok(Json(AccountSummary {
         zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
         credential_count: row.get(1),
-        can_delete: issuer_profile.is_none() && verifier_profile.is_none(),
+        can_delete: !owns_issuer && verifier_profile.is_none(),
         issuer_profile,
+        issuer_role,
         verifier_profile,
     }))
 }
@@ -2157,7 +2266,7 @@ fn schema_slug(display_name: &str) -> String {
 
 async fn resolve_issuer_schema(
     db: &Pool,
-    account: Uuid,
+    profile_id: Uuid,
     schema_id: Uuid,
 ) -> Result<ResolvedCredentialSchema, ApiError> {
     let client = db_client(db).await?;
@@ -2167,8 +2276,8 @@ async fn resolve_issuer_schema(
                     s.claim_type, s.context, s.default_expiry_days
              FROM credential_schemas s
              JOIN issuer_profiles p ON p.id = s.issuer_profile_id
-             WHERE s.id = $1 AND p.account_id = $2 AND s.active = TRUE",
-            &[&schema_id, &account],
+             WHERE s.id = $1 AND p.id = $2 AND s.active = TRUE",
+            &[&schema_id, &profile_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -2222,6 +2331,8 @@ async fn create_issuer_schema_version(
 ) -> Result<(StatusCode, Json<CredentialSchemaView>), ApiError> {
     let account = account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, account, "credential_schema_version", 20).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner", "admin"])?;
 
     let description = input.description.trim().to_owned();
     if !valid_short_text(&description, 2, 512) || !(1..=365).contains(&input.default_expiry_days) {
@@ -2239,9 +2350,9 @@ async fn create_issuer_schema_version(
                     s.claim_type, s.context, s.version
              FROM credential_schemas s
              JOIN issuer_profiles p ON p.id = s.issuer_profile_id
-             WHERE s.id = $1 AND p.account_id = $2 AND s.active = TRUE
+             WHERE s.id = $1 AND p.id = $2 AND s.active = TRUE
              FOR UPDATE OF s",
-            &[&schema_id, &account],
+            &[&schema_id, &access.profile_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -2321,6 +2432,8 @@ async fn deactivate_issuer_schema(
 ) -> Result<Json<CredentialSchemaView>, ApiError> {
     let account = account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, account, "credential_schema_deactivate", 20).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner", "admin"])?;
     let client = db_client(&state.db).await?;
     let row = client
         .query_opt(
@@ -2328,13 +2441,13 @@ async fn deactivate_issuer_schema(
              SET active = FALSE, retired_at = NOW(), updated_at = NOW()
              FROM issuer_profiles p
              WHERE s.issuer_profile_id = p.id
-               AND p.account_id = $1
+               AND p.id = $1
                AND s.id = $2
                AND s.active = TRUE
              RETURNING s.id, p.issuer_id, p.display_name, s.display_name, s.description,
                        s.claim_type, s.context, s.default_expiry_days, s.version, s.active,
                        s.supersedes_schema_id, s.retired_at, s.created_at",
-            &[&account, &schema_id],
+            &[&access.profile_id, &schema_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -2362,6 +2475,7 @@ async fn list_issuer_schemas(
     headers: HeaderMap,
 ) -> Result<Json<Vec<CredentialSchemaView>>, ApiError> {
     let account = account_id(&headers, &state.db).await?;
+    let access = issuer_access(&state.db, account).await?;
     let client = db_client(&state.db).await?;
     let rows = client
         .query(
@@ -2370,10 +2484,10 @@ async fn list_issuer_schemas(
                     s.supersedes_schema_id, s.retired_at, s.created_at
              FROM credential_schemas s
              JOIN issuer_profiles p ON p.id = s.issuer_profile_id
-             WHERE p.account_id = $1
+             WHERE p.id = $1
              ORDER BY s.slug ASC, s.version DESC
              LIMIT 256",
-            &[&account],
+            &[&access.profile_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?;
@@ -2405,6 +2519,8 @@ async fn create_issuer_schema(
 ) -> Result<(StatusCode, Json<CredentialSchemaView>), ApiError> {
     let account = account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, account, "credential_schema_create", 20).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner", "admin"])?;
 
     let display_name = input.display_name.trim().to_owned();
     let description = input.description.trim().to_owned();
@@ -2433,8 +2549,8 @@ async fn create_issuer_schema(
     let client = db_client(&state.db).await?;
     let issuer = client
         .query_opt(
-            "SELECT id, issuer_id, display_name FROM issuer_profiles WHERE account_id = $1",
-            &[&account],
+            "SELECT id, issuer_id, display_name FROM issuer_profiles WHERE id = $1",
+            &[&access.profile_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -4065,18 +4181,577 @@ async fn public_issuer_revocation(
     ))
 }
 
+async fn list_issuer_team(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<IssuerMemberView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let access = issuer_access(&state.db, account).await?;
+    let client = db_client(&state.db).await?;
+    let rows = client
+        .query(
+            "SELECT a.public_handle, 'owner'::text AS role, TRUE AS owner, p.created_at
+             FROM issuer_profiles p
+             JOIN accounts a ON a.id = p.account_id
+             WHERE p.id = $1
+             UNION ALL
+             SELECT a.public_handle, m.role, FALSE AS owner, m.joined_at
+             FROM issuer_members m
+             JOIN accounts a ON a.id = m.account_id
+             WHERE m.issuer_profile_id = $1
+             ORDER BY owner DESC, created_at ASC",
+            &[&access.profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let mut members = Vec::with_capacity(rows.len());
+    for row in rows {
+        let zerant_id: Option<String> = row.get(0);
+        members.push(IssuerMemberView {
+            zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
+            role: row.get(1),
+            owner: row.get(2),
+            joined_at: row.get(3),
+        });
+    }
+    Ok(Json(members))
+}
+
+async fn list_issuer_team_invitations(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<IssuerInvitationView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner", "admin"])?;
+    let client = db_client(&state.db).await?;
+    client
+        .execute(
+            "UPDATE issuer_invitations
+             SET status = 'expired', decided_at = NOW()
+             WHERE issuer_profile_id = $1
+               AND status = 'pending'
+               AND expires_at <= NOW()",
+            &[&access.profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let rows = client
+        .query(
+            "SELECT i.id, p.display_name, p.issuer_id, a.public_handle, i.role,
+                    i.status, i.created_at, i.expires_at
+             FROM issuer_invitations i
+             JOIN issuer_profiles p ON p.id = i.issuer_profile_id
+             JOIN accounts a ON a.id = i.invited_account_id
+             WHERE i.issuer_profile_id = $1
+               AND i.status = 'pending'
+             ORDER BY i.created_at DESC
+             LIMIT 128",
+            &[&access.profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let mut invitations = Vec::with_capacity(rows.len());
+    for row in rows {
+        let handle: Option<String> = row.get(3);
+        invitations.push(IssuerInvitationView {
+            id: row.get(0),
+            issuer_name: row.get(1),
+            issuer_id: row.get(2),
+            invited_zerant_id: handle.ok_or(ApiError::Unavailable)?,
+            role: row.get(4),
+            status: row.get(5),
+            created_at: row.get(6),
+            expires_at: row.get(7),
+        });
+    }
+    Ok(Json(invitations))
+}
+
+async fn invite_issuer_member(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<InviteIssuerMember>,
+) -> Result<(StatusCode, Json<IssuerInvitationView>), ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "issuer_team_invite", 20).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner", "admin"])?;
+
+    let zerant_id = input.zerant_id.trim().to_owned();
+    let role = input.role.trim().to_owned();
+    if !zerant_id.starts_with("zr_")
+        || !valid_short_text(&zerant_id, 27, 27)
+        || !valid_issuer_member_role(&role)
+    {
+        return Err(ApiError::Invalid);
+    }
+
+    let client = db_client(&state.db).await?;
+    let target = client
+        .query_opt(
+            "SELECT id FROM accounts WHERE public_handle = $1",
+            &[&zerant_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let target_account: Uuid = target.get(0);
+    if target_account == account {
+        return Err(ApiError::Invalid);
+    }
+
+    let affiliation = client
+        .query_one(
+            "SELECT EXISTS(SELECT 1 FROM issuer_profiles WHERE account_id = $1),
+                    EXISTS(SELECT 1 FROM issuer_members WHERE account_id = $1)",
+            &[&target_account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let owns_issuer: bool = affiliation.get(0);
+    let member_elsewhere: bool = affiliation.get(1);
+    if owns_issuer || member_elsewhere {
+        return Err(ApiError::Conflict);
+    }
+
+    let id = Uuid::new_v4();
+    let expires_at = OffsetDateTime::now_utc() + Duration::days(7);
+    let row = client
+        .query_one(
+            "INSERT INTO issuer_invitations
+             (id, issuer_profile_id, invited_account_id, invited_by_account_id, role, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (issuer_profile_id, invited_account_id)
+                 WHERE status = 'pending'
+             DO UPDATE SET role = EXCLUDED.role,
+                           invited_by_account_id = EXCLUDED.invited_by_account_id,
+                           created_at = NOW(),
+                           expires_at = EXCLUDED.expires_at
+             RETURNING id, status, created_at, expires_at",
+            &[
+                &id,
+                &access.profile_id,
+                &target_account,
+                &account,
+                &role,
+                &expires_at,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let profile = client
+        .query_one(
+            "SELECT display_name, issuer_id FROM issuer_profiles WHERE id = $1",
+            &[&access.profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(IssuerInvitationView {
+            id: row.get(0),
+            issuer_name: profile.get(0),
+            issuer_id: profile.get(1),
+            invited_zerant_id: zerant_id,
+            role,
+            status: row.get(1),
+            created_at: row.get(2),
+            expires_at: row.get(3),
+        }),
+    ))
+}
+
+async fn list_my_issuer_invitations(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<IssuerInvitationView>>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    client
+        .execute(
+            "UPDATE issuer_invitations
+             SET status = 'expired', decided_at = NOW()
+             WHERE invited_account_id = $1
+               AND status = 'pending'
+               AND expires_at <= NOW()",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let rows = client
+        .query(
+            "SELECT i.id, p.display_name, p.issuer_id, a.public_handle, i.role,
+                    i.status, i.created_at, i.expires_at
+             FROM issuer_invitations i
+             JOIN issuer_profiles p ON p.id = i.issuer_profile_id
+             JOIN accounts a ON a.id = i.invited_account_id
+             WHERE i.invited_account_id = $1
+               AND i.status = 'pending'
+               AND i.expires_at > NOW()
+             ORDER BY i.created_at DESC
+             LIMIT 64",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let mut invitations = Vec::with_capacity(rows.len());
+    for row in rows {
+        let handle: Option<String> = row.get(3);
+        invitations.push(IssuerInvitationView {
+            id: row.get(0),
+            issuer_name: row.get(1),
+            issuer_id: row.get(2),
+            invited_zerant_id: handle.ok_or(ApiError::Unavailable)?,
+            role: row.get(4),
+            status: row.get(5),
+            created_at: row.get(6),
+            expires_at: row.get(7),
+        });
+    }
+    Ok(Json(invitations))
+}
+
+async fn decide_issuer_invitation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(input): Json<DecideIssuerInvitation>,
+) -> Result<Json<IssuerInvitationView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    if !matches!(input.decision.as_str(), "accept" | "decline") {
+        return Err(ApiError::Invalid);
+    }
+
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let row = tx
+        .query_opt(
+            "SELECT i.issuer_profile_id, i.role, i.status, i.created_at, i.expires_at,
+                    p.display_name, p.issuer_id, a.public_handle
+             FROM issuer_invitations i
+             JOIN issuer_profiles p ON p.id = i.issuer_profile_id
+             JOIN accounts a ON a.id = i.invited_account_id
+             WHERE i.id = $1 AND i.invited_account_id = $2
+             FOR UPDATE OF i",
+            &[&id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+
+    let status: String = row.get(2);
+    let expires_at: OffsetDateTime = row.get(4);
+    if status != "pending" || expires_at <= OffsetDateTime::now_utc() {
+        return Err(ApiError::Conflict);
+    }
+
+    if input.decision == "decline" {
+        tx.execute(
+            "UPDATE issuer_invitations
+             SET status = 'declined', decided_at = NOW()
+             WHERE id = $1 AND status = 'pending'",
+            &[&id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    } else {
+        let affiliation = tx
+            .query_one(
+                "SELECT EXISTS(SELECT 1 FROM issuer_profiles WHERE account_id = $1),
+                        EXISTS(SELECT 1 FROM issuer_members WHERE account_id = $1)",
+                &[&account],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+        if affiliation.get::<_, bool>(0) || affiliation.get::<_, bool>(1) {
+            return Err(ApiError::Conflict);
+        }
+
+        tx.execute(
+            "INSERT INTO issuer_members(issuer_profile_id, account_id, role)
+             VALUES ($1, $2, $3)",
+            &[&row.get::<_, Uuid>(0), &account, &row.get::<_, String>(1)],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+        tx.execute(
+            "UPDATE issuer_invitations
+             SET status = 'accepted', decided_at = NOW()
+             WHERE id = $1 AND status = 'pending'",
+            &[&id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    }
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+    let handle: Option<String> = row.get(7);
+    Ok(Json(IssuerInvitationView {
+        id,
+        issuer_name: row.get(5),
+        issuer_id: row.get(6),
+        invited_zerant_id: handle.ok_or(ApiError::Unavailable)?,
+        role: row.get(1),
+        status: if input.decision == "accept" {
+            "accepted".into()
+        } else {
+            "declined".into()
+        },
+        created_at: row.get(3),
+        expires_at,
+    }))
+}
+
+async fn remove_issuer_member(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(zerant_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner", "admin"])?;
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            "SELECT m.account_id, m.role
+             FROM issuer_members m
+             JOIN accounts a ON a.id = m.account_id
+             WHERE m.issuer_profile_id = $1 AND a.public_handle = $2",
+            &[&access.profile_id, &zerant_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let target_role: String = row.get(1);
+    if access.role == "admin" && target_role == "admin" {
+        return Err(ApiError::Forbidden);
+    }
+
+    let affected = client
+        .execute(
+            "DELETE FROM issuer_members
+             WHERE issuer_profile_id = $1 AND account_id = $2",
+            &[&access.profile_id, &row.get::<_, Uuid>(0)],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    if affected != 1 {
+        return Err(ApiError::Conflict);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn transfer_issuer_ownership(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<TransferIssuerOwnership>,
+) -> Result<Json<IssuerMemberView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner"])?;
+
+    let zerant_id = input.zerant_id.trim().to_owned();
+    if !zerant_id.starts_with("zr_") || !valid_short_text(&zerant_id, 27, 27) {
+        return Err(ApiError::Invalid);
+    }
+
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let target = tx
+        .query_opt(
+            "SELECT m.account_id, m.joined_at
+             FROM issuer_members m
+             JOIN accounts a ON a.id = m.account_id
+             WHERE m.issuer_profile_id = $1 AND a.public_handle = $2
+             FOR UPDATE OF m",
+            &[&access.profile_id, &zerant_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let new_owner: Uuid = target.get(0);
+    if new_owner == access.owner_account_id {
+        return Err(ApiError::Invalid);
+    }
+
+    let owns_other: bool = tx
+        .query_one(
+            "SELECT EXISTS(
+                 SELECT 1 FROM issuer_profiles
+                 WHERE account_id = $1 AND id <> $2
+             )",
+            &[&new_owner, &access.profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    if owns_other {
+        return Err(ApiError::Conflict);
+    }
+
+    let profile_secret = tx
+        .query_one(
+            "SELECT ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version
+             FROM issuer_profiles
+             WHERE id = $1 AND account_id = $2
+             FOR UPDATE",
+            &[&access.profile_id, &access.owner_account_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let now = OffsetDateTime::now_utc();
+    let profile_row = CredentialRow {
+        id: access.profile_id,
+        ciphertext: profile_secret.get(0),
+        data_nonce: profile_secret.get(1),
+        wrapped_dek: profile_secret.get(2),
+        wrap_nonce: profile_secret.get(3),
+        key_version: profile_secret.get(4),
+        created_at: now,
+        updated_at: now,
+    };
+    let mut profile_plaintext = state
+        .cipher
+        .decrypt(access.owner_account_id, &profile_row)?;
+    let profile_rewrapped =
+        state
+            .cipher
+            .encrypt(new_owner, access.profile_id, &profile_plaintext)?;
+    profile_plaintext.fill(0);
+
+    let key_rows = tx
+        .query(
+            "SELECT id, ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version
+             FROM issuer_signing_keys
+             WHERE issuer_profile_id = $1
+             FOR UPDATE",
+            &[&access.profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let mut rewrapped = Vec::with_capacity(key_rows.len());
+    for row in key_rows {
+        let key_id: Uuid = row.get(0);
+        let encrypted_row = CredentialRow {
+            id: key_id,
+            ciphertext: row.get(1),
+            data_nonce: row.get(2),
+            wrapped_dek: row.get(3),
+            wrap_nonce: row.get(4),
+            key_version: row.get(5),
+            created_at: now,
+            updated_at: now,
+        };
+        let mut plaintext = state
+            .cipher
+            .decrypt(access.owner_account_id, &encrypted_row)?;
+        let encrypted = state.cipher.encrypt(new_owner, key_id, &plaintext)?;
+        plaintext.fill(0);
+        rewrapped.push((key_id, encrypted));
+    }
+
+    tx.execute(
+        "UPDATE issuer_profiles
+         SET account_id = $2,
+             ciphertext = $3,
+             data_nonce = $4,
+             wrapped_dek = $5,
+             wrap_nonce = $6,
+             key_version = $7
+         WHERE id = $1 AND account_id = $8",
+        &[
+            &access.profile_id,
+            &new_owner,
+            &profile_rewrapped.ciphertext,
+            &profile_rewrapped.data_nonce,
+            &profile_rewrapped.wrapped_dek,
+            &profile_rewrapped.wrap_nonce,
+            &profile_rewrapped.key_version,
+            &access.owner_account_id,
+        ],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    for (key_id, encrypted) in rewrapped {
+        tx.execute(
+            "UPDATE issuer_signing_keys
+             SET ciphertext = $3,
+                 data_nonce = $4,
+                 wrapped_dek = $5,
+                 wrap_nonce = $6,
+                 key_version = $7
+             WHERE id = $1 AND issuer_profile_id = $2",
+            &[
+                &key_id,
+                &access.profile_id,
+                &encrypted.ciphertext,
+                &encrypted.data_nonce,
+                &encrypted.wrapped_dek,
+                &encrypted.wrap_nonce,
+                &encrypted.key_version,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    }
+
+    tx.execute(
+        "DELETE FROM issuer_members
+         WHERE issuer_profile_id = $1 AND account_id = $2",
+        &[&access.profile_id, &new_owner],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    tx.execute(
+        "INSERT INTO issuer_members(issuer_profile_id, account_id, role)
+         VALUES ($1, $2, 'admin')
+         ON CONFLICT (issuer_profile_id, account_id)
+         DO UPDATE SET role = 'admin'",
+        &[&access.profile_id, &access.owner_account_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(IssuerMemberView {
+        zerant_id,
+        role: "owner".into(),
+        owner: true,
+        joined_at: target.get(1),
+    }))
+}
+
 async fn get_issuer_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<IssuerProfileView>, ApiError> {
     let account = account_id(&headers, &state.db).await?;
+    let access = issuer_access(&state.db, account).await?;
     let client = db_client(&state.db).await?;
     let row = client
         .query_opt(
             "SELECT display_name, issuer_id, created_at
              FROM issuer_profiles
-             WHERE account_id = $1",
-            &[&account],
+             WHERE id = $1",
+            &[&access.profile_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -4094,16 +4769,16 @@ async fn list_issuer_keys(
     headers: HeaderMap,
 ) -> Result<Json<Vec<IssuerKeyView>>, ApiError> {
     let account = account_id(&headers, &state.db).await?;
+    let access = issuer_access(&state.db, account).await?;
     let client = db_client(&state.db).await?;
     let rows = client
         .query(
             "SELECT k.valid_from, k.retired_at, k.compromised_at
              FROM issuer_signing_keys k
-             JOIN issuer_profiles p ON p.id = k.issuer_profile_id
-             WHERE p.account_id = $1
+             WHERE k.issuer_profile_id = $1
              ORDER BY k.valid_from DESC
              LIMIT 32",
-            &[&account],
+            &[&access.profile_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?;
@@ -4131,6 +4806,8 @@ async fn rotate_issuer_key(
 ) -> Result<Json<IssuerKeyView>, ApiError> {
     let account = account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, account, "issuer_key_rotate", 3).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner", "admin"])?;
 
     let new_key_row_id = Uuid::new_v4();
     let new_key_id = format!("key-{}", Uuid::new_v4().simple());
@@ -4140,7 +4817,9 @@ async fn rotate_issuer_key(
     let new_public = public_jwk(&new_private)?;
     let public_value = serde_json::to_value(&new_public).map_err(|_| ApiError::Unavailable)?;
     let mut plaintext = serde_json::to_vec(&new_private).map_err(|_| ApiError::Unavailable)?;
-    let encrypted = state.cipher.encrypt(account, new_key_row_id, &plaintext)?;
+    let encrypted = state
+        .cipher
+        .encrypt(access.owner_account_id, new_key_row_id, &plaintext)?;
     plaintext.fill(0);
 
     let now = OffsetDateTime::now_utc();
@@ -4155,11 +4834,11 @@ async fn rotate_issuer_key(
             "SELECT p.id, k.id, k.issuer_key_id
              FROM issuer_profiles p
              JOIN issuer_signing_keys k ON k.issuer_profile_id = p.id
-             WHERE p.account_id = $1
+             WHERE p.id = $1
                AND k.retired_at IS NULL
                AND k.compromised_at IS NULL
              FOR UPDATE OF k",
-            &[&account],
+            &[&access.profile_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -4260,15 +4939,15 @@ async fn register_issuer(
     }
 
     let client = db_client(&state.db).await?;
-    if client
-        .query_opt(
-            "SELECT 1 FROM issuer_profiles WHERE account_id = $1",
+    let affiliation = client
+        .query_one(
+            "SELECT EXISTS(SELECT 1 FROM issuer_profiles WHERE account_id = $1),
+                    EXISTS(SELECT 1 FROM issuer_members WHERE account_id = $1)",
             &[&account],
         )
         .await
-        .map_err(|_| ApiError::Unavailable)?
-        .is_some()
-    {
+        .map_err(|_| ApiError::Unavailable)?;
+    if affiliation.get::<_, bool>(0) || affiliation.get::<_, bool>(1) {
         return Err(ApiError::Conflict);
     }
 
@@ -4359,6 +5038,8 @@ async fn issue_private_credential(
 ) -> Result<(StatusCode, Json<IssuedCredentialView>), ApiError> {
     let account = account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, account, "credential_issue", 30).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner", "admin", "issuer"])?;
     let holder_zerant_id = input.holder_zerant_id.trim().to_owned();
     let value = input.value.trim().to_owned();
     if !holder_zerant_id.starts_with("zr_")
@@ -4376,10 +5057,10 @@ async fn issue_private_credential(
                     k.wrapped_dek, k.wrap_nonce, k.key_version
              FROM issuer_profiles p
              JOIN issuer_signing_keys k ON k.issuer_profile_id = p.id
-             WHERE p.account_id = $1
+             WHERE p.id = $1
                AND k.retired_at IS NULL
                AND k.compromised_at IS NULL",
-            &[&account],
+            &[&access.profile_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -4387,7 +5068,7 @@ async fn issue_private_credential(
 
     let (credential_schema_id, schema_display_name, claim_type, context, expires_days) =
         if let Some(schema_id) = input.credential_schema_id {
-            let schema = resolve_issuer_schema(&state.db, account, schema_id).await?;
+            let schema = resolve_issuer_schema(&state.db, access.profile_id, schema_id).await?;
             (
                 Some(schema.id),
                 Some(schema.display_name),
@@ -4445,7 +5126,7 @@ async fn issue_private_credential(
         created_at: now,
         updated_at: now,
     };
-    let mut private_bytes = state.cipher.decrypt(account, &secret_row)?;
+    let mut private_bytes = state.cipher.decrypt(access.owner_account_id, &secret_row)?;
     let private: Jwk = serde_json::from_slice(&private_bytes).map_err(|_| ApiError::Unavailable)?;
     private_bytes.fill(0);
 
@@ -4591,6 +5272,8 @@ async fn revoke_issued_credential(
 ) -> Result<Json<IssuedCredentialView>, ApiError> {
     let account = account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, account, "credential_revoke", 30).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner", "admin", "issuer"])?;
     if credential_id.is_empty() || credential_id.len() > 128 {
         return Err(ApiError::Invalid);
     }
@@ -4605,15 +5288,14 @@ async fn revoke_issued_credential(
         .query_opt(
             "UPDATE issued_credentials c
              SET revoked_at = NOW()
-             FROM issuer_profiles p, accounts a
-             WHERE c.issuer_profile_id = p.id
-               AND p.account_id = $1
+             FROM accounts a
+             WHERE c.issuer_profile_id = $1
                AND c.credential_id = $2
                AND c.subject_account_id = a.id
                AND c.revoked_at IS NULL
              RETURNING c.issuer_profile_id, c.credential_id, a.public_handle,
                        c.credential_schema_id, c.claim_type, c.context, c.issued_at, c.expires_at",
-            &[&account, &credential_id],
+            &[&access.profile_id, &credential_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
@@ -4650,18 +5332,18 @@ async fn list_issued_credentials(
     headers: HeaderMap,
 ) -> Result<Json<Vec<IssuedCredentialView>>, ApiError> {
     let account = account_id(&headers, &state.db).await?;
+    let access = issuer_access(&state.db, account).await?;
     let client = db_client(&state.db).await?;
     let rows = client
         .query(
             "SELECT c.credential_id, a.public_handle, c.credential_schema_id, c.claim_type, c.context,
                     c.issued_at, c.expires_at, c.revoked_at IS NOT NULL
              FROM issued_credentials c
-             JOIN issuer_profiles p ON p.id = c.issuer_profile_id
              JOIN accounts a ON a.id = c.subject_account_id
-             WHERE p.account_id = $1
+             WHERE c.issuer_profile_id = $1
              ORDER BY c.created_at DESC
              LIMIT 256",
-            &[&account],
+            &[&access.profile_id],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?;
@@ -4861,6 +5543,24 @@ fn app(state: AppState) -> Router {
         .route("/v1/account/export", get(export_account))
         .route("/v1/activity", get(list_activity))
         .route("/v1/issuer", get(get_issuer_profile).post(register_issuer))
+        .route("/v1/issuer/team", get(list_issuer_team))
+        .route(
+            "/v1/issuer/team/invitations",
+            get(list_issuer_team_invitations).post(invite_issuer_member),
+        )
+        .route(
+            "/v1/issuer/team/{zerant_id}",
+            axum::routing::delete(remove_issuer_member),
+        )
+        .route(
+            "/v1/issuer/ownership/transfer",
+            post(transfer_issuer_ownership),
+        )
+        .route("/v1/issuer/invitations", get(list_my_issuer_invitations))
+        .route(
+            "/v1/issuer/invitations/{id}/decision",
+            post(decide_issuer_invitation),
+        )
         .route("/v1/issuer/keys", get(list_issuer_keys))
         .route("/v1/issuer/keys/rotate", post(rotate_issuer_key))
         .route(
@@ -4962,6 +5662,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0015_credential_schema_versions.sql"),
             include_str!("../migrations/0016_public_trust_metadata.sql"),
             include_str!("../migrations/0017_verifier_api_keys.sql"),
+            include_str!("../migrations/0018_issuer_teams.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -5100,6 +5801,84 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issuer_team_roles_follow_least_privilege() {
+        let access = |role: &str| IssuerAccess {
+            profile_id: Uuid::from_u128(1),
+            owner_account_id: Uuid::from_u128(2),
+            role: role.to_owned(),
+        };
+
+        for role in ["owner", "admin"] {
+            assert!(require_issuer_role(&access(role), &["owner", "admin"]).is_ok());
+        }
+        for role in ["issuer", "auditor"] {
+            assert!(require_issuer_role(&access(role), &["owner", "admin"]).is_err());
+        }
+        for role in ["owner", "admin", "issuer"] {
+            assert!(require_issuer_role(&access(role), &["owner", "admin", "issuer"]).is_ok());
+        }
+        assert!(require_issuer_role(&access("auditor"), &["owner", "admin", "issuer"]).is_err());
+        assert!(require_issuer_role(&access("owner"), &["owner"]).is_ok());
+        for role in ["admin", "issuer", "auditor"] {
+            assert!(require_issuer_role(&access(role), &["owner"]).is_err());
+        }
+    }
+
+    #[test]
+    fn issuer_ownership_rewrap_changes_owner_binding() {
+        let old_owner = Uuid::from_u128(20);
+        let new_owner = Uuid::from_u128(21);
+        let object_id = Uuid::from_u128(22);
+        let cipher = VaultCipher {
+            keks: BTreeMap::from([(1, Aes256Gcm::new_from_slice(&[7_u8; 32]).unwrap())]),
+            key_version: 1,
+        };
+
+        let encrypted = cipher
+            .encrypt(old_owner, object_id, b"issuer-secret")
+            .unwrap();
+        let row = CredentialRow {
+            id: object_id,
+            ciphertext: encrypted.ciphertext,
+            data_nonce: encrypted.data_nonce,
+            wrapped_dek: encrypted.wrapped_dek,
+            wrap_nonce: encrypted.wrap_nonce,
+            key_version: encrypted.key_version,
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+        };
+
+        let plaintext = cipher.decrypt(old_owner, &row).unwrap();
+        let rewrapped = cipher.encrypt(new_owner, object_id, &plaintext).unwrap();
+        let new_row = CredentialRow {
+            id: object_id,
+            ciphertext: rewrapped.ciphertext,
+            data_nonce: rewrapped.data_nonce,
+            wrapped_dek: rewrapped.wrapped_dek,
+            wrap_nonce: rewrapped.wrap_nonce,
+            key_version: rewrapped.key_version,
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            updated_at: OffsetDateTime::UNIX_EPOCH,
+        };
+
+        assert_eq!(
+            cipher.decrypt(new_owner, &new_row).unwrap(),
+            b"issuer-secret"
+        );
+        assert!(cipher.decrypt(old_owner, &new_row).is_err());
+    }
+
+    #[test]
+    fn issuer_invitation_roles_are_bounded() {
+        for role in ["admin", "issuer", "auditor"] {
+            assert!(valid_issuer_member_role(role));
+        }
+        for role in ["owner", "viewer", "", "ADMIN"] {
+            assert!(!valid_issuer_member_role(role));
+        }
+    }
 
     #[test]
     fn proof_expiry_is_bounded_by_request_and_source() {

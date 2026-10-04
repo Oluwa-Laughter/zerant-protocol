@@ -10,6 +10,24 @@ export type IssuerProfile = {
   created_at: string;
 };
 
+export type IssuerMember = {
+  zerant_id: string;
+  role: "owner" | "admin" | "issuer" | "auditor";
+  owner: boolean;
+  joined_at: string;
+};
+
+export type IssuerInvitation = {
+  id: string;
+  issuer_name: string;
+  issuer_id: string;
+  invited_zerant_id: string;
+  role: "admin" | "issuer" | "auditor";
+  status: string;
+  created_at: string;
+  expires_at: string;
+};
+
 export type CredentialSchema = {
   id: string;
   issuer_id: string;
@@ -49,22 +67,38 @@ export type IssuedCredential = {
 export function IssuerWorkspace({
   authenticated,
   backendAvailable,
+  currentZerantId,
   initialProfile,
   initialIssued,
   initialSchemas,
   initialKeys,
+  initialTeam,
+  initialTeamInvitations,
+  initialMyInvitations,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
+  currentZerantId: string | null;
   initialProfile: IssuerProfile | null;
   initialIssued: IssuedCredential[];
   initialSchemas: CredentialSchema[];
   initialKeys: IssuerKeyView[];
+  initialTeam: IssuerMember[];
+  initialTeamInvitations: IssuerInvitation[];
+  initialMyInvitations: IssuerInvitation[];
 }) {
   const [profile, setProfile] = useState<IssuerProfile | null>(initialProfile);
   const [issued, setIssued] = useState<IssuedCredential[]>(initialIssued);
   const [schemas, setSchemas] = useState<CredentialSchema[]>(initialSchemas);
   const [keys, setKeys] = useState<IssuerKeyView[]>(initialKeys);
+  const [team, setTeam] = useState<IssuerMember[]>(initialTeam);
+  const [teamInvitations, setTeamInvitations] =
+    useState<IssuerInvitation[]>(initialTeamInvitations);
+  const [myInvitations, setMyInvitations] =
+    useState<IssuerInvitation[]>(initialMyInvitations);
+  const [inviteZerantId, setInviteZerantId] = useState("");
+  const [inviteRole, setInviteRole] =
+    useState<"admin" | "issuer" | "auditor">("issuer");
   const [displayName, setDisplayName] = useState("");
   const [holderId, setHolderId] = useState("");
   const [schemaId, setSchemaId] = useState(initialSchemas.find((item) => item.active)?.id ?? "");
@@ -82,6 +116,18 @@ export function IssuerWorkspace({
     () => schemas.filter((item) => item.active),
     [schemas],
   );
+
+  const currentMember = useMemo(
+    () => team.find((item) => item.zerant_id === currentZerantId) ?? null,
+    [team, currentZerantId],
+  );
+  const currentRole = currentMember?.role ?? null;
+  const canManageTeam = currentRole === "owner" || currentRole === "admin";
+  const canTransferOwnership = currentRole === "owner";
+  const canManageSecurity = currentRole === "owner" || currentRole === "admin";
+  const canManageSchemas = currentRole === "owner" || currentRole === "admin";
+  const canIssue =
+    currentRole === "owner" || currentRole === "admin" || currentRole === "issuer";
 
   async function activateIssuer() {
     const response = await fetch("/api/zerant/issuer", {
@@ -105,6 +151,115 @@ export function IssuerWorkspace({
     setProfile((await response.json()) as IssuerProfile);
     setDisplayName("");
     setStatus("Issuer profile is active.");
+  }
+
+  async function inviteTeamMember() {
+    const response = await fetch("/api/zerant/issuer/team/invitations", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        zerant_id: inviteZerantId,
+        role: inviteRole,
+      }),
+    });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        setStatus("You’re doing that too quickly. Try again in a minute.");
+        return;
+      }
+      if (response.status === 403) {
+        setStatus("Your role cannot manage this team.");
+        return;
+      }
+      setStatus(
+        response.status === 404
+          ? "That Zerant ID could not be found."
+          : response.status === 409
+            ? "That person already belongs to an issuer organization."
+            : "Invitation could not be sent.",
+      );
+      return;
+    }
+
+    const invitation = (await response.json()) as IssuerInvitation;
+    setTeamInvitations((current) => [
+      invitation,
+      ...current.filter((item) => item.invited_zerant_id !== invitation.invited_zerant_id),
+    ]);
+    setInviteZerantId("");
+    setStatus("Invitation sent. The recipient must accept it from their Zerant account.");
+  }
+
+  async function decideInvitation(id: string, decision: "accept" | "decline") {
+    const response = await fetch(
+      "/api/zerant/issuer/invitations/" + encodeURIComponent(id) + "/decision",
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ decision }),
+      },
+    );
+
+    if (!response.ok) {
+      setStatus(
+        response.status === 409
+          ? "This invitation is no longer available or you already belong to an issuer."
+          : "Invitation could not be updated.",
+      );
+      return;
+    }
+
+    setMyInvitations((current) => current.filter((item) => item.id !== id));
+    if (decision === "accept") {
+      window.location.reload();
+      return;
+    }
+    setStatus("Invitation declined.");
+  }
+
+  async function removeTeamMember(zerantId: string) {
+    const response = await fetch(
+      "/api/zerant/issuer/team/" + encodeURIComponent(zerantId),
+      {
+        method: "DELETE",
+        credentials: "same-origin",
+      },
+    );
+
+    if (!response.ok) {
+      setStatus(
+        response.status === 403
+          ? "Your role cannot remove this team member."
+          : "Team member could not be removed.",
+      );
+      return;
+    }
+    setTeam((current) => current.filter((item) => item.zerant_id !== zerantId));
+    setStatus("Team member removed.");
+  }
+
+  async function transferOwnership(zerantId: string) {
+    const response = await fetch("/api/zerant/issuer/ownership/transfer", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ zerant_id: zerantId }),
+    });
+
+    if (!response.ok) {
+      setStatus(
+        response.status === 403
+          ? "Only the current owner can transfer ownership."
+          : "Ownership could not be transferred.",
+      );
+      return;
+    }
+
+    setStatus("Ownership transferred securely.");
+    window.location.reload();
   }
 
   async function createCredentialType() {
@@ -378,12 +533,46 @@ export function IssuerWorkspace({
           <p className="eyebrow">For issuers</p>
           <h1>Become a trusted issuer on Zerant.</h1>
           <p>
-            Create an issuer profile for your organization, community, team or project. Once
-            active, you can define trusted credential types and issue them directly to Zerant IDs.
+            Create an issuer profile for your organization, community, team or project, or join
+            an organization that has invited your Zerant ID.
           </p>
         </section>
 
-        <section className="issuer-panel">
+        {myInvitations.length ? (
+          <section className="issuer-team-invitations">
+            <div className="section-heading">
+              <p className="eyebrow">Organization invitations</p>
+              <h2>You’ve been invited to help manage an issuer.</h2>
+            </div>
+            <div className="team-invitation-list">
+              {myInvitations.map((invitation) => (
+                <article className="team-invitation-card" key={invitation.id}>
+                  <div>
+                    <strong>{invitation.issuer_name}</strong>
+                    <span className="team-role-badge">{invitation.role}</span>
+                  </div>
+                  <p className="small muted">
+                    Invitation expires {new Date(invitation.expires_at).toLocaleDateString()}.
+                  </p>
+                  <div className="vault-actions wrap">
+                    <Button onClick={() => decideInvitation(invitation.id, "accept")}>
+                      Accept invitation
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => decideInvitation(invitation.id, "decline")}
+                    >
+                      Decline
+                    </Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <section className="issuer-panel issuer-create-panel">
+          <p className="eyebrow">Create a new issuer</p>
           <label htmlFor="issuer-name">Organization or issuer name</label>
           <input
             id="issuer-name"
@@ -394,6 +583,12 @@ export function IssuerWorkspace({
           <Button disabled={displayName.trim().length < 2} onClick={activateIssuer}>
             Activate issuer profile
           </Button>
+          {myInvitations.length ? (
+            <p className="small muted">
+              Creating a new issuer means you will not be able to accept another issuer team
+              invitation with this Zerant account.
+            </p>
+          ) : null}
           {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
         </section>
       </main>
@@ -411,7 +606,121 @@ export function IssuerWorkspace({
             to people who need to prove them.
           </p>
         </div>
-        <span className="pill">Issuer active</span>
+        <span className="pill">
+          {currentRole ? currentRole.charAt(0).toUpperCase() + currentRole.slice(1) : "Issuer team"}
+        </span>
+      </section>
+
+      <section className="issuer-team-section">
+        <div className="section-heading">
+          <p className="eyebrow">Organization team</p>
+          <h2>Separate responsibilities without sharing accounts.</h2>
+          <p className="muted">
+            Owners control ownership, admins manage configuration, issuers can issue and revoke,
+            and auditors have read-only access.
+          </p>
+        </div>
+
+        <div className="issuer-team-grid">
+          <article className="issuer-panel">
+            <p className="eyebrow">Members</p>
+            <h3>{team.length} team member{team.length === 1 ? "" : "s"}</h3>
+            <div className="issuer-member-list">
+              {team.map((member) => {
+                const canRemove =
+                  canManageTeam &&
+                  !member.owner &&
+                  member.zerant_id !== currentZerantId &&
+                  !(currentRole === "admin" && member.role === "admin");
+                return (
+                  <article className="issuer-member-card" key={member.zerant_id}>
+                    <div>
+                      <span className="mono small">{member.zerant_id}</span>
+                      <span className="team-role-badge">{member.role}</span>
+                    </div>
+                    <p className="small muted">
+                      {member.owner
+                        ? "Controls organization ownership and recovery-sensitive changes."
+                        : "Joined " + new Date(member.joined_at).toLocaleDateString()}
+                    </p>
+                    <div className="vault-actions wrap">
+                      {canRemove ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => removeTeamMember(member.zerant_id)}
+                        >
+                          Remove
+                        </Button>
+                      ) : null}
+                      {canTransferOwnership && !member.owner ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => transferOwnership(member.zerant_id)}
+                        >
+                          Transfer ownership
+                        </Button>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </article>
+
+          {canManageTeam ? (
+            <article className="issuer-panel">
+              <p className="eyebrow">Invite teammate</p>
+              <h3>Add responsibility by Zerant ID.</h3>
+              <label htmlFor="team-zerant-id">Teammate Zerant ID</label>
+              <input
+                id="team-zerant-id"
+                value={inviteZerantId}
+                onChange={(event) => setInviteZerantId(event.target.value)}
+                placeholder="zr_..."
+              />
+              <label htmlFor="team-role">Role</label>
+              <select
+                id="team-role"
+                value={inviteRole}
+                onChange={(event) =>
+                  setInviteRole(event.target.value as "admin" | "issuer" | "auditor")
+                }
+              >
+                <option value="issuer">Issuer — issue and revoke credentials</option>
+                <option value="admin">Admin — manage issuer configuration and team</option>
+                <option value="auditor">Auditor — read-only access</option>
+              </select>
+              <Button
+                disabled={!inviteZerantId.trim()}
+                onClick={inviteTeamMember}
+              >
+                Send invitation
+              </Button>
+
+              {teamInvitations.length ? (
+                <div className="pending-team-invitations">
+                  <span className="eyebrow">Pending</span>
+                  {teamInvitations.map((invitation) => (
+                    <div className="pending-team-invitation" key={invitation.id}>
+                      <span className="mono small">{invitation.invited_zerant_id}</span>
+                      <span className="team-role-badge">{invitation.role}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          ) : (
+            <article className="issuer-panel">
+              <p className="eyebrow">Your access</p>
+              <h3>{currentRole === "auditor" ? "Read-only access" : "Credential operations"}</h3>
+              <p className="muted">
+                {currentRole === "auditor"
+                  ? "You can review issuer state and history but cannot change credentials or security settings."
+                  : "You can issue and revoke credentials. Team and security configuration remain with owners and admins."}
+              </p>
+            </article>
+          )}
+        </div>
       </section>
 
       <section className="issuer-security-section">
@@ -422,14 +731,20 @@ export function IssuerWorkspace({
             Routine rotation changes the key used for new credentials while preserving credentials
             you already issued.
           </p>
-          <div className="vault-actions wrap">
-            <Button variant="secondary" onClick={() => rotateIssuerKey(false)}>
-              Rotate security key
-            </Button>
-            <Button variant="secondary" onClick={() => rotateIssuerKey(true)}>
-              Replace compromised key
-            </Button>
-          </div>
+          {canManageSecurity ? (
+            <div className="vault-actions wrap">
+              <Button variant="secondary" onClick={() => rotateIssuerKey(false)}>
+                Rotate security key
+              </Button>
+              <Button variant="secondary" onClick={() => rotateIssuerKey(true)}>
+                Replace compromised key
+              </Button>
+            </div>
+          ) : (
+            <p className="small muted">
+              Security changes are limited to organization owners and admins.
+            </p>
+          )}
         </article>
 
         <article className="issuer-panel">
@@ -481,6 +796,7 @@ export function IssuerWorkspace({
             value={schemaName}
             onChange={(event) => setSchemaName(event.target.value)}
             placeholder="Membership, Program Completion, Contributor..."
+            disabled={!canManageSchemas}
           />
 
           <label htmlFor="schema-description">What does it prove?</label>
@@ -490,6 +806,7 @@ export function IssuerWorkspace({
             onChange={(event) => setSchemaDescription(event.target.value)}
             rows={3}
             placeholder="Describe what a holder is entitled to prove with this credential."
+            disabled={!canManageSchemas}
           />
 
           <label htmlFor="schema-context">Where does it apply?</label>
@@ -498,6 +815,7 @@ export function IssuerWorkspace({
             value={schemaContext}
             onChange={(event) => setSchemaContext(event.target.value)}
             placeholder="Community, program, marketplace or organization"
+            disabled={!canManageSchemas}
           />
 
           <label htmlFor="schema-expiry">Default validity</label>
@@ -505,6 +823,7 @@ export function IssuerWorkspace({
             id="schema-expiry"
             value={schemaExpiry}
             onChange={(event) => setSchemaExpiry(event.target.value)}
+            disabled={!canManageSchemas}
           >
             <option value="30">30 days</option>
             <option value="90">90 days</option>
@@ -514,6 +833,7 @@ export function IssuerWorkspace({
 
           <Button
             disabled={
+              !canManageSchemas ||
               !schemaName.trim() ||
               !schemaDescription.trim() ||
               !schemaContext.trim()
@@ -547,7 +867,7 @@ export function IssuerWorkspace({
                       ? " · retired " + new Date(schema.retired_at).toLocaleDateString()
                       : ""}
                   </p>
-                  {schema.active ? (
+                  {schema.active && canManageSchemas ? (
                     <div className="schema-actions">
                       <Button
                         variant="secondary"
@@ -616,6 +936,7 @@ export function IssuerWorkspace({
             value={holderId}
             onChange={(event) => setHolderId(event.target.value)}
             placeholder="zr_..."
+            disabled={!canIssue}
           />
 
           <label htmlFor="credential-type">Credential type</label>
@@ -623,6 +944,7 @@ export function IssuerWorkspace({
             id="credential-type"
             value={schemaId}
             onChange={(event) => setSchemaId(event.target.value)}
+            disabled={!canIssue}
           >
             {activeSchemas.length ? (
               activeSchemas.map((schema) => (
@@ -641,10 +963,11 @@ export function IssuerWorkspace({
             value={value}
             onChange={(event) => setValue(event.target.value)}
             placeholder="Active member, completed, maintainer..."
+            disabled={!canIssue}
           />
 
           <Button
-            disabled={!holderId.trim() || !schemaId || !value.trim()}
+            disabled={!canIssue || !holderId.trim() || !schemaId || !value.trim()}
             onClick={issueCredential}
           >
             Issue credential
@@ -674,7 +997,7 @@ export function IssuerWorkspace({
                       <span className={item.revoked ? "credential-status revoked" : "credential-status active"}>
                         {item.revoked ? "Revoked" : "Active"}
                       </span>
-                      {!item.revoked ? (
+                      {!item.revoked && canIssue ? (
                         <Button
                           variant="secondary"
                           onClick={() => revokeCredential(item.credential_id)}

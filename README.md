@@ -41,6 +41,7 @@ The product does not seed demo credentials, identities, payments or verification
 - Verifier-specific audience-bound attestations derived from private source credentials.
 - Protected account credential storage and opaque authenticated sessions.
 - Issuer registration, reusable credential types, private issuance, recipient delivery by Zerant ID, credential-type retirement and immediate credential revocation.
+- Issuer organizations support owner/admin/issuer/auditor roles, Zerant-ID invitations, least-privilege access and cryptographically safe ownership transfer.
 - Public issuer discovery with paginated organization profiles, public signing-key lifecycle, immutable credential-definition history and signed revocation publications.
 - Verifier registration, issuer-defined credential selection, short-lived requests and verified status.
 - Revocable scoped server-to-server verifier integration keys with one-time secret display and managed-schema request APIs.

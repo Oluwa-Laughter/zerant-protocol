@@ -4,7 +4,9 @@ import {
   IssuerWorkspace,
   type CredentialSchema,
   type IssuedCredential,
+  type IssuerInvitation,
   type IssuerKeyView,
+  type IssuerMember,
   type IssuerProfile,
 } from "@/components/issuer-workspace";
 import { fetchZerantBackend } from "@/lib/server-api";
@@ -16,31 +18,58 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
+type SessionView = {
+  zerant_id: string;
+};
+
 export default async function IssuerPage() {
   const cookieStore = await cookies();
   const cookieHeader = cookieStore.toString();
 
   let backendAvailable = false;
   let authenticated = false;
+  let currentZerantId: string | null = null;
   let profile: IssuerProfile | null = null;
   let issued: IssuedCredential[] = [];
   let schemas: CredentialSchema[] = [];
   let keys: IssuerKeyView[] = [];
+  let team: IssuerMember[] = [];
+  let teamInvitations: IssuerInvitation[] = [];
+  let myInvitations: IssuerInvitation[] = [];
 
   try {
     const sessionResponse = await fetchZerantBackend("/v1/session", cookieHeader);
     backendAvailable = sessionResponse !== null;
     authenticated = Boolean(sessionResponse?.ok);
 
-    if (authenticated) {
-      const profileResponse = await fetchZerantBackend("/v1/issuer", cookieHeader);
+    if (sessionResponse?.ok) {
+      const session = (await sessionResponse.json()) as SessionView;
+      currentZerantId = session.zerant_id;
+
+      const [profileResponse, myInvitationsResponse] = await Promise.all([
+        fetchZerantBackend("/v1/issuer", cookieHeader),
+        fetchZerantBackend("/v1/issuer/invitations", cookieHeader),
+      ]);
+
+      if (myInvitationsResponse?.ok) {
+        myInvitations = (await myInvitationsResponse.json()) as IssuerInvitation[];
+      }
+
       if (profileResponse?.ok) {
         profile = (await profileResponse.json()) as IssuerProfile;
 
-        const [issuedResponse, schemasResponse, keysResponse] = await Promise.all([
+        const [
+          issuedResponse,
+          schemasResponse,
+          keysResponse,
+          teamResponse,
+          teamInvitationsResponse,
+        ] = await Promise.all([
           fetchZerantBackend("/v1/issuer/credentials", cookieHeader),
           fetchZerantBackend("/v1/issuer/schemas", cookieHeader),
           fetchZerantBackend("/v1/issuer/keys", cookieHeader),
+          fetchZerantBackend("/v1/issuer/team", cookieHeader),
+          fetchZerantBackend("/v1/issuer/team/invitations", cookieHeader),
         ]);
 
         if (issuedResponse?.ok) {
@@ -52,6 +81,12 @@ export default async function IssuerPage() {
         if (keysResponse?.ok) {
           keys = (await keysResponse.json()) as IssuerKeyView[];
         }
+        if (teamResponse?.ok) {
+          team = (await teamResponse.json()) as IssuerMember[];
+        }
+        if (teamInvitationsResponse?.ok) {
+          teamInvitations = (await teamInvitationsResponse.json()) as IssuerInvitation[];
+        }
       }
     }
   } catch {
@@ -62,10 +97,14 @@ export default async function IssuerPage() {
     <IssuerWorkspace
       authenticated={authenticated}
       backendAvailable={backendAvailable}
+      currentZerantId={currentZerantId}
       initialProfile={profile}
       initialIssued={issued}
       initialSchemas={schemas}
       initialKeys={keys}
+      initialTeam={team}
+      initialTeamInvitations={teamInvitations}
+      initialMyInvitations={myInvitations}
     />
   );
 }

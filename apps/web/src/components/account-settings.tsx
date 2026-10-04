@@ -9,6 +9,7 @@ export type AccountSummary = {
   zerant_id: string;
   credential_count: number;
   issuer_profile: string | null;
+  issuer_role: string | null;
   verifier_profile: string | null;
   can_delete: boolean;
 };
@@ -126,6 +127,20 @@ export function AccountSettings({
           </p>
         </article>
 
+        {summary.issuer_profile ? (
+          <article className="account-card">
+            <p className="eyebrow">Issuer organization</p>
+            <h2>{summary.issuer_profile}</h2>
+            <p className="muted">
+              Your role: {summary.issuer_role ?? "member"}. Organization permissions are managed
+              from the issuer workspace.
+            </p>
+            <Link href="/issuer" className="text-link">
+              Open issuer workspace →
+            </Link>
+          </article>
+        ) : null}
+
         <article className="account-card">
           <p className="eyebrow">Export</p>
           <h2>Take your Zerant data with you.</h2>
@@ -162,12 +177,15 @@ export function AccountSettings({
             </>
           ) : (
             <p className="muted">
-              This account currently represents
-              {summary.issuer_profile ? " issuer " + summary.issuer_profile : ""}
-              {summary.issuer_profile && summary.verifier_profile ? " and" : ""}
+              This account currently owns
+              {summary.issuer_role === "owner" && summary.issuer_profile
+                ? " issuer " + summary.issuer_profile
+                : ""}
+              {summary.issuer_role === "owner" && summary.issuer_profile && summary.verifier_profile
+                ? " and"
+                : ""}
               {summary.verifier_profile ? " verifier " + summary.verifier_profile : ""}.
-              Organizational ownership must be retired or transferred before the account can be
-              deleted.
+              Organizational ownership must be transferred before the account can be deleted.
             </p>
           )}
         </article>
