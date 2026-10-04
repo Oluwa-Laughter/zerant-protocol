@@ -7,11 +7,12 @@ test("product workspace renders empty real-integration states without seeded pro
   const html = renderToStaticMarkup(<ProductWorkspace />);
 
   for (const text of [
-    "No authenticated request loaded.",
-    "No issuer service connected.",
+    "No request waiting for you.",
+    "No issuer connected.",
     "No verification session active.",
-    "No browser wallet authority.",
-    "Native verification core.",
+    "No native wallet connection.",
+    "Native verification is ready.",
+    "Receive. Review. Prove.",
   ]) {
     assert.ok(html.includes(text), `missing production empty state: ${text}`);
   }
