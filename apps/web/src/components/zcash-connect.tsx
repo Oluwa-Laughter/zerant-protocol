@@ -2,18 +2,13 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { getInjectedZcashWallet } from "@/lib/zcash-wallet";
+import {
+  buildZecAuthWalletUri,
+  getPreferredInjectedZcashWallet,
+  type ZecAuthWalletChallenge,
+} from "@/lib/zcash-wallet";
 
-type Challenge = {
-  domain: string;
-  uri: string;
-  version: number;
-  chain: string;
-  nonce: string;
-  issued_at: string;
-  expiration_time: string;
-  statement: string;
-  scopes: { required: Array<{ type: string }> };
+type Challenge = ZecAuthWalletChallenge & {
   message: string;
 };
 
@@ -34,31 +29,49 @@ async function redeemSession(): Promise<void> {
     cache: "no-store",
   });
   if (!response.ok) {
-    throw new Error("The signed wallet request could not be completed.");
+    throw new Error("No completed wallet approval is ready yet.");
   }
+}
+
+function connectionErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+
+  if (/rejected|denied|cancel/i.test(message)) {
+    return "Wallet connection was cancelled.";
+  }
+  if (/no response.*background|background.*no response/i.test(message)) {
+    return "Your wallet is installed but did not respond. Open and unlock it, then try again.";
+  }
+  if (/locked/i.test(message)) {
+    return "Unlock your wallet, then try again.";
+  }
+  if (message) {
+    return message;
+  }
+  return "The Zcash wallet connection was not completed.";
 }
 
 export function ZcashConnect({ onConnected }: { onConnected?: () => void }) {
   const [status, setStatus] = useState("");
+  const [connecting, setConnecting] = useState(false);
 
-  async function connectBrowserWallet() {
+  async function connectInjectedWallet() {
+    if (connecting) return;
+    setConnecting(true);
+
     try {
-      const wallet = getInjectedZcashWallet();
-      if (!wallet) {
+      const wallet = getPreferredInjectedZcashWallet("identitySigning");
+      if (!wallet || !wallet.signIdentityChallenge) {
         setStatus(
-          "No compatible Zcash browser wallet was detected. Use the wallet-app option instead.",
+          "No compatible injected Zcash wallet was detected. Use the wallet-app option instead.",
         );
         return;
       }
 
-      setStatus("Waiting for your wallet connection approval…");
-      const connection = await wallet.connect();
-      if (!connection.shieldedAddress) {
-        setStatus("This wallet did not provide a shielded Zcash address.");
-        return;
-      }
+      setStatus("Connecting to your Zcash wallet…");
+      await wallet.ensureConnection();
 
-      setStatus("Approve the private Zerant sign-in message in your wallet…");
+      setStatus("Approve the Zerant sign-in request in your wallet…");
       const challenge = await createChallenge();
       const signed = await wallet.signIdentityChallenge(challenge.message);
 
@@ -74,66 +87,44 @@ export function ZcashConnect({ onConnected }: { onConnected?: () => void }) {
           signing_mode: signed.signingMode,
         }),
       });
+
       if (!verify.ok) {
-        setStatus("The wallet signature could not be verified.");
+        setStatus("Zerant could not verify the wallet sign-in.");
         return;
       }
 
       await redeemSession();
-      setStatus("Zcash wallet connected to Zerant.");
+      setStatus("Wallet connected.");
       onConnected?.();
     } catch (error) {
-      setStatus(
-        error instanceof Error
-          ? error.message
-          : "The Zcash wallet connection was not completed.",
-      );
+      setStatus(connectionErrorMessage(error));
+    } finally {
+      setConnecting(false);
     }
   }
 
-  async function beginWalletApp() {
+  async function openWalletApp() {
     try {
-      setStatus("Creating a private Zcash wallet sign-in request…");
+      setStatus("Creating a Zcash wallet sign-in request…");
       const challenge = await createChallenge();
-      const payload = {
-        domain: challenge.domain,
-        uri: challenge.uri,
-        version: challenge.version,
-        chain: challenge.chain,
-        nonce: challenge.nonce,
-        issued_at: challenge.issued_at,
-        expiration_time: challenge.expiration_time,
-        statement: challenge.statement,
-        scopes: challenge.scopes,
-      };
       const callback = window.location.origin + "/api/zerant/auth/verify";
-      const link =
-        "zecauth://" +
-        challenge.domain +
-        "?challenge=" +
-        encodeURIComponent(JSON.stringify(payload)) +
-        "&callback=" +
-        encodeURIComponent(callback);
+      const uri = buildZecAuthWalletUri(challenge, callback);
 
-      setStatus("Opening a compatible Zcash wallet. Approve the Zerant sign-in request there.");
-      window.location.href = link;
+      setStatus("Opening your Zcash wallet. Approve the Zerant sign-in request there.");
+      window.location.assign(uri);
     } catch (error) {
-      setStatus(
-        error instanceof Error
-          ? error.message
-          : "The wallet-app sign-in request could not be created.",
-      );
+      setStatus(connectionErrorMessage(error));
     }
   }
 
-  async function checkWalletApp() {
+  async function checkWalletApproval() {
     try {
       setStatus("Checking for your approved wallet response…");
       await redeemSession();
-      setStatus("Zcash wallet connected to Zerant.");
+      setStatus("Wallet connected.");
       onConnected?.();
-    } catch {
-      setStatus("No completed wallet approval is ready yet.");
+    } catch (error) {
+      setStatus(connectionErrorMessage(error));
     }
   }
 
@@ -143,8 +134,8 @@ export function ZcashConnect({ onConnected }: { onConnected?: () => void }) {
         <p className="eyebrow">Connect a Zcash wallet</p>
         <h2>Use the wallet you already trust.</h2>
         <p className="muted">
-          Zerant connects to compatible Zcash wallets without using your payment address,
-          balance, or transaction history as your identity.
+          Zerant keeps wallet choice separate from your trust profile. Your payment address,
+          balance and transaction history are not used as your Zerant identity.
         </p>
       </div>
 
@@ -152,33 +143,41 @@ export function ZcashConnect({ onConnected }: { onConnected?: () => void }) {
         <article className="wallet-connect-option">
           <div>
             <span className="eyebrow">Browser wallet</span>
-            <h3>Connect an installed Zcash wallet</h3>
+            <h3>Connect an installed wallet</h3>
             <p className="small muted">
-              Zerant detects compatible injected wallets and asks only for connection and a
-              private identity signature.
+              If an installed Zcash wallet exposes compatible browser signing, Zerant can connect
+              to it directly.
             </p>
           </div>
-          <Button onClick={connectBrowserWallet}>Connect browser wallet</Button>
+          <Button onClick={connectInjectedWallet} disabled={connecting}>
+            {connecting ? "Connecting…" : "Connect browser wallet"}
+          </Button>
         </article>
 
         <article className="wallet-connect-option">
           <div>
             <span className="eyebrow">Wallet app</span>
-            <h3>Use another compatible Zcash wallet</h3>
+            <h3>Open the request in your wallet</h3>
             <p className="small muted">
-              Open the request in a wallet app that supports Zcash authentication handoff.
+              Wallet apps that support Zcash authentication handoff can approve the same Zerant
+              sign-in request without a browser extension.
             </p>
           </div>
           <div className="vault-actions wrap">
-            <Button variant="secondary" onClick={beginWalletApp}>
+            <Button variant="secondary" onClick={openWalletApp}>
               Open wallet app
             </Button>
-            <Button variant="secondary" onClick={checkWalletApp}>
+            <Button variant="secondary" onClick={checkWalletApproval}>
               Check approval
             </Button>
           </div>
         </article>
       </div>
+
+      <p className="small muted wallet-compatibility-note">
+        Wallet support is capability-based. Zerant does not require one wallet brand, and payment
+        requests use standard Zcash wallet handoff whenever possible.
+      </p>
 
       {status ? (
         <p className="vault-status neutral" role="status">

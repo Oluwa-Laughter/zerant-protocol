@@ -157,30 +157,23 @@ Authenticated users can query bounded Z3/Zallet capability, chain-readiness and 
 
 ## Wallet connection model
 
-Zerant supports two Zcash-native wallet connection paths without making wallet activity part of identity.
+Zerant is wallet-agnostic. It uses portable Zcash handoff formats wherever a wallet supports them and isolates browser-specific behavior behind capability-based adapters.
+
+### Portable wallet-app authentication
+
+ZecAuth remains the wallet-app authentication handoff. Zerant creates a short-lived domain/chain/nonce challenge and opens it through the `zecauth:` scheme with a callback to Zerant. A compatible wallet signs the request and Zerant redeems the completed browser attempt into the normal opaque account session.
 
 ### Injected browser wallets
 
-The web application detects a compatible injected Zcash provider. The first concrete implementation targets Noir Wallet's documented provider surface:
+Injected wallets are optional enhancements. Each wallet adapter advertises connection restoration, identity signing and direct shielded-payment capabilities separately. Product code chooses a capability rather than a wallet name.
 
-- zcash_requestAccounts for explicit connection approval;
-- zcash_getAccounts for silent existing-connection checks;
-- zcash_signMessage with derived signing mode for Zerant authentication;
-- zcash_disconnect for explicit disconnect.
+Noir Wallet is currently one concrete injected adapter. It is not a protocol dependency and does not define Zerant wallet compatibility. Additional wallets can be added by implementing the same adapter contract without changing credentials, disclosure or verifier logic.
 
-Zerant does not request wallet balance, transaction history, memos, or address inventories during authentication. The shielded address is treated as the wallet's primary payment-facing address, but it is not stored as the Zerant account identity.
+### Wallets with payment support but no authentication extension
 
-The derived message-signing key is verified server-side using the Zcash signed-message prefix, compact-size encoding, double SHA-256, recoverable secp256k1 signatures, and the exact short-lived Zerant challenge. The main transparent signing identity is deliberately rejected for this login path.
+A wallet may support Zcash addresses and ZIP-321 payment requests without implementing ZecAuth or browser message signing. Zerant treats that as a capability difference, not as a non-Zcash wallet. Portable payment interoperability remains available. A wallet-independent Zerant account-entry path is the next compatibility layer.
 
-### Wallet apps and other compatible wallets
-
-ZecAuth remains the wallet-app handoff path. A short-lived domain/chain/nonce challenge is opened with the wallet, the wallet returns a signed result to Zerant, and the browser redeems the completed attempt into the same opaque Zerant session model.
-
-Both methods converge on the same account/session layer. Issuance, credential storage, verifier requests, consent and Zcash payment review do not care which supported wallet-authentication method created the session.
-
-### Compatibility rule
-
-Zerant does not hard-code product logic to one wallet vendor. New Zcash wallets can be added by implementing either the injected provider capability surface or the ZecAuth authentication handoff. Wallet-specific logic stays at the connection boundary.
+See `docs/WALLET_COMPATIBILITY.md` for the adapter and security contract.
 
 ## ZIP-321 wallet execution
 

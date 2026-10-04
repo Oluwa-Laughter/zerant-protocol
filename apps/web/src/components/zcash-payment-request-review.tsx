@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { getInjectedZcashWallet, zatoshiToZec } from "@/lib/zcash-wallet";
+import { getPreferredInjectedZcashWallet, zatoshiToZec } from "@/lib/zcash-wallet";
 
 type Payment = {
   index: number;
@@ -62,9 +62,9 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
     }
 
     try {
-      const wallet = getInjectedZcashWallet();
-      if (!wallet) {
-        setStatus("No compatible Zcash browser wallet was detected.");
+      const wallet = getPreferredInjectedZcashWallet("shieldedPayment");
+      if (!wallet || !wallet.sendShieldedPayment) {
+        setStatus("No compatible browser-wallet payment capability was detected. Open the request in your Zcash wallet instead.");
         return;
       }
       const existing = await wallet.existingConnection();
@@ -165,7 +165,7 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
                 Boolean(summary.payments[0]?.other_param_names.length)
               }
             >
-              Pay from shielded browser wallet
+              Pay in browser wallet
             </Button>
           </div>
           {summary.payment_count !== 1 ||
@@ -177,8 +177,7 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
             </p>
           ) : (
             <p className="small muted payment-request-note">
-              Browser-wallet payment uses shielded funds by default and still requires approval in
-              your wallet.
+              A compatible browser wallet can submit this simple shielded request directly. You still approve the payment in your wallet.
             </p>
           )}
 
