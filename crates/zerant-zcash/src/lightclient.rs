@@ -3,11 +3,13 @@ use std::time::Duration;
 use serde::Serialize;
 use url::Url;
 use zcash_client_backend::proto::service::{
-    Empty, compact_tx_streamer_client::CompactTxStreamerClient,
+    Empty, TxFilter, compact_tx_streamer_client::CompactTxStreamerClient,
 };
+use zcash_protocol::TxId;
 use zerant_core::{Error, MAX_SAFE_INTEGER, Result};
 
 const MAX_STATUS_TEXT: usize = 256;
+const MAX_RAW_TRANSACTION_BYTES: usize = 4 * 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +45,51 @@ pub struct LightClientReadiness {
     pub version: String,
     pub protocol_version: String,
     pub consensus_branch_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum LightClientTransactionState {
+    Mempool,
+    Forked,
+    Mined { height: u64, confirmations: u64 },
+}
+
+fn transaction_filter(txid: &str) -> Result<TxFilter> {
+    crate::payment::validate_txid(txid)?;
+    let txid = TxId::from_hex(txid).ok_or(Error::Encoding)?;
+    Ok(TxFilter {
+        block: None,
+        index: 0,
+        hash: txid.as_ref().to_vec(),
+    })
+}
+
+fn classify_transaction_height(
+    height: u64,
+    chain_height: u64,
+) -> Result<LightClientTransactionState> {
+    if chain_height > MAX_SAFE_INTEGER {
+        return Err(Error::UnsafeNumber);
+    }
+    if height == 0 {
+        return Ok(LightClientTransactionState::Mempool);
+    }
+    if height == u64::MAX {
+        return Ok(LightClientTransactionState::Forked);
+    }
+    if height > MAX_SAFE_INTEGER || height > chain_height {
+        return Err(Error::Trust);
+    }
+    let confirmations = chain_height
+        .checked_sub(height)
+        .and_then(|value| value.checked_add(1))
+        .filter(|value| *value <= MAX_SAFE_INTEGER)
+        .ok_or(Error::UnsafeNumber)?;
+    Ok(LightClientTransactionState::Mined {
+        height,
+        confirmations,
+    })
 }
 
 fn safe_text(value: String) -> Result<String> {
@@ -120,6 +167,47 @@ pub async fn fetch_light_client_readiness(
     })
 }
 
+pub async fn fetch_light_client_transaction_state(
+    endpoint: &str,
+    expected_network: LightClientNetwork,
+    allow_loopback_http: bool,
+    txid: &str,
+) -> Result<LightClientTransactionState> {
+    let endpoint = validate_light_client_endpoint(endpoint, allow_loopback_http)?;
+    let filter = transaction_filter(txid)?;
+
+    let mut client =
+        tokio::time::timeout(REQUEST_TIMEOUT, CompactTxStreamerClient::connect(endpoint))
+            .await
+            .map_err(|_| Error::Trust)?
+            .map_err(|_| Error::Trust)?
+            .max_decoding_message_size(MAX_RAW_TRANSACTION_BYTES + 16 * 1024)
+            .max_encoding_message_size(16 * 1024);
+
+    let info = tokio::time::timeout(REQUEST_TIMEOUT, client.get_lightd_info(Empty {}))
+        .await
+        .map_err(|_| Error::Trust)?
+        .map_err(|_| Error::Trust)?
+        .into_inner();
+    if info.chain_name != expected_network.expected_chain()
+        || info.block_height == 0
+        || info.block_height > MAX_SAFE_INTEGER
+    {
+        return Err(Error::Trust);
+    }
+
+    let transaction = tokio::time::timeout(REQUEST_TIMEOUT, client.get_transaction(filter))
+        .await
+        .map_err(|_| Error::Trust)?
+        .map_err(|_| Error::Trust)?
+        .into_inner();
+    if transaction.data.is_empty() || transaction.data.len() > MAX_RAW_TRANSACTION_BYTES {
+        return Err(Error::Size);
+    }
+
+    classify_transaction_height(transaction.height, info.block_height)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,6 +222,38 @@ mod tests {
     fn loopback_http_requires_explicit_opt_in() {
         assert!(validate_light_client_endpoint("http://127.0.0.1:9067", false).is_err());
         assert!(validate_light_client_endpoint("http://127.0.0.1:9067", true).is_ok());
+    }
+
+    #[test]
+    fn tx_filter_uses_zcash_internal_byte_order() {
+        let canonical = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+        let filter = transaction_filter(canonical).unwrap();
+        let expected: Vec<u8> = (0u8..32).rev().collect();
+        assert_eq!(filter.hash, expected);
+        assert!(filter.block.is_none());
+        assert_eq!(filter.index, 0);
+    }
+
+    #[test]
+    fn transaction_height_classification_is_fail_closed() {
+        assert_eq!(
+            classify_transaction_height(0, 100).unwrap(),
+            LightClientTransactionState::Mempool
+        );
+        assert_eq!(
+            classify_transaction_height(u64::MAX, 100).unwrap(),
+            LightClientTransactionState::Forked
+        );
+        assert_eq!(
+            classify_transaction_height(98, 100).unwrap(),
+            LightClientTransactionState::Mined {
+                height: 98,
+                confirmations: 3
+            }
+        );
+        assert!(classify_transaction_height(101, 100).is_err());
+        assert!(classify_transaction_height(MAX_SAFE_INTEGER + 1, MAX_SAFE_INTEGER).is_err());
+        assert!(classify_transaction_height(1, MAX_SAFE_INTEGER + 1).is_err());
     }
 
     #[test]
