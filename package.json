@@ -6,7 +6,8 @@
     "build": "pnpm --filter @zerant/web build",
     "lint": "pnpm --filter @zerant/web lint",
     "typecheck": "pnpm --filter @zerant/web typecheck",
-    "test": "pnpm --filter @zerant/web test"
+    "test": "pnpm --filter @zerant/web test",
+    "vercel:vcr:prune": "node scripts/prune-vercel-backend-images.mjs"
   },
   "engines": {
     "node": "22.x",
