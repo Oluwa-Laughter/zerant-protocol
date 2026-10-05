@@ -38,7 +38,7 @@ test("signed-in workspace links into the dedicated Zcash workspace", () => {
       session={{ authenticated: true, identity: "test-identity", scopes: [] }}
       zcash={null}
       zcashNetwork={null}
-      attention={{ activeCredentials: 3, pendingRequests: 2, preparedPayments: 1, submittedPayments: 1 }}
+      attention={{ activeCredentials: 3, pendingRequests: 2, preparedPayments: 1, submittedPayments: 3, unseenSubmittedPayments: 1, networkSeenPayments: 2, depthReachedPayments: 1, forkedPayments: 0 }}
     />,
   );
 
@@ -46,7 +46,7 @@ test("signed-in workspace links into the dedicated Zcash workspace", () => {
   assert.ok(html.includes("Prepare a Zcash payment"));
   assert.ok(html.includes("Your Zerant activity at a glance."));
   assert.ok(html.includes("Waiting for your decision"));
-  assert.ok(html.includes("Settlement verification pending"));
+  assert.ok(html.includes("2 seen on network · 1 depth reached · 1 unseen"));
   assert.equal(html.includes('id="zcash-wallet-actions"'), false);
   assert.equal(html.includes('id="zcash-payment-review"'), false);
 });
@@ -56,7 +56,7 @@ test("workspace renders degraded Zcash state as protected mode", () => {
   const html = renderToStaticMarkup(
     <ProductWorkspace
       session={{ authenticated: true, identity: "test-identity", scopes: [] }}
-      zcash={null}
+      zcash={{ capabilities: ["read"], receipt_verification: false, sendmany_advertised: false, sendfromaccount_advertised: false, pczt_complete: false, wallet: "native", chain_height: 123 }}
       zcashNetwork={{
         configured: true,
         network: "testnet",
@@ -74,7 +74,23 @@ test("workspace renders degraded Zcash state as protected mode", () => {
   assert.ok(html.includes("Zcash network temporarily unavailable."));
   assert.ok(html.includes("Protected mode"));
   assert.ok(html.includes("protecting network-dependent actions"));
+  assert.ok(html.includes('class="workspace-state"><span></span>Protected mode'));
+  assert.equal(html.includes('class="workspace-state ready"><span></span>Protected mode'), false);
   assert.equal(html.includes("PostgreSQL"), false);
   assert.equal(html.includes("lightwalletd"), false);
   assert.equal(html.includes("Zaino"), false);
+});
+
+
+test("workspace surfaces forked Zcash submissions as attention", () => {
+  const html = renderToStaticMarkup(
+    <ProductWorkspace
+      session={{ authenticated: true, identity: "test-identity", scopes: [] }}
+      zcash={null}
+      zcashNetwork={null}
+      attention={{ activeCredentials: 0, pendingRequests: 0, preparedPayments: 0, submittedPayments: 1, unseenSubmittedPayments: 0, networkSeenPayments: 0, depthReachedPayments: 0, forkedPayments: 1 }}
+    />,
+  );
+  assert.ok(html.includes("1 transaction no longer on the best chain"));
+  assert.equal(html.includes("Payment verified"), false);
 });

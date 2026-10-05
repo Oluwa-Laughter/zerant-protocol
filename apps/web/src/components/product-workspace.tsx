@@ -33,6 +33,10 @@ export type WorkspaceAttention = {
   pendingRequests: number;
   preparedPayments: number;
   submittedPayments: number;
+  unseenSubmittedPayments: number;
+  networkSeenPayments: number;
+  depthReachedPayments: number;
+  forkedPayments: number;
 };
 
 export function ProductWorkspace({
@@ -47,6 +51,19 @@ export function ProductWorkspace({
   attention?: WorkspaceAttention | null;
 }) {
   const authenticated = Boolean(session?.authenticated);
+  const networkActionsReady = zcashNetwork
+    ? zcashNetwork.network_actions_enabled
+    : Boolean(zcash);
+  const paymentAttentionClass = attention?.forkedPayments
+    ? "workspace-attention-card needs-action"
+    : attention?.submittedPayments
+      ? "workspace-attention-card pending-state"
+      : "workspace-attention-card";
+  const paymentAttentionDetail = attention?.forkedPayments
+    ? `${attention.forkedPayments} transaction${attention.forkedPayments === 1 ? "" : "s"} no longer on the best chain`
+    : attention?.submittedPayments
+      ? `${attention.networkSeenPayments} seen on network · ${attention.depthReachedPayments} depth reached · ${attention.unseenSubmittedPayments} unseen`
+      : `${attention?.preparedPayments ?? 0} prepared payment${attention?.preparedPayments === 1 ? "" : "s"}`;
 
   return (
     <main id="main" className="product-app">
@@ -91,10 +108,10 @@ export function ProductWorkspace({
               <strong>active credential{attention?.activeCredentials === 1 ? "" : "s"}</strong>
               <span>Available for narrow proofs</span>
             </Link>
-            <Link className={attention?.submittedPayments ? "workspace-attention-card pending-state" : "workspace-attention-card"} href="/zcash">
+            <Link className={paymentAttentionClass} href="/zcash">
               <span className="workspace-attention-value">{attention?.submittedPayments ?? 0}</span>
               <strong>submitted payment{attention?.submittedPayments === 1 ? "" : "s"}</strong>
-              <span>{attention?.submittedPayments ? "Settlement verification pending" : `${attention?.preparedPayments ?? 0} prepared payment${attention?.preparedPayments === 1 ? "" : "s"}`}</span>
+              <span>{paymentAttentionDetail}</span>
             </Link>
           </div>
         </section>
@@ -167,7 +184,7 @@ export function ProductWorkspace({
           </p>
           <div
             className={
-              zcashNetwork?.network_actions_enabled || zcash
+              networkActionsReady
                 ? "workspace-state ready"
                 : "workspace-state"
             }

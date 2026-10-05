@@ -51,14 +51,19 @@ export default async function AppPage() {
         ? await requestResponse.json() as unknown[]
         : [];
       const paymentPage = paymentResponse?.ok
-        ? await paymentResponse.json() as { items?: Array<{ state: string }> }
+        ? await paymentResponse.json() as { items?: Array<{ state: string; network_state?: string | null; confirmations?: number | null; min_confirmations?: number }> }
         : { items: [] };
       const paymentItems = Array.isArray(paymentPage.items) ? paymentPage.items : [];
+      const submitted = paymentItems.filter((item) => item.state === "submitted");
       attention = {
         activeCredentials: credentials.filter((item) => !item.revoked).length,
         pendingRequests: requests.length,
         preparedPayments: paymentItems.filter((item) => item.state === "prepared").length,
-        submittedPayments: paymentItems.filter((item) => item.state === "submitted").length,
+        submittedPayments: submitted.length,
+        unseenSubmittedPayments: submitted.filter((item) => !item.network_state).length,
+        networkSeenPayments: submitted.filter((item) => item.network_state === "mempool" || item.network_state === "mined").length,
+        depthReachedPayments: submitted.filter((item) => item.network_state === "mined" && (item.confirmations ?? 0) >= (item.min_confirmations ?? Number.MAX_SAFE_INTEGER)).length,
+        forkedPayments: submitted.filter((item) => item.network_state === "forked").length,
       };
     }
   } catch {
