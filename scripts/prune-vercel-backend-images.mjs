@@ -11,9 +11,14 @@ function valueArg(name, fallback) {
 const apply = process.argv.includes("--apply");
 const repository = valueArg("repository", "backend");
 const keep = Number.parseInt(valueArg("keep", "20"), 10);
+const threshold = Number.parseInt(valueArg("threshold", "40"), 10);
 
 if (!Number.isInteger(keep) || keep < 10 || keep > 90) {
   console.error("--keep must be an integer between 10 and 90.");
+  process.exit(2);
+}
+if (!Number.isInteger(threshold) || threshold < keep || threshold > 100) {
+  console.error("--threshold must be an integer between --keep and 100.");
   process.exit(2);
 }
 if (!/^[a-z0-9._-]+$/i.test(repository)) {
@@ -31,15 +36,20 @@ const ready = images
   .filter((image) => image?.status === "ready" && typeof image?.id === "string")
   .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 const preserved = ready.slice(0, keep);
-const candidates = ready.slice(keep);
+const candidates = ready.length >= threshold ? ready.slice(keep) : [];
 
 console.log(`Vercel registry: ${repository}`);
 console.log(`Ready images: ${ready.length}`);
+console.log(`Prune threshold: ${threshold}`);
 console.log(`Rollback window kept: ${preserved.length}`);
 console.log(`Old ready images eligible for removal: ${candidates.length}`);
 
+if (ready.length < threshold) {
+  console.log(`Below threshold (${ready.length}/${threshold}); no images will be removed.`);
+  process.exit(0);
+}
 if (!candidates.length) {
-  console.log("Nothing to prune.");
+  console.log("Threshold reached, but nothing is outside the rollback window.");
   process.exit(0);
 }
 
