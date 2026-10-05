@@ -79,9 +79,9 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         <article className="workspace-card">
           <p className="eyebrow">Payment tracking</p>
           <h2>Review first. Approve in your wallet.</h2>
-          <p className="muted">Zerant can save a prepared payment and the transaction ID your wallet returns. Testnet settlement verification is not available yet, so a submitted payment stays pending here.</p>
+          <p className="muted">Zerant saves the transaction ID your wallet returns and can observe that exact txid on trusted Zcash testnet infrastructure. Mempool visibility and confirmation depth are network facts; they do not independently reveal or verify a shielded recipient or amount.</p>
           <div className="zcash-lifecycle" aria-label="Available Zcash payment states">
-            <span>Prepared</span><span>Submitted · pending</span>
+            <span>Prepared</span><span>Submitted</span><span>Seen</span><span>Mined · depth</span>
           </div>
         </article>
       </section>
