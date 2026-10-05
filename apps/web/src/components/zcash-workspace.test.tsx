@@ -38,6 +38,9 @@ test("dedicated Zcash workspace owns wallet and payment actions", () => {
   assert.ok(html.includes("Open official Noir releases"));
   assert.ok(html.includes("noir-wallet-sdk/releases"));
   assert.ok(html.includes("[Testnet] Noir Wallet"));
+  assert.ok(html.includes("Connecting Testnet Noir"));
+  assert.ok(html.includes("Edit accounts"));
+  assert.ok(html.includes("Closing that popup before this step is reported to Zerant as a rejected request."));
   assert.ok(html.includes("ZIP-321 testnet wallet"));
   assert.ok(html.includes("github.com/zingolabs/zingo-pc"));
   assert.ok(html.includes("Never enter a recovery phrase"));

@@ -147,6 +147,19 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       <h2>{allowSignIn ? "Sign in with a Zcash wallet" : "Use a Zcash wallet"}</h2>
       <p className="muted">{allowSignIn ? "On desktop, Zerant signs in through a detected Noir Wallet using a privacy-preserving identity key. A payment address, balance, or history is never your Zerant identity." : "Choose Noir to approve this site for wallet actions. You can also hand a reviewed payment request to a compatible wallet app. Your Zerant account and credentials work without a wallet connection."}</p>
     </div>
+    <div className="noir-connect-checklist" aria-label="How to approve Testnet Noir">
+      <div>
+        <span className="eyebrow">Connecting Testnet Noir</span>
+        <strong>Complete Noir’s separate Connect Request window.</strong>
+      </div>
+      <ol>
+        <li>Unlock <strong>[Testnet] Noir Wallet</strong>.</li>
+        <li>Keep Noir’s Connect Request popup open.</li>
+        <li>If no account is selected, choose <strong>Edit accounts</strong> and select at least one Testnet account.</li>
+        <li>Click <strong>Connect</strong> inside Noir. Closing that popup before this step is reported to Zerant as a rejected request.</li>
+      </ol>
+      <p className="small muted">Noir’s generic permission screen may mention balances and activity. Zerant does not request or store your wallet balance or transaction history for identity.</p>
+    </div>
     <ZcashWalletSelector purpose={purpose} busy={busy} hideAuthHandoff={!allowSignIn} hidePaymentHandoff={!allowSignIn} triggerLabel={allowSignIn ? "Choose sign-in wallet" : "Connect a direct wallet"} onSelect={(connector) => void choose(connector)} />
     {handoffUri ? <div className="wallet-handoff zcash-connect-handoff">
       <p className="small muted">This sign-in request expires after five minutes. It contains the challenge and callback, not your wallet address or history.</p>
