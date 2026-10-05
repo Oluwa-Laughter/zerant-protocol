@@ -53,6 +53,7 @@ export function HolderRequests({
         return;
       }
       setPreview(await response.json() as ProofPreview);
+      setStatus("Proof reviewed. Nothing is shared until you approve the exact claim below.");
     } catch {
       setStatus("The proof could not be reviewed right now.");
     } finally {
@@ -132,18 +133,21 @@ export function HolderRequests({
 
   return (
     <main id="main" className="requests-page">
-      <section className="requests-hero">
-        <p className="eyebrow">Verification requests</p>
-        <h1>Review before you prove.</h1>
-        <p>
-          Every request shows who is asking, what they want to verify, why they need it, and where
-          the result will be used.
-        </p>
+      <section className="requests-hero holder-requests-hero">
+        <div>
+          <p className="eyebrow">Verification requests</p>
+          <h1>Review before you prove.</h1>
+          <p>
+            Every request shows who is asking, what they want to verify, why they need it, and where
+            the result will be used.
+          </p>
+        </div>
+        <span className="pill">{requests.length} waiting</span>
       </section>
 
       <section className="holder-request-list">
         {requests.length ? requests.map((request) => (
-          <article className="holder-request-card" key={request.id}>
+          <article className={preview?.request.id === request.id ? "holder-request-card is-reviewing" : "holder-request-card"} key={request.id}>
             <div className="holder-request-heading">
               <div>
                 <span className="eyebrow">{request.verifier_name}</span>
@@ -162,30 +166,37 @@ export function HolderRequests({
               <p><strong>It will not share:</strong> your complete credential, other credentials, payment address, balance or wallet history.</p>
             </div>
 
-            <p className="small muted">
-              Requested by {request.verifier_origin} · expires{" "}
-              {new Date(request.expires_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </p>
+            <div className="holder-request-meta">
+              <span className="small muted">Requested by {request.verifier_origin}</span>
+              <span className="request-expiry-pill">Expires {new Date(request.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            </div>
 
             {preview?.request.id === request.id ? (
-              <div className="request-purpose">
-                <span className="eyebrow">Claim to be shared</span>
-                <p><strong>{preview.value}</strong></p>
-                <p>Issued by {preview.issuer_name}</p>
-                <p>For {preview.request.verifier_name} at {preview.request.verifier_origin}</p>
-                <p>Purpose: {preview.request.purpose}</p>
+              <div className="holder-proof-preview" aria-label="Exact claim to be shared">
+                <div className="holder-proof-preview-heading">
+                  <div><span className="eyebrow">Exact disclosure</span><h3>This is the claim Zerant would share.</h3></div>
+                  <span className="request-status approved">Reviewed</span>
+                </div>
+                <div className="holder-proof-value"><span className="eyebrow">Claim</span><strong>{preview.value}</strong></div>
+                <dl>
+                  <div><dt>Issued by</dt><dd>{preview.issuer_name}</dd></div>
+                  <div><dt>Requester</dt><dd>{preview.request.verifier_name}</dd></div>
+                  <div><dt>Used at</dt><dd>{preview.request.verifier_origin}</dd></div>
+                  <div><dt>Purpose</dt><dd>{preview.request.purpose}</dd></div>
+                </dl>
+                <p className="small muted">Your complete credential, other credentials, payment address, balance and wallet history stay out of this response.</p>
               </div>
             ) : null}
-            <div className="vault-actions">
+            <div className="vault-actions wrap">
               {preview?.request.id === request.id ? (
-                <Button disabled={busyId !== null} onClick={() => decide(request.id, "approve")}>Approve this claim</Button>
+                <>
+                  <Button disabled={busyId !== null} onClick={() => decide(request.id, "approve")}>Approve this claim</Button>
+                  <Button variant="secondary" disabled={busyId !== null} onClick={() => { setPreview(null); setStatus("Review closed. Nothing was shared."); }}>Back</Button>
+                </>
               ) : (
-                <Button disabled={busyId !== null} onClick={() => review(request.id)}>Review proof</Button>
+                <Button disabled={busyId !== null} onClick={() => review(request.id)}>Review exact claim</Button>
               )}
-              <Button variant="secondary" disabled={busyId !== null} onClick={() => decide(request.id, "deny")}>Deny</Button>
+              <Button variant="secondary" disabled={busyId !== null} onClick={() => decide(request.id, "deny")}>Deny request</Button>
             </div>
           </article>
         )) : (
