@@ -30,7 +30,8 @@
     "backend": {
       "root": ".",
       "runtime": "container",
-      "entrypoint": "Dockerfile.vercel"
+      "entrypoint": "Dockerfile.vercel",
+      "ignoreCommand": "bash scripts/vercel-ignore-backend.sh"
     }
   },
   "rewrites": [
