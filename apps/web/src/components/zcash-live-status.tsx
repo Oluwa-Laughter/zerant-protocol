@@ -15,13 +15,14 @@ export function ZcashLiveStatus({
   onNetworkUpdate?: (network: WorkspaceZcashNetwork) => void;
 }) {
   const connection = useZcashConnection();
-  const [liveNetwork, setLiveNetwork] = useState(network);
+  const [refreshedNetwork, setRefreshedNetwork] = useState<WorkspaceZcashNetwork>(null);
   const [refreshingNetwork, setRefreshingNetwork] = useState(false);
   const lastNetworkRefresh = useRef(0);
   const walletConnected = connection.status === "connected" && Boolean(connection.account);
+  const liveNetwork = refreshedNetwork ?? network;
   const networkReady = liveNetwork?.state === "ready";
 
-  const refreshNetwork = useCallback(async (announce = false) => {
+  const refreshNetwork = useCallback(async () => {
     if (!authenticated || refreshingNetwork) return;
     setRefreshingNetwork(true);
     try {
@@ -32,7 +33,7 @@ export function ZcashLiveStatus({
       if (!response.ok) return;
       const value = await response.json() as WorkspaceZcashNetwork;
       if (value && ["ready", "syncing", "degraded", "not_configured"].includes(value.state)) {
-        setLiveNetwork(value);
+        setRefreshedNetwork(value);
         onNetworkUpdate?.(value);
         lastNetworkRefresh.current = Date.now();
       }
@@ -42,13 +43,9 @@ export function ZcashLiveStatus({
   }, [authenticated, onNetworkUpdate, refreshingNetwork]);
 
   useEffect(() => {
-    setLiveNetwork(network);
-  }, [network]);
-
-  useEffect(() => {
     if (!authenticated) return;
     const refreshIfStale = () => {
-      if (Date.now() - lastNetworkRefresh.current >= 30_000) void refreshNetwork(false);
+      if (Date.now() - lastNetworkRefresh.current >= 30_000) void refreshNetwork();
     };
     const onVisibility = () => { if (document.visibilityState === "visible") refreshIfStale(); };
     window.addEventListener("focus", refreshIfStale);
@@ -77,7 +74,7 @@ export function ZcashLiveStatus({
             <span aria-hidden="true" />
             {networkReady ? "Testnet ready" : liveNetwork?.state === "syncing" ? "Testnet syncing" : "Network protected"}
           </span>
-          {authenticated ? <Button variant="secondary" disabled={refreshingNetwork} onClick={() => void refreshNetwork(true)}>{refreshingNetwork ? "Checking…" : "Refresh network"}</Button> : null}
+          {authenticated ? <Button variant="secondary" disabled={refreshingNetwork} onClick={() => void refreshNetwork()}>{refreshingNetwork ? "Checking…" : "Refresh network"}</Button> : null}
         </div>
       </div>
 
