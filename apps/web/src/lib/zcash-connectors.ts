@@ -71,7 +71,7 @@ export function walletConnectConnector(projectId: string, displayUri: (uri: stri
 
 export function zecAuthConnector(): ZcashConnector {
   return {
-    id: "zecauth:portable", walletId: "portable-zecauth", name: "ZecAuth-compatible wallet",
+    id: "zecauth:portable", walletId: "portable-zecauth", name: "Compatible Zcash sign-in wallet",
     transport: "zecauth", availability: "available",
     capabilities: new Set(["zecAuth"]),
     openAuthHandoff: buildZecAuthWalletUri,
@@ -149,6 +149,14 @@ export function discoverZcashConnectors(
     const prior = best.get(connector.walletId);
     if (!prior || priority[connector.availability] < priority[prior.availability]) best.set(connector.walletId, connector);
   }
+  const transportPriority: Record<WalletTransport, number> = {
+    injected: 0,
+    walletconnect: 1,
+    uri_handoff: 2,
+    zecauth: 3,
+  };
   return [...best.values()].sort((a, b) =>
-    priority[a.availability] - priority[b.availability] || a.name.localeCompare(b.name));
+    priority[a.availability] - priority[b.availability]
+    || transportPriority[a.transport] - transportPriority[b.transport]
+    || a.name.localeCompare(b.name));
 }

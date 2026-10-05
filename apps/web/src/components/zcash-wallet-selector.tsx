@@ -16,15 +16,16 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
   const [connectors, setConnectors] = useState<ZcashConnector[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [activeChain, setActiveChain] = useState<"zcash:mainnet" | "zcash:testnet" | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const first = useRef<HTMLButtonElement>(null);
 
   function connectorDetail(connector: ZcashConnector): string {
     if (connector.transport === "zecauth") return "Open a compatible wallet app to approve Zerant sign-in";
     if (connector.transport === "uri_handoff") return purpose === "connection"
-      ? "Review a ZIP-321 request before opening it in your wallet"
-      : "Open the complete reviewed ZIP-321 request in a compatible wallet";
-    if (connector.transport === "walletconnect") return "Pair a compatible wallet through WalletConnect";
+      ? "Review a Zcash payment request before opening it in your wallet"
+      : "Open the complete reviewed Zcash payment request in a compatible wallet";
+    if (connector.transport === "walletconnect") return "Pair a compatible remote wallet";
     if (connector.capabilities.has("identitySigning")) return "Installed wallet · supports Zerant sign-in";
     if (connector.capabilities.has("shieldedPayment")) return "Installed wallet · supports shielded payments";
     return "Installed wallet · available for supported Zcash actions";
@@ -33,6 +34,32 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
   useEffect(() => {
     if (open) first.current?.focus();
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !activeChain) return;
+
+    const refresh = () => {
+      const { walletConnectProjectId } = getZcashConnectionSnapshot();
+      setConnectors(
+        discoverZcashConnectors(
+          purpose,
+          activeChain,
+          walletConnectProjectId,
+          undefined,
+          setZcashDisplayUri,
+        ).filter((connector) => !hideAuthHandoff || !connector.capabilities.has("zecAuth")),
+      );
+    };
+
+    // Browser extensions may inject after React has already rendered. Noir emits this
+    // event once its provider is ready, so refresh instead of forcing users to reload.
+    window.addEventListener("noirwallet#initialized", refresh);
+    const retry = window.setTimeout(refresh, 750);
+    return () => {
+      window.removeEventListener("noirwallet#initialized", refresh);
+      window.clearTimeout(retry);
+    };
+  }, [activeChain, hideAuthHandoff, open, purpose]);
 
   function close() {
     setOpen(false);
@@ -44,6 +71,7 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
       <Button ref={trigger} onClick={() => {
         setLoading(true); setError("");
         void ensureZcashConfig().then((chain) => {
+          setActiveChain(chain);
           setConnectors(discoverZcashConnectors(purpose, chain, getZcashConnectionSnapshot().walletConnectProjectId, undefined, setZcashDisplayUri)
             .filter((connector) => !hideAuthHandoff || !connector.capabilities.has("zecAuth")));
           setOpen(true);
@@ -78,10 +106,14 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
             ))}
           </div>
           {purpose === "identity" ? (
-            <p className="small muted">Payment-only wallets can open ZIP-321 requests after you sign in. Portable sign-in requires a wallet that implements ZecAuth.</p>
+            <p className="small muted">Payment-only wallets can open payment requests after you sign in. Portable sign-in requires a wallet that supports Zerant wallet approval.</p>
           ) : purpose === "payment" ? (
-            <p className="small muted">The portable option opens the complete validated ZIP-321 request in a compatible wallet. Wallet submission is not settlement confirmation.</p>
-          ) : null}
+            <p className="small muted">The portable option opens the complete validated Zcash payment request in a compatible wallet. Wallet submission is not settlement confirmation.</p>
+          ) : activeChain === "zcash:testnet" ? (
+            <p className="small muted">Testnet uses installed-wallet actions and portable payment handoff. Remote wallet pairing is intentionally reserved for supported mainnet wallets.</p>
+          ) : (
+            <p className="small muted">Choose an installed wallet, a portable payment handoff, or remote wallet pairing when available.</p>
+          )}
         </div>
       ) : null}
     </div>

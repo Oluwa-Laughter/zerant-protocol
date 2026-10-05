@@ -21,7 +21,7 @@ export function compatibleZcashSession(session: Session): boolean {
 
 export class WalletConnectZcashAdapter implements ZcashWalletAdapter {
   readonly id = "walletconnect";
-  readonly name = "WalletConnect-compatible wallet";
+  readonly name = "Remote Zcash wallet";
   readonly capabilities: ZcashWalletCapabilities = {
     identitySigning: false, shieldedPayment: false, transparentPayment: false,
     paymentRequestHandoff: false, walletConnect: true, zecAuthHandoff: false,
