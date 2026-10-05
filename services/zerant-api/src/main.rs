@@ -31,7 +31,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     str::FromStr,
     sync::Arc,
-    time::Duration as StdDuration,
+    time::{Duration as StdDuration, Instant},
 };
 use time::{Duration, OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio_postgres::{NoTls, Row, Transaction, config::SslMode};
@@ -95,10 +95,33 @@ struct AppState {
     zcash_chain: String,
     light_client_endpoint: Option<String>,
     light_client_allow_loopback: bool,
+    light_client_cache: Arc<tokio::sync::Mutex<Option<LightClientCacheEntry>>>,
     allowed_scopes: BTreeSet<String>,
 }
 
 #[derive(Clone)]
+struct LightClientCacheEntry {
+    checked_at: Instant,
+    readiness: Option<ZcashNetworkReadiness>,
+}
+
+const LIGHT_CLIENT_SUCCESS_TTL: StdDuration = StdDuration::from_secs(20);
+const LIGHT_CLIENT_FAILURE_TTL: StdDuration = StdDuration::from_secs(60);
+
+impl LightClientCacheEntry {
+    fn ttl(&self) -> StdDuration {
+        if self.readiness.is_some() {
+            LIGHT_CLIENT_SUCCESS_TTL
+        } else {
+            LIGHT_CLIENT_FAILURE_TTL
+        }
+    }
+
+    fn is_fresh(&self) -> bool {
+        self.checked_at.elapsed() < self.ttl()
+    }
+}
+
 struct VaultCipher {
     keks: BTreeMap<i32, Aes256Gcm>,
     key_version: i32,
@@ -793,7 +816,7 @@ struct InspectAddress {
     address: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct ZcashNetworkReadiness {
     configured: bool,
     network: String,
@@ -8511,22 +8534,50 @@ async fn zcash_network_readiness(
         }));
     };
 
-    let readiness = fetch_light_client_readiness(
+    let mut cache = state.light_client_cache.lock().await;
+    if let Some(entry) = cache.as_ref()
+        && entry.is_fresh()
+    {
+        return entry
+            .readiness
+            .clone()
+            .map(Json)
+            .ok_or(ApiError::Unavailable);
+    }
+
+    let fetched = fetch_light_client_readiness(
         endpoint,
         expected_network,
         state.light_client_allow_loopback,
     )
     .await
-    .map_err(|_| ApiError::Unavailable)?;
-
-    Ok(Json(ZcashNetworkReadiness {
+    .map(|readiness| ZcashNetworkReadiness {
         configured: true,
         network: readiness.network,
         synced: readiness.synced,
         block_height: Some(readiness.block_height),
         estimated_height: Some(readiness.estimated_height),
         lag: Some(readiness.lag),
-    }))
+    });
+
+    let readiness = match fetched {
+        Ok(readiness) => {
+            *cache = Some(LightClientCacheEntry {
+                checked_at: Instant::now(),
+                readiness: Some(readiness.clone()),
+            });
+            readiness
+        }
+        Err(_) => {
+            *cache = Some(LightClientCacheEntry {
+                checked_at: Instant::now(),
+                readiness: None,
+            });
+            return Err(ApiError::Unavailable);
+        }
+    };
+
+    Ok(Json(readiness))
 }
 
 async fn zcash_status(
@@ -8946,6 +8997,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         zcash_chain,
         light_client_endpoint,
         light_client_allow_loopback,
+        light_client_cache: Arc::new(tokio::sync::Mutex::new(None)),
         allowed_scopes,
     };
 
@@ -9055,6 +9107,48 @@ mod tests {
     }
 
     // Run with ZERANT_TEST_DATABASE_URL pointing at a disposable PostgreSQL database.
+    #[test]
+    fn light_client_success_cache_is_short_lived() {
+        let readiness = ZcashNetworkReadiness {
+            configured: true,
+            network: "testnet".into(),
+            synced: true,
+            block_height: Some(100),
+            estimated_height: Some(100),
+            lag: Some(0),
+        };
+        let fresh = LightClientCacheEntry {
+            checked_at: Instant::now(),
+            readiness: Some(readiness.clone()),
+        };
+        assert!(fresh.is_fresh());
+        assert_eq!(fresh.ttl(), LIGHT_CLIENT_SUCCESS_TTL);
+        assert_eq!(fresh.readiness.as_ref().unwrap().block_height, Some(100));
+
+        let stale = LightClientCacheEntry {
+            checked_at: Instant::now() - LIGHT_CLIENT_SUCCESS_TTL - StdDuration::from_millis(1),
+            readiness: Some(readiness),
+        };
+        assert!(!stale.is_fresh());
+    }
+
+    #[test]
+    fn light_client_failure_cache_backs_off_longer() {
+        let fresh_failure = LightClientCacheEntry {
+            checked_at: Instant::now(),
+            readiness: None,
+        };
+        assert!(fresh_failure.is_fresh());
+        assert_eq!(fresh_failure.ttl(), LIGHT_CLIENT_FAILURE_TTL);
+        assert!(LIGHT_CLIENT_FAILURE_TTL > LIGHT_CLIENT_SUCCESS_TTL);
+
+        let stale_failure = LightClientCacheEntry {
+            checked_at: Instant::now() - LIGHT_CLIENT_FAILURE_TTL - StdDuration::from_millis(1),
+            readiness: None,
+        };
+        assert!(!stale_failure.is_fresh());
+    }
+
     #[tokio::test]
     async fn zcash_removal_database_contract() {
         let Ok(database_url) = env::var("ZERANT_TEST_DATABASE_URL") else {
@@ -9087,6 +9181,7 @@ mod tests {
             zcash_chain: "zcash:testnet".to_owned(),
             light_client_endpoint: None,
             light_client_allow_loopback: false,
+            light_client_cache: Arc::new(tokio::sync::Mutex::new(None)),
             allowed_scopes: BTreeSet::from(["auth".to_owned()]),
         };
         let client = db_client(&db).await.unwrap();
@@ -9544,6 +9639,7 @@ mod tests {
             zcash_chain: "zcash:testnet".to_owned(),
             light_client_endpoint: None,
             light_client_allow_loopback: false,
+            light_client_cache: Arc::new(tokio::sync::Mutex::new(None)),
             allowed_scopes: BTreeSet::from(["auth".to_owned()]),
         };
         let client = db_client(&db).await.unwrap();

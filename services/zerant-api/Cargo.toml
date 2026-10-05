@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net", "sync"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { version = "1", features = ["serde", "v4"] }
