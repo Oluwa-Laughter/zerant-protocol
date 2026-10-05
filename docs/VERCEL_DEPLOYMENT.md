@@ -74,6 +74,8 @@ Do not configure `Z3_REGTEST_RPC_ROUTER_USER` or `Z3_REGTEST_RPC_ROUTER_PASSWORD
 
 ## Verification after deployment
 
+The Hobby plan permits each cron schedule only once per day. Zerant schedules retention maintenance and the operational health probe daily; the health endpoint may still be called by an authorized external monitor when more frequent checks are needed. Vercel's Hobby scheduler may invoke either job at any point within its scheduled hour. Both routes require `CRON_SECRET` and remain unavailable without it.
+
 Open:
 
 `https://<your-production-domain>/api/zerant/health`

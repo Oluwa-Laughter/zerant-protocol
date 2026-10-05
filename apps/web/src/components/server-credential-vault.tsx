@@ -66,7 +66,7 @@ export function ServerCredentialVault({
     backendAvailable
       ? initialSession
         ? "Your private credentials are ready."
-        : "Connect your Zcash identity to open your Zerant account."
+        : "Use a passkey to open your Zerant account."
       : "Zerant is temporarily unavailable.",
   );
 
@@ -112,13 +112,13 @@ export function ServerCredentialVault({
           <p className="eyebrow">Private credentials</p>
           <h1>Build trust without building a public profile.</h1>
           <p>
-            Enter Zerant with a passkey or a compatible Zcash wallet to receive trusted
-            credentials and prove only what a verifier actually needs to know.
+            Create a private Zerant account with a passkey, or sign in to an existing
+            account. Your Zcash wallet is optional and stays separate.
           </p>
         </section>
         <section className="account-access-options" aria-label="Choose how to enter Zerant">
           <PasskeyAccess onConnected={() => window.location.reload()} />
-          <div className="account-access-divider"><span>or</span></div>
+          <div className="account-access-divider"><span>Optional wallet sign-in</span></div>
           <ZcashConnect purpose="identity" onConnected={() => window.location.reload()} />
         </section>
       </main>

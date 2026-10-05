@@ -140,21 +140,21 @@ export function PasskeyAccess({ onConnected }: { onConnected?: () => void }) {
   return (
     <div className="passkey-access">
       <div>
-        <p className="eyebrow">Wallet-independent access</p>
-        <h3>Use a passkey</h3>
+        <p className="eyebrow">Recommended access</p>
+        <h3>Get started with a passkey</h3>
         <p className="small muted">
-          Create or enter Zerant without depending on a wallet-specific login feature. You can
-          still use any Zcash wallet you prefer for Zcash actions.
+          New to Zerant? Create an account with your device passkey. No Zcash wallet is needed.
+          You can connect a payment wallet later in the Zcash workspace.
         </p>
       </div>
 
       <div className="passkey-actions">
         <Button onClick={createAccount} disabled={busy}>
-          {busy ? "Working…" : "Create with passkey"}
+          {busy ? "Working…" : "Create Zerant account"}
         </Button>
 
         <div className="passkey-signin">
-          <label htmlFor="passkey-zerant-id">Already have a Zerant ID?</label>
+          <label htmlFor="passkey-zerant-id">Already have an account? Enter your Zerant ID</label>
           <input
             id="passkey-zerant-id"
             value={zerantId}
@@ -162,6 +162,7 @@ export function PasskeyAccess({ onConnected }: { onConnected?: () => void }) {
             placeholder="zr_..."
             autoComplete="username webauthn"
             spellCheck={false}
+            aria-describedby="passkey-id-help"
           />
           <Button
             variant="secondary"
@@ -170,6 +171,7 @@ export function PasskeyAccess({ onConnected }: { onConnected?: () => void }) {
           >
             Sign in with passkey
           </Button>
+          <p id="passkey-id-help" className="small muted passkey-id-help">Your ID appears in your Vault after account creation. Save it to sign in on another device. It is separate from your Zcash address.</p>
         </div>
       </div>
 
