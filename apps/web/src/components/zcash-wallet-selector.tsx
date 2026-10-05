@@ -26,7 +26,9 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
       ? "Review a Zcash payment request before opening it in your wallet"
       : "Open the complete reviewed Zcash payment request in a compatible wallet";
     if (connector.transport === "walletconnect") return "Pair a compatible remote wallet";
-    if (connector.capabilities.has("identitySigning")) return "Installed wallet · supports Zerant sign-in";
+    if (connector.capabilities.has("identitySigning")) return activeChain === "zcash:testnet"
+      ? "Installed wallet · Zerant testnet requires the Testnet Noir Wallet build"
+      : "Installed wallet · supports Zerant sign-in";
     if (connector.capabilities.has("shieldedPayment")) return "Installed wallet · supports shielded payments";
     return "Installed wallet · available for supported Zcash actions";
   }
@@ -112,7 +114,9 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
             ))}
           </div>
           {purpose === "identity" ? (
-            <p className="small muted">Payment-only wallets can open payment requests after you sign in. Portable sign-in requires a wallet that supports Zerant wallet approval.</p>
+            <p className="small muted">{activeChain === "zcash:testnet"
+              ? "Zerant is currently using Zcash testnet. Noir Wallet uses separate mainnet and testnet extensions, so sign-in requires the Testnet Noir Wallet build."
+              : "Only wallets that support Zerant's privacy-preserving identity signature are offered for sign-in."}</p>
           ) : purpose === "payment" ? (
             <p className="small muted">The portable option opens the complete validated Zcash payment request in a compatible wallet. Wallet submission is not settlement confirmation.</p>
           ) : activeChain === "zcash:testnet" ? (

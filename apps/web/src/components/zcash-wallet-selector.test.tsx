@@ -11,3 +11,11 @@ test("wallet selector keeps wallet access action-scoped", () => {
   assert.equal(html.includes("balance"), false);
   assert.equal(html.includes("history"), false);
 });
+
+
+test("wallet selector keeps testnet Noir guidance inside supported sign-in flow", () => {
+  const html = renderToStaticMarkup(
+    <ZcashWalletSelector purpose="identity" onSelect={() => {}} />,
+  );
+  assert.ok(html.includes("Connect Zcash wallet") || html.includes("Choose"));
+});

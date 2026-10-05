@@ -56,12 +56,23 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
     }
     setBusy(true);
     setStatus("Opening wallet connection…");
+    let chain: "zcash:mainnet" | "zcash:testnet" | null = null;
     try {
+      chain = await ensureZcashConfig();
       await connectConnector(connector);
       setStatus(connector.capabilities.has("identitySigning")
-        ? "Wallet available for supported actions. Zerant sign-in remains a separate approval."
+        ? "Wallet connected. Continue with the separate Zerant sign-in approval."
         : "Wallet available for supported Zcash actions. Your Zerant account remains independent of this wallet session.");
-    } catch (error) { setStatus(error instanceof Error ? error.message : "Wallet connection failed."); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (/rejected/i.test(message) && connector.walletId === "noir") {
+        setStatus(chain === "zcash:testnet"
+          ? "Noir did not authorize this connection. Zerant is on Zcash testnet, so make sure you are using the separate Testnet Noir Wallet build, unlock it, then approve this site when Noir opens."
+          : "Noir did not authorize this connection. Unlock Noir Wallet and approve this site when the account-access request opens.");
+      } else {
+        setStatus(message || "Wallet connection failed.");
+      }
+    }
     finally { setBusy(false); }
   }
 
