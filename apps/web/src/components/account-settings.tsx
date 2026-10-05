@@ -41,6 +41,21 @@ export function accountSecuritySummary(
   };
 }
 
+export function accountSecuritySummaryFromCounts(
+  passkeys: number,
+  zcashMethods: number,
+  activeSessions: number,
+): AccountSecuritySummary {
+  const accessMethods = passkeys + zcashMethods;
+  return {
+    accessMethods,
+    passkeys,
+    zcashMethods,
+    activeSessions,
+    hasRedundantAccess: accessMethods >= 2,
+  };
+}
+
 export function AccountSettings({
   authenticated,
   backendAvailable,
@@ -59,6 +74,9 @@ export function AccountSettings({
   const router = useRouter();
   const [confirmText, setConfirmText] = useState("");
   const [status, setStatus] = useState("");
+  const [passkeyCount, setPasskeyCount] = useState(initialPasskeys.length);
+  const [zcashMethodCount, setZcashMethodCount] = useState(initialZcashMethods.length);
+  const [sessionCount, setSessionCount] = useState(initialSessions.length);
 
   async function downloadExport() {
     setStatus("Preparing your Zerant data…");
@@ -141,7 +159,7 @@ export function AccountSettings({
     );
   }
 
-  const security = accountSecuritySummary(initialPasskeys, initialZcashMethods, initialSessions);
+  const security = accountSecuritySummaryFromCounts(passkeyCount, zcashMethodCount, sessionCount);
 
   return (
     <main id="main" className="account-page">
@@ -193,11 +211,11 @@ export function AccountSettings({
         ) : null}
 
 
-        <PasskeyManager initialPasskeys={initialPasskeys} />
+        <PasskeyManager initialPasskeys={initialPasskeys} onCountChange={setPasskeyCount} />
 
-        <ZcashSignInManager initialMethods={initialZcashMethods} />
+        <ZcashSignInManager initialMethods={initialZcashMethods} onCountChange={setZcashMethodCount} />
 
-        <SessionManager initialSessions={initialSessions} />
+        <SessionManager initialSessions={initialSessions} onCountChange={setSessionCount} />
 
         <article className="account-card">
           <p className="eyebrow">Export</p>

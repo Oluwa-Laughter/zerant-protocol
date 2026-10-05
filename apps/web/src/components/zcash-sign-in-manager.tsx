@@ -13,7 +13,13 @@ export type LinkedZcashMethod = {
   created_at: string;
 };
 
-export function ZcashSignInManager({ initialMethods }: { initialMethods: LinkedZcashMethod[] }) {
+export function ZcashSignInManager({
+  initialMethods,
+  onCountChange,
+}: {
+  initialMethods: LinkedZcashMethod[];
+  onCountChange?: (count: number) => void;
+}) {
   const [methods, setMethods] = useState(initialMethods);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -23,7 +29,11 @@ export function ZcashSignInManager({ initialMethods }: { initialMethods: LinkedZ
     const refreshed = await fetch("/api/zerant/account/zcash/methods", {
       credentials: "same-origin", cache: "no-store",
     });
-    if (refreshed.ok) setMethods((await refreshed.json()) as LinkedZcashMethod[]);
+    if (refreshed.ok) {
+      const next = (await refreshed.json()) as LinkedZcashMethod[];
+      setMethods(next);
+      onCountChange?.(next.length);
+    }
     return refreshed.status;
   }
 
@@ -35,8 +45,6 @@ export function ZcashSignInManager({ initialMethods }: { initialMethods: LinkedZ
         ? await removeZecAuthMethod()
         : await removeWalletMessageMethod(method.chain ?? "");
       if (response.ok) {
-        setMethods((current) => current.filter((item) =>
-          item.method !== method.method || item.chain !== method.chain));
         setPendingRemoval(null);
         const refreshStatus = await refreshMethods();
         setStatus(refreshStatus === 401

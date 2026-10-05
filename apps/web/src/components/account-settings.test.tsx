@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { accountSecuritySummary } from "./account-settings";
+import { accountSecuritySummary, accountSecuritySummaryFromCounts } from "./account-settings";
 
 test("account security summary reports access redundancy without device profiling", () => {
   const summary = accountSecuritySummary(
@@ -11,4 +11,16 @@ test("account security summary reports access redundancy without device profilin
   assert.deepEqual(summary, { accessMethods: 2, passkeys: 1, zcashMethods: 1, activeSessions: 1, hasRedundantAccess: true });
   assert.equal("device" in summary, false);
   assert.equal("location" in summary, false);
+});
+
+
+test("count-based security summary stays consistent after client updates", () => {
+  assert.deepEqual(
+    accountSecuritySummaryFromCounts(2, 0, 1),
+    { accessMethods: 2, passkeys: 2, zcashMethods: 0, activeSessions: 1, hasRedundantAccess: true },
+  );
+  assert.deepEqual(
+    accountSecuritySummaryFromCounts(1, 0, 1),
+    { accessMethods: 1, passkeys: 1, zcashMethods: 0, activeSessions: 1, hasRedundantAccess: false },
+  );
 });

@@ -36,8 +36,10 @@ function passkeyError(error: unknown): string {
 
 export function PasskeyManager({
   initialPasskeys,
+  onCountChange,
 }: {
   initialPasskeys: PasskeyView[];
+  onCountChange?: (count: number) => void;
 }) {
   const [passkeys, setPasskeys] = useState(initialPasskeys);
   const [status, setStatus] = useState("");
@@ -92,7 +94,11 @@ export function PasskeyManager({
       }
 
       const created = (await finishResponse.json()) as PasskeyView;
-      setPasskeys((current) => [...current, created]);
+      setPasskeys((current) => {
+        const next = [...current, created];
+        onCountChange?.(next.length);
+        return next;
+      });
       setStatus("Passkey added to your Zerant account.");
     } catch (error) {
       setStatus(passkeyError(error));
@@ -123,7 +129,11 @@ export function PasskeyManager({
         return;
       }
 
-      setPasskeys((current) => current.filter((item) => item.id !== id));
+      setPasskeys((current) => {
+        const next = current.filter((item) => item.id !== id);
+        onCountChange?.(next.length);
+        return next;
+      });
       setPendingRemoval(null);
       setStatus("Passkey removed.");
     } finally {

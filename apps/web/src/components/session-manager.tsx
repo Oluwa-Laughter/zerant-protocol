@@ -21,8 +21,10 @@ function accessLabel(method: string): string {
 
 export function SessionManager({
   initialSessions,
+  onCountChange,
 }: {
   initialSessions: AccountSessionView[];
+  onCountChange?: (count: number) => void;
 }) {
   const router = useRouter();
   const [sessions, setSessions] = useState(initialSessions);
@@ -58,7 +60,11 @@ export function SessionManager({
         return;
       }
 
-      setSessions((current) => current.filter((item) => item.id !== session.id));
+      setSessions((current) => {
+        const next = current.filter((item) => item.id !== session.id);
+        onCountChange?.(next.length);
+        return next;
+      });
       setStatus("Session signed out.");
     } finally {
       setBusy(false);
@@ -83,7 +89,11 @@ export function SessionManager({
         return;
       }
 
-      setSessions((current) => current.filter((item) => item.current));
+      setSessions((current) => {
+        const next = current.filter((item) => item.current);
+        onCountChange?.(next.length);
+        return next;
+      });
       setStatus("All other sessions have been signed out.");
     } finally {
       setBusy(false);
