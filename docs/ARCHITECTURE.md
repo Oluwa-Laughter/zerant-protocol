@@ -20,6 +20,16 @@ Issuer governance actions are written to an append-only `issuer_events` ledger i
 
 ## Load-bearing decisions
 
+### Explicit Noir connection gesture (2026-10-05)
+
+The user-initiated Noir connection calls `zcash_requestAccounts` directly. Silent
+`zcash_getAccounts` is reserved for restoring an existing site authorization; a
+preapproval rejection from that read must not block the wallet's approval prompt.
+Connection grants only the wallet capabilities the user approves and never grants
+Zerant sign-in or spending consent. No wallet address, balance, history, or key is
+persisted by this change. Testnet settlement remains unsupported without an
+authorized named-transaction observer.
+
 ### Discoverable passkey sign-in (2026-10-05)
 
 Zerant may offer account sign-in without typing a Zerant ID when the device supplies a discoverable passkey. The WebAuthn challenge is generated and persisted by the service for five minutes using a distinct ceremony kind and a one-time HttpOnly attempt cookie. Its account UUID is a nil sentinel until the authenticator response identifies an account UUID and credential ID; the service looks up that exact account and stored credential, then validates the signed assertion with `webauthn-rs` before creating a session. The challenge is locked and consumed transactionally, and credential counter updates use the same path as account-selected passkey login. The existing Zerant-ID sign-in remains available for non-discoverable passkeys. This access change grants no wallet or payment authority and does not change credential subject binding, consent, key custody, revocation, or verifier replay handling. The service stores no additional identity or device profile data beyond the existing passkey record and short-lived ceremony.

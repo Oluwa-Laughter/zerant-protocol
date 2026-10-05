@@ -30,9 +30,11 @@ test("dedicated Zcash workspace owns wallet and payment actions", () => {
   assert.ok(html.includes("Zcash workspace"));
   assert.ok(html.includes('id="zcash-wallet-actions"'));
   assert.ok(html.includes("Prepare, review, then approve in your wallet."));
-  assert.ok(html.includes("Submission is not settlement."));
+  assert.ok(html.includes("Testnet settlement verification is not available yet"));
   assert.ok(html.includes("Prepared"));
-  assert.ok(html.includes("Confirmed"));
+  assert.ok(html.includes("Submitted · pending"));
+  assert.equal(html.includes(">Confirmed<"), false);
+  assert.ok(html.includes("Pasting a wallet address does not connect a wallet"));
 });
 
 test("signed-out Zcash workspace directs users to account access", () => {

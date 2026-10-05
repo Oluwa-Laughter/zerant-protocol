@@ -21,8 +21,8 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
       <section className="app-heading workspace-intro">
         <div>
           <p className="eyebrow">Zcash workspace</p>
-          <h1>Use Zcash without turning your wallet into your identity.</h1>
-          <p>Prepare private payments, validate destinations, and connect a wallet only for the action you choose.</p>
+          <h1>Private payments, separate from your Zerant ID.</h1>
+          <p>Your passkey opens Zerant. A Zcash wallet holds funds and approves payments. Connect one only when you choose to pay.</p>
         </div>
         <span className="pill">{authenticated ? "Zerant account connected" : "Sign-in required"}</span>
       </section>
@@ -45,11 +45,11 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         </article>
 
         <article className="workspace-card">
-          <p className="eyebrow">Payment lifecycle</p>
-          <h2>Submission is not settlement.</h2>
-          <p className="muted">After a wallet submits a transaction, Zerant keeps it pending until supported network evidence can confirm settlement.</p>
-          <div className="zcash-lifecycle" aria-label="Zcash payment lifecycle">
-            <span>Prepared</span><span>Submitted</span><span>Observed</span><span>Confirmed</span>
+          <p className="eyebrow">Payment tracking</p>
+          <h2>Review first. Approve in your wallet.</h2>
+          <p className="muted">Zerant can save a prepared payment and the transaction ID your wallet returns. Testnet settlement verification is not available yet, so a submitted payment stays pending here.</p>
+          <div className="zcash-lifecycle" aria-label="Available Zcash payment states">
+            <span>Prepared</span><span>Submitted · pending</span>
           </div>
         </article>
       </section>
@@ -67,10 +67,11 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         <section id="zcash-wallet-actions" className="workspace-wallet" aria-label="Zcash wallet access">
           <div className="workspace-wallet-heading">
             <p className="eyebrow">Wallet access</p>
-            <h2>Connect only when you need a wallet action.</h2>
-            <p className="muted">The wallet remains responsible for approval and spending authority. Zerant never treats connection as consent to send funds.</p>
+            <h2>Use your own Zcash wallet to pay.</h2>
+            <p className="muted">Zerant does not contain a wallet or hold your funds. On desktop Chrome with the Testnet Noir extension, choose Noir and approve the site in its popup. Connecting does not approve a payment.</p>
           </div>
           <ZcashConnect purpose="connection" />
+          <p className="small muted wallet-compatibility-note">Pasting a wallet address does not connect a wallet. A destination address belongs in the payment request below. If Noir is unavailable, you can review and copy a payment request for a compatible wallet app.</p>
         </section>
       )}
 

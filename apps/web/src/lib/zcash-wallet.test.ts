@@ -140,7 +140,7 @@ function fakeWallet(overrides: Record<string, unknown> = {}): NoirWalletProvider
   } as unknown as NoirWalletProvider;
 }
 
-test("one injected adapter can restore an existing authorization", async () => {
+test("one injected adapter restores an existing authorization without prompting", async () => {
   let connectCalls = 0;
   const wallet = fakeWallet({
     getAccounts: async () => ({
@@ -155,15 +155,18 @@ test("one injected adapter can restore an existing authorization", async () => {
   });
 
   const adapter = new NoirWalletAdapter(wallet);
-  const connection = await adapter.ensureConnection();
+  const connection = await adapter.existingConnection();
+  assert.ok(connection);
   assert.equal(connection.shieldedAddress, "u1-existing");
   assert.equal(connection.providerId, "noir");
   assert.equal(connectCalls, 0);
 });
 
-test("one injected adapter requests a new connection only when needed", async () => {
+test("an explicit Noir connect opens approval even when silent lookup would reject", async () => {
   let connectCalls = 0;
+  let lookupCalls = 0;
   const wallet = fakeWallet({
+    getAccounts: async () => { lookupCalls += 1; throw new Error("Not authorized"); },
     connect: async () => {
       connectCalls += 1;
       return {
@@ -178,6 +181,7 @@ test("one injected adapter requests a new connection only when needed", async ()
   const connection = await adapter.ensureConnection();
   assert.equal(connection.shieldedAddress, "u1-connected");
   assert.equal(connectCalls, 1);
+  assert.equal(lookupCalls, 0);
 });
 
 test("enhanced injected adapter advertises and uses supported capabilities", async () => {

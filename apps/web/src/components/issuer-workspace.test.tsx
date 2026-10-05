@@ -43,3 +43,25 @@ test("auditor workspace is read-only", () => {
   assert.equal(html.includes("Send invitation"), false);
   assert.equal(html.includes("Transfer ownership"), false);
 });
+
+test("new organization explains who receives a credential and what a wallet does", () => {
+  const html = renderToStaticMarkup(
+    <IssuerWorkspace
+      authenticated
+      backendAvailable
+      currentZerantId="zr_aaaaaaaaaaaaaaaaaaaaaaaa"
+      initialProfile={null}
+      initialIssued={[]}
+      initialSchemas={[]}
+      initialKeys={[]}
+      initialTeam={[]}
+      initialTeamInvitations={[]}
+      initialMyInvitations={[]}
+      initialActivity={{ items: [], next_cursor: null }}
+    />,
+  );
+
+  assert.ok(html.includes("Define a credential type"));
+  assert.ok(html.includes("Ask for their Zerant ID"));
+  assert.ok(html.includes("No wallet address is needed"));
+});

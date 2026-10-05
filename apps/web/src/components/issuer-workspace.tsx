@@ -598,11 +598,22 @@ export function IssuerWorkspace({
       <main id="main" className="issuer-page">
         <section className="issuer-hero">
           <p className="eyebrow">For issuers</p>
-          <h1>Become a trusted issuer on Zerant.</h1>
+          <h1>Issue credentials as an organization.</h1>
           <p>
-            Create an issuer profile for your organization, community, team or project, or join
-            an organization that has invited your Zerant ID.
+            Create a profile for your organization, community, team or project. An authorized
+            team member can then send a credential to someone using their Zerant ID. No wallet
+            address is needed.
           </p>
+        </section>
+
+        <section className="issuer-start-steps" aria-label="How organization issuance works">
+          <h2>How issuing works</h2>
+          <ol>
+            <li><strong>Set up your organization.</strong> Name the group that stands behind each claim.</li>
+            <li><strong>Define a credential type.</strong> Choose the fact you can substantiate, such as membership or completion.</li>
+            <li><strong>Send it to a holder.</strong> Ask for their Zerant ID, check the evidence, and issue the credential to their private vault.</li>
+          </ol>
+          <p className="small muted">The holder later approves each verification request. Issuing a credential does not publish it or grant the organization access to a wallet.</p>
         </section>
 
         {myInvitations.length ? (
@@ -1052,6 +1063,7 @@ export function IssuerWorkspace({
         <article className="issuer-panel">
           <p className="eyebrow">Issue credential</p>
           <h2>Send a trusted credential.</h2>
+          <p className="small muted">First confirm the recipient earned the claim. Ask them to copy their Zerant ID from their private credential vault. A Zcash payment address cannot receive a credential.</p>
 
           <label htmlFor="holder-id">Recipient Zerant ID</label>
           <input
@@ -1060,7 +1072,9 @@ export function IssuerWorkspace({
             onChange={(event) => setHolderId(event.target.value)}
             placeholder="zr_..."
             disabled={!canIssue}
+            aria-describedby="holder-id-help"
           />
+          <p id="holder-id-help" className="small muted">This delivers to a Zerant account. It does not connect or identify a Zcash wallet.</p>
 
           <label htmlFor="credential-type">Credential type</label>
           <select

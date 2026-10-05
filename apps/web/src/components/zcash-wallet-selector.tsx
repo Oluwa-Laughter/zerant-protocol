@@ -98,7 +98,7 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
             {connectors.length === 0 && purpose === "identity" ? (
               <div className="wallet-selector-empty">
                 <strong>No supported Zcash sign-in wallet detected.</strong>
-                <p className="small muted">On desktop, unlock Noir Wallet and reload this page. On phones, use a passkey for Zerant access until a supported mobile Zcash sign-in wallet is available.</p>
+                <p className="small muted">On desktop Chrome, enable and unlock the Testnet Noir Wallet extension, allow it on this site, then reopen this menu. You can still use your passkey to access Zerant.</p>
               </div>
             ) : null}
             {connectors.map((connector, index) => (
@@ -120,7 +120,7 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
           ) : purpose === "payment" ? (
             <p className="small muted">The portable option opens the complete validated Zcash payment request in a compatible wallet. Wallet submission is not settlement confirmation.</p>
           ) : activeChain === "zcash:testnet" ? (
-            <p className="small muted">Testnet uses installed-wallet actions and portable payment handoff. Remote wallet pairing is intentionally reserved for supported mainnet wallets.</p>
+            <p className="small muted">Testnet uses the Testnet Noir extension for direct actions. A payment handoff opens a reviewed request in a compatible wallet app; it does not create a live connection.</p>
           ) : (
             <p className="small muted">Choose an installed wallet, a portable payment handoff, or remote wallet pairing when available.</p>
           )}

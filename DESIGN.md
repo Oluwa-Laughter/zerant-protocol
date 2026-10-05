@@ -54,6 +54,12 @@ Colors use CSS variables in `apps/web/src/app/globals.css`. System preference se
 
 Typography: Arial/Helvetica/system sans for reading and headings; SFMono-Regular/Consolas/monospace for identifiers and small labels. No remote font fetching. Body 16px with 1.6 line height; supporting text 13–15px; labels 10–11px. Hero scales 50–94px on desktop, 43–72px on mobile. Section headings scale 32–52px. Headings use restrained negative tracking and medium weight; paragraphs remain within 65 characters where practical.
 
+Authenticated workspace typography uses a denser reading hierarchy: page headings
+36–60px on desktop and 32–43px on mobile, supporting text at least 14px, and
+form labels at least 14px. Small uppercase navigation labels remain 11–12px.
+This keeps account, issuer, verifier, consent, and payment instructions legible
+without turning operational pages into marketing heroes.
+
 Layout: maximum 1280px outer container; horizontal gutters 48/30/20px; section spacing 84px desktop, 50px mobile. Surfaces use 4–10px corner radii, fine borders and limited elevation. Controls target at least 44px height and use a visible 3px focus outline. Tabs implement arrow/Home/End navigation. CSS transitions are limited to button opacity; reduced motion disables transitions and smooth scrolling.
 
 The provisional geometric mark combines a Z traversal with open corner boundaries: an aperture rather than a shield or lock. SVG mark, path-based wordmark lockup and app icon share the geometry. Final logo review is pending. M1A status indicators always include text, and origin labels explicitly say they are illustrative and unauthenticated. UI approval does not produce or transmit evidence.

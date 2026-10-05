@@ -233,3 +233,37 @@
 @media (max-width: 700px) {
   .zcash-lifecycle { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Workspace reading scale: calm headings, readable help, and stable mobile wraps. */
+.product-shell .app-heading h1,
+.product-shell .vault-hero h1,
+.product-shell .issuer-hero h1,
+.product-shell .verifier-hero h1 {
+  max-width: 18ch;
+  font-size: clamp(2.25rem, 4vw, 3.75rem);
+  line-height: 1.08;
+  letter-spacing: -.045em;
+}
+.product-shell .small { font-size: .875rem; line-height: 1.55; }
+.product-shell .eyebrow { font-size: .75rem; letter-spacing: .055em; }
+.product-shell .product-nav-label { font-size: .7rem; }
+.product-shell .issuer-panel label,
+.product-shell .request-review-panel label,
+.product-shell .vault-form label { font-size: .875rem; }
+.product-shell .workspace-card h2,
+.product-shell .issuer-panel h2 { line-height: 1.18; }
+.product-shell .workspace-wallet-heading > p:last-child { font-size: 1rem; }
+.zcash-lifecycle { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.issuer-start-steps { max-width: 760px; margin-top: 30px; padding: 24px 28px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.issuer-start-steps h2 { font-size: 1.4rem; }
+.issuer-start-steps ol { margin: 16px 0; padding-left: 1.3rem; }
+.issuer-start-steps li { padding: 4px 0; }
+.issuer-start-steps li strong { font-weight: 650; }
+.issuer-panel #holder-id-help { margin-top: -7px; }
+@media (max-width: 620px) {
+  .product-shell .app-heading h1,
+  .product-shell .vault-hero h1,
+  .product-shell .issuer-hero h1,
+  .product-shell .verifier-hero h1 { font-size: clamp(2rem, 9vw, 2.7rem); }
+  .issuer-start-steps { padding: 22px; }
+}

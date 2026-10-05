@@ -187,7 +187,10 @@ export class NoirWalletAdapter implements ZcashWalletAdapter {
   }
 
   async ensureConnection(): Promise<ConnectedZcashWallet> {
-    return (await this.existingConnection()) ?? this.connect();
+    // A user click is the authorization gesture. Some extension versions reject
+    // zcash_getAccounts before approval instead of returning null, which must not
+    // prevent the zcash_requestAccounts approval prompt from opening.
+    return this.connect();
   }
 
   async signIdentityChallenge(message: string): Promise<WalletMessageSignature> {

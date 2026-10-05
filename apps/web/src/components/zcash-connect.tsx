@@ -57,8 +57,16 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
     setBusy(true);
     setStatus("Opening wallet connection…");
     let chain: "zcash:mainnet" | "zcash:testnet" | null = null;
+    let approvalHint: number | undefined;
     try {
       chain = await ensureZcashConfig();
+      if (connector.walletId === "noir") {
+        approvalHint = window.setTimeout(() => {
+          setStatus(chain === "zcash:testnet"
+            ? "Still waiting for Noir. Open and unlock the Testnet Noir extension in Chrome, then check for its site approval prompt. Your Zerant account remains usable without this connection."
+            : "Still waiting for Noir. Open and unlock the Noir extension in Chrome, then check for its site approval prompt. Your Zerant account remains usable without this connection.");
+        }, 8000);
+      }
       await connectConnector(connector);
       setStatus(connector.capabilities.has("identitySigning")
         ? "Wallet connected. Continue with the separate Zerant sign-in approval."
@@ -73,7 +81,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
         setStatus(message || "Wallet connection failed.");
       }
     }
-    finally { setBusy(false); }
+    finally { if (approvalHint !== undefined) window.clearTimeout(approvalHint); setBusy(false); }
   }
 
   async function signIn() {
@@ -111,7 +119,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
   return <div className="zcash-connect">
     <div className="zcash-connect-intro">
       <h2>{allowSignIn ? "Sign in with a Zcash wallet" : "Use a Zcash wallet"}</h2>
-      <p className="muted">{allowSignIn ? "On desktop, Zerant signs in through a detected Noir Wallet using a privacy-preserving identity key. A payment address, balance, or history is never your Zerant identity." : "Wallet access is optional. Use an installed wallet when available, or hand a reviewed payment request to a compatible Zcash wallet. Your credentials and Zerant ID do not depend on a wallet session."}</p>
+      <p className="muted">{allowSignIn ? "On desktop, Zerant signs in through a detected Noir Wallet using a privacy-preserving identity key. A payment address, balance, or history is never your Zerant identity." : "Choose Noir to approve this site for wallet actions. You can also hand a reviewed payment request to a compatible wallet app. Your Zerant account and credentials work without a wallet connection."}</p>
     </div>
     <ZcashWalletSelector purpose={purpose} busy={busy} hideAuthHandoff={!allowSignIn} triggerLabel={allowSignIn ? "Choose sign-in wallet" : "Choose wallet option"} onSelect={(connector) => void choose(connector)} />
     {handoffUri ? <div className="wallet-handoff zcash-connect-handoff">
