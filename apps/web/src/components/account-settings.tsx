@@ -18,6 +18,29 @@ export type AccountSummary = {
   can_delete: boolean;
 };
 
+export type AccountSecuritySummary = {
+  accessMethods: number;
+  passkeys: number;
+  zcashMethods: number;
+  activeSessions: number;
+  hasRedundantAccess: boolean;
+};
+
+export function accountSecuritySummary(
+  passkeys: PasskeyView[],
+  zcashMethods: LinkedZcashMethod[],
+  sessions: AccountSessionView[],
+): AccountSecuritySummary {
+  const accessMethods = passkeys.length + zcashMethods.length;
+  return {
+    accessMethods,
+    passkeys: passkeys.length,
+    zcashMethods: zcashMethods.length,
+    activeSessions: sessions.length,
+    hasRedundantAccess: accessMethods >= 2,
+  };
+}
+
 export function AccountSettings({
   authenticated,
   backendAvailable,
@@ -118,6 +141,8 @@ export function AccountSettings({
     );
   }
 
+  const security = accountSecuritySummary(initialPasskeys, initialZcashMethods, initialSessions);
+
   return (
     <main id="main" className="account-page">
       <section className="account-hero">
@@ -127,6 +152,20 @@ export function AccountSettings({
           Export your Zerant data whenever you want. Personal accounts can also be permanently
           deleted without contacting support.
         </p>
+      </section>
+
+      <section className="account-security-overview" aria-label="Account security overview">
+        <div className="account-security-heading">
+          <div><p className="eyebrow">Access overview</p><h2>Know how your Zerant account can be opened.</h2></div>
+          <span className={security.hasRedundantAccess ? "workspace-state ready" : "workspace-state"}><span />{security.hasRedundantAccess ? "Multiple sign-in methods" : "Single sign-in method"}</span>
+        </div>
+        <div className="account-security-grid">
+          <div><strong>{security.accessMethods}</strong><span>sign-in method{security.accessMethods === 1 ? "" : "s"}</span></div>
+          <div><strong>{security.passkeys}</strong><span>passkey{security.passkeys === 1 ? "" : "s"}</span></div>
+          <div><strong>{security.zcashMethods}</strong><span>Zcash sign-in method{security.zcashMethods === 1 ? "" : "s"}</span></div>
+          <div><strong>{security.activeSessions}</strong><span>active session{security.activeSessions === 1 ? "" : "s"}</span></div>
+        </div>
+        <p className="small muted">Zerant does not build a device, location, payment-address, balance, or wallet-history profile from these access methods.</p>
       </section>
 
       <section className="account-grid">

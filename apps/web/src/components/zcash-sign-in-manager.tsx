@@ -17,6 +17,7 @@ export function ZcashSignInManager({ initialMethods }: { initialMethods: LinkedZ
   const [methods, setMethods] = useState(initialMethods);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
 
   async function refreshMethods() {
     const refreshed = await fetch("/api/zerant/account/zcash/methods", {
@@ -36,6 +37,7 @@ export function ZcashSignInManager({ initialMethods }: { initialMethods: LinkedZ
       if (response.ok) {
         setMethods((current) => current.filter((item) =>
           item.method !== method.method || item.chain !== method.chain));
+        setPendingRemoval(null);
         const refreshStatus = await refreshMethods();
         setStatus(refreshStatus === 401
           ? "Removed. Sign in again with another method."
@@ -142,7 +144,17 @@ export function ZcashSignInManager({ initialMethods }: { initialMethods: LinkedZ
               {method.method === "zecauth" ? "ZecAuth" : "Wallet message"}
               {method.chain ? ` · ${method.chain.replace("zcash:", "")}` : ""}
               {` · added ${new Date(method.created_at).toLocaleDateString()}`}
-              <Button variant="secondary" onClick={() => removeMethod(method)} disabled={busy} aria-label={`Remove ${method.method === "zecauth" ? "ZecAuth" : `${method.chain?.replace("zcash:", "")} wallet message`} sign-in`}>Remove</Button>
+              {pendingRemoval === `${method.method}:${method.chain ?? ""}` ? (
+                <div className="account-access-confirm">
+                  <span className="small muted">Remove this sign-in method?</span>
+                  <div className="vault-actions wrap">
+                    <Button variant="secondary" onClick={() => void removeMethod(method)} disabled={busy}>Confirm</Button>
+                    <Button variant="secondary" onClick={() => setPendingRemoval(null)} disabled={busy}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <Button variant="secondary" onClick={() => setPendingRemoval(`${method.method}:${method.chain ?? ""}`)} disabled={busy} aria-label={`Remove ${method.method === "zecauth" ? "ZecAuth" : `${method.chain?.replace("zcash:", "")} wallet message`} sign-in`}>Remove</Button>
+              )}
             </li>
           ))}
         </ul>

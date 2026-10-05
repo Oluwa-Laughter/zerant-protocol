@@ -42,6 +42,7 @@ export function PasskeyManager({
   const [passkeys, setPasskeys] = useState(initialPasskeys);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
 
   async function addPasskey() {
     if (busy) return;
@@ -123,6 +124,7 @@ export function PasskeyManager({
       }
 
       setPasskeys((current) => current.filter((item) => item.id !== id));
+      setPendingRemoval(null);
       setStatus("Passkey removed.");
     } finally {
       setBusy(false);
@@ -159,13 +161,17 @@ export function PasskeyManager({
                     : " · not used yet"}
                 </span>
               </div>
-              <Button
-                variant="secondary"
-                disabled={busy}
-                onClick={() => removePasskey(passkey.id)}
-              >
-                Remove
-              </Button>
+              {pendingRemoval === passkey.id ? (
+                <div className="account-access-confirm">
+                  <span className="small muted">Remove this passkey?</span>
+                  <div className="vault-actions wrap">
+                    <Button variant="secondary" disabled={busy} onClick={() => void removePasskey(passkey.id)}>Confirm</Button>
+                    <Button variant="secondary" disabled={busy} onClick={() => setPendingRemoval(null)}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <Button variant="secondary" disabled={busy} onClick={() => setPendingRemoval(passkey.id)}>Remove</Button>
+              )}
             </div>
           ))
         ) : (
