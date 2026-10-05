@@ -65,6 +65,8 @@ Authentication follows the ZecAuth v1 draft model: a purpose-specific RedPallas 
 
 Zcash sign-in linking stores only a verified authentication public key under the existing account, never a payment address, balance, transaction history, seed or spending key. Account settings expose only method, stored chain when applicable, and creation time. The service can correlate a linked Zcash sign-in key with that Zerant account; linking does not provide anonymity or unlinkability. Link challenges, attempt-token hashes, pending verified keys, and account/session bindings remain server-side and expire after five minutes; old rows follow one-day challenge cleanup. The wallet-app callback receives no account or session identifier, and only the original recent browser session may finish linking.
 
+Linked Zcash authentication methods can be removed after recent sign-in, provided another access method remains. Removal deletes the selected authentication identity and all Zcash-authenticated sessions because the session record does not distinguish which Zcash key created it. Passkey sessions and account content remain. Rotation is explicit removal followed by linking a new identity; no key or chain is silently replaced. This does not affect wallet spending authority or delete a wallet account.
+
 Production deployment should place the KEK in a managed KMS/HSM rather than a long-lived raw environment value. Z3/Zallet credentials, FROST shares, Zcash seed phrases and spending keys remain outside the credential store.
 
 Revocation status is visible to the credential holder and issuing organization. A verifier learns only whether an approved proof is valid; Zerant does not expose a holder-wide revocation inventory to generic verifiers.
@@ -78,3 +80,5 @@ Routine issuer-key rotation does not change holder identifiers or expose additio
 ## Verifier compromise recovery
 
 Routine verifier-key rotation does not reveal additional holder data and does not change already-issued credentials. A compromise replacement expires pending requests signed by the affected verifier key before a holder can approve them. This prevents a known-compromised request-signing key from continuing to authorize new disclosures.
+
+Browser wallet connection exposes only transient provider/session state to the page. Zerant does not upload a connected payment address, query wallet balances/history for sign-in, or derive account identity from an address. A WalletConnect pairing uses the configured relay and can reveal connection metadata to that transport; an explicit transparent transfer reveals transaction details on chain. ZIP-321 handoff transfers the complete payment request to the chosen wallet. None of these paths establishes anonymity or unlinkability.

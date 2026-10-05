@@ -31,6 +31,8 @@ An existing account starts Zcash sign-in linking with `POST /v1/account/zcash/ch
 
 Account settings list only the linked method, chain where stored, and creation time. The account UI offers both installed-wallet linking and a portable handoff for supported ZecAuth wallet apps, followed by a manual approval check in the initiating browser. The normal unauthenticated wallet sign-in routes continue to create or resolve accounts as before.
 
+Linked Zcash sign-in methods can be removed with `DELETE /v1/account/zcash/zecauth` or `DELETE /v1/account/zcash/wallet/{testnet|mainnet}`. A session created within the last 15 minutes is required. The service refuses removal of a missing method or the last remaining access method, counting passkeys, the ZecAuth identity, and each chain-specific wallet-message identity. Removal signs out every Zcash-authenticated session on the account because sessions do not identify the particular Zcash key used to sign in; passkey sessions remain active. If the current session is Zcash-authenticated, its cookie is cleared. To rotate an authentication key, retain another access method, remove the old method, then explicitly link the new one. This does not revoke a wallet spending key or delete a wallet account.
+
 ## Privacy boundary
 
 Passkeys are an account-access mechanism only. They are not credentials, reputation signals, payment identities, or proof inputs. Zerant does not expose WebAuthn credential IDs through the customer UI or verifier APIs.

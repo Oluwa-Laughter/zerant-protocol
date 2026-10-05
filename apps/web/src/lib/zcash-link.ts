@@ -1,4 +1,18 @@
-import { buildZecAuthWalletUri, type InjectedZcashWalletAdapter, type ZecAuthWalletChallenge } from "./zcash-wallet";
+import { buildZecAuthWalletUri, type ZecAuthWalletChallenge, type WalletMessageSignature } from "./zcash-wallet";
+
+export async function removeZecAuthMethod(request: typeof fetch = fetch): Promise<Response> {
+  return request("/api/zerant/account/zcash/zecauth", {
+    method: "DELETE", credentials: "same-origin", cache: "no-store",
+  });
+}
+
+export async function removeWalletMessageMethod(chain: string, request: typeof fetch = fetch): Promise<Response> {
+  const network = chain === "zcash:testnet" ? "testnet" : chain === "zcash:mainnet" ? "mainnet" : null;
+  if (!network) throw new Error("Unsupported Zcash network.");
+  return request(`/api/zerant/account/zcash/wallet/${network}`, {
+    method: "DELETE", credentials: "same-origin", cache: "no-store",
+  });
+}
 
 export async function startWalletAppLink(origin: string, request: typeof fetch = fetch): Promise<string> {
   const response = await request("/api/zerant/account/zcash/challenge", {
@@ -16,7 +30,7 @@ export async function completeWalletAppLink(request: typeof fetch = fetch): Prom
 }
 
 export async function submitZcashLink(
-  wallet: InjectedZcashWalletAdapter,
+  wallet: { signIdentityChallenge?: (message: string) => Promise<WalletMessageSignature> },
   request: typeof fetch = fetch,
 ): Promise<{ stage: "challenge" | "verify"; response: Response }> {
   if (!wallet.signIdentityChallenge) throw new Error("Wallet cannot sign identity challenges.");

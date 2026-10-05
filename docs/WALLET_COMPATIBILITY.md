@@ -34,6 +34,8 @@ Some Zcash wallets may understand Zcash addresses and ZIP-321 payments but not Z
 
 Passkeys now provide wallet-independent Zerant account entry, so holders can use an account even when their wallet has no authentication extension. An authenticated holder can link supported Zcash sign-in to that same account. The account UI supports installed-wallet linking and a portable link handoff for supported ZecAuth wallet apps. The initiating browser checks approval and finalizes the link with its original recent session.
 
+Account settings also allow removal of a linked ZecAuth or chain-specific wallet-message authentication method after recent sign-in, as long as another access method remains. Removal revokes all Zcash-authenticated Zerant sessions because they are not associated with individual keys; passkey sessions remain. Key rotation is explicit removal followed by linking. This affects Zerant sign-in only, not wallet spending authority or the wallet account.
+
 ## Security rules
 
 - Never use a payment address as the Zerant account identity.
@@ -48,3 +50,26 @@ Passkeys now provide wallet-independent Zerant account entry, so holders can use
 Implement `InjectedZcashWalletAdapter` in `apps/web/src/lib/zcash-wallet.ts` or a dedicated adapter module, advertise only the capabilities actually supported, add the adapter factory to `getInjectedZcashWallets()`, and add conformance tests.
 
 No issuer, credential, verifier, disclosure or Zcash-native Rust code should need to change merely to add a wallet adapter.
+
+## Current connection router
+
+The product has one **Connect Zcash wallet** entry point. Its chooser lists detected installed providers, an optional WalletConnect-compatible session, ZecAuth wallet-app sign-in, and portable ZIP-321 payment handoff. "Supported Zcash wallet" means support for a specific capability, not membership in a brand allowlist. There is no universal Zcash dApp connector today. New injected providers require an explicit safe detector and adapter; Zerant does not scan arbitrary browser globals.
+
+WalletConnect requires `NEXT_PUBLIC_ZCASH_WALLETCONNECT_PROJECT_ID` and a wallet implementing the Zcash `bip122` namespace on mainnet. Before pairing it is offered only for connection, with no payment or identity capability. The session asks for `zcash_getAddress`; `zcash_transfer` is optional. Direct transparent payment appears only after an approved session advertises that method and a transparent account, and disappears on disconnect. Current reference wallets do not expose Zerant identity signing or shielded payment through WalletConnect. A remote session therefore does not sign in to Zerant. A wallet with only ZIP-321 support can still receive the exact payment request, but it cannot maintain a live dApp session through that URI.
+
+ZecAuth is an authentication-specific handoff, not the definition of wallet support. A browser wallet may authenticate only if it provides the reviewed derived-signing method. Neither wallet connection nor a payment address creates an account identity. Direct payment is limited to exact simple requests; all richer requests use canonical ZIP-321 handoff. Wallet submission remains separate from settlement verification.
+
+## Evidence-based wallet matrix (2026-10-05)
+
+`Yes` means the cited provider or protocol documents the capability and Zerant has a corresponding implementation or bounded test. `Unknown` means wallet-side support was not verified. A portable format being available in Zerant does not establish that a named wallet handles it.
+
+| Wallet / route | Injected identity signing | ZecAuth auth handoff | WalletConnect Zcash transport | ZIP-321 payment URI | Direct shielded payment | Restore connection |
+| --- | --- | --- | --- | --- | --- | --- |
+| Noir injected provider | Yes, derived mode | Unknown | Separate optional reference transport | Unknown | Yes, `sendTransaction` shielded funding | Yes, `getAccounts` |
+| Noir WalletConnect reference | No | Unknown | Yes, mainnet `bip122` with limited methods | Unknown | No | Yes, approved session |
+| NozyWallet extension | Unknown; contract not verified for Zerant | Unknown | Unknown | Unknown | Unknown | Unknown |
+| ZecAuth-compatible wallet (unbranded) | N/A | Yes, if wallet implements draft | N/A | Unknown | Unknown | N/A |
+| ZIP-321-compatible wallet (unbranded) | N/A | N/A | N/A | Yes, if wallet implements ZIP 321 | N/A | N/A |
+| Zodl/Zashi, YWallet, Unstoppable | Unknown | Unknown | Unknown | Unknown | Unknown | Unknown |
+
+Sources: [Noir adapter/provider behavior](https://github.com/NoirWallet/zcash-wallet-adapter/blob/main/README.md), [Nozy extension status](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/browser-extension/README.md), [ZecAuth v1 draft](https://github.com/ZecHub/zechub/blob/main/Hackathon/2026/ZecAuth/PROTOCOL.md), and [ZIP 321](https://zips.z.cash/zip-0321). See [research notes](research/ZCASH_WALLET_INTEROP_2026.md) for scope and limitations.

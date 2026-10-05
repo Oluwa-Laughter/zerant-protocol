@@ -1,7 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { InjectedZcashWalletAdapter } from "./zcash-wallet";
-import { completeWalletAppLink, startWalletAppLink, submitZcashLink } from "./zcash-link";
+import { completeWalletAppLink, removeWalletMessageMethod, removeZecAuthMethod, startWalletAppLink, submitZcashLink } from "./zcash-link";
+
+test("Zcash removal uses only dedicated DELETE routes without identity material", async () => {
+  const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+  const request = (async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init });
+    return new Response(null, { status: 204 });
+  }) as typeof fetch;
+  await removeZecAuthMethod(request);
+  await removeWalletMessageMethod("zcash:testnet", request);
+  await removeWalletMessageMethod("zcash:mainnet", request);
+  await assert.rejects(removeWalletMessageMethod("zcash:other", request));
+  assert.deepEqual(calls.map(({ url, init }) => [url, init?.method]), [
+    ["/api/zerant/account/zcash/zecauth", "DELETE"],
+    ["/api/zerant/account/zcash/wallet/testnet", "DELETE"],
+    ["/api/zerant/account/zcash/wallet/mainnet", "DELETE"],
+  ]);
+  assert(calls.every(({ init }) => init?.body === undefined));
+  assert(!JSON.stringify(calls).match(/account_id|session_id|pubkey|public_key|signature/));
+});
 
 test("wallet-app link uses the account challenge and dedicated callback without account identifiers", async () => {
   const calls: Array<{ url: string; init: RequestInit | undefined }> = [];

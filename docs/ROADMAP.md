@@ -62,7 +62,9 @@ No signing, secure vault, protocol verification, Zcash integration, ZK, or mainn
 
 ### Zcash product integration — active
 
-- injected wallet connection and derived Zcash authentication
+- capability-routed wallet connection with registered injected providers and derived Zcash authentication
+- optional WalletConnect-compatible Zcash mainnet session (no WalletConnect identity signing)
+- ZecAuth wallet-app authentication handoff and passkey-independent wallet connection
 - ZIP-316 address validation and ZIP-321 payment request handling
 - shielded payment handoff
 - Z3/Zallet local capability boundary

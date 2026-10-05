@@ -151,6 +151,8 @@ individual PCZT methods are available on the operator's current Zallet build.
 
 Authenticated account linking also uses the existing five-minute ZecAuth challenge message. Its dedicated account endpoint stores the target account and initiating recent session on the server and accepts either RedPallas wallet-app or derived injected-wallet verification. The ordinary sign-in verifier cannot consume a link challenge. A linked key cannot be moved from another account or silently replace a different key, and the account's public handle stays fixed. Account settings also offer a wallet-app link handoff for supported ZecAuth apps. Its public callback verifies the signed response and stores a pending key only; the initiating browser later supplies its separate one-time link-attempt cookie and exact live, recent session to finalize. The callback cannot link an identity or create a session. Passkeys already provide wallet-independent account entry.
 
+Linked ZecAuth and chain-specific derived wallet-message sign-in methods can be removed through account settings with a session created within 15 minutes. The last account access method cannot be removed. The selected authentication identity and every Zcash-authenticated Zerant session are deleted together; sessions do not record the individual key, while passkey sessions remain. A current Zcash session is signed out. Rotation requires explicit removal and a separate link; there is no silent replacement. This neither revokes a Zcash spending key nor deletes a wallet account.
+
 `zerant-api` implements the server-verification side of the ZecAuth v1 draft profile. It issues five-minute domain/chain/nonce challenges, verifies RedPallas public keys and signatures with `reddsa`, consumes each challenge once, and creates opaque HttpOnly sessions only after the browser redeems its completed server-side authentication attempt.
 
 The default capability allow-list is `auth` plus `request_payment`. Broader viewing capabilities must be explicitly enabled by the operator. The authentication key is a pseudonymous login identity only and is never interpreted as a Zcash address or spending key.
@@ -190,3 +192,7 @@ After the Rust parser validates and canonicalizes a request:
 - multi-recipient, memo-bearing, or otherwise richer requests are handed back to the wallet app so Zerant does not silently drop ZIP-321 semantics.
 
 Zerant does not read a wallet balance or transaction history before offering either path.
+
+## Browser wallet connection
+
+The browser now routes independently through explicit injected-wallet adapters, optional WalletConnect-compatible mainnet sessions, ZecAuth authentication handoff, and canonical ZIP-321 payment handoff. The current injected Noir provider is one adapter, not Zerant's wallet protocol. There is no universal Zcash dApp connector, so a wallet without a compatible injected interface, WalletConnect Zcash namespace, or supported URI handoff cannot be live-connected. WalletConnect provides connection and optional transparent transfer for sessions advertising the method; it does not authenticate Zerant accounts. No balance or history lookup is part of connect or sign-in. The native Zcash payment parser remains the authority for canonical ZIP-321 validation; direct wallet submission is separate from settlement verification.

@@ -2492,6 +2492,18 @@ fn can_remove_passkey(passkey_count: i64, alternative_access: bool) -> bool {
     passkey_count > 1 || alternative_access
 }
 
+async fn access_method_count(tx: &Transaction<'_>, account: Uuid) -> Result<i64, ApiError> {
+    tx.query_one(
+        "SELECT (SELECT COUNT(*) FROM passkey_credentials WHERE account_id = $1)
+              + (SELECT COUNT(*) FROM zecauth_identities WHERE account_id = $1)
+              + (SELECT COUNT(*) FROM wallet_message_identities WHERE account_id = $1)",
+        &[&account],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)
+    .map(|row| row.get(0))
+}
+
 async fn delete_account_passkey(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2499,11 +2511,32 @@ async fn delete_account_passkey(
 ) -> Result<StatusCode, ApiError> {
     let account = recent_account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, account, "passkey_remove", 20).await?;
+    let token_hash = Sha256::digest(session_token(&headers)?.as_bytes()).to_vec();
     let mut client = db_client(&state.db).await?;
     let tx = client
         .transaction()
         .await
         .map_err(|_| ApiError::Unavailable)?;
+
+    tx.query_one(
+        "SELECT id FROM accounts WHERE id = $1 FOR UPDATE",
+        &[&account],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    let current = tx
+        .query_opt(
+            "SELECT id FROM sessions WHERE account_id = $1 AND token_hash = $2
+         AND expires_at > NOW()
+         AND created_at > NOW() - ($3::bigint * INTERVAL '1 minute')",
+            &[&account, &token_hash, &PASSKEY_SECURITY_REAUTH_MINUTES],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    if current.is_none() {
+        return Err(ApiError::Unauthorized);
+    }
 
     let target = tx
         .query_opt(
@@ -2790,6 +2823,119 @@ async fn list_linked_zcash_methods(
         });
     }
     Ok(Json(methods))
+}
+
+async fn remove_linked_zcash_method(
+    state: AppState,
+    headers: HeaderMap,
+    chain: Option<&str>,
+) -> Result<Response, ApiError> {
+    let account = recent_account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "zcash_remove", 20).await?;
+    let token_hash = Sha256::digest(session_token(&headers)?.as_bytes()).to_vec();
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    tx.query_one(
+        "SELECT id FROM accounts WHERE id = $1 FOR UPDATE",
+        &[&account],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
+    // Recheck under the account lock: another removal may have revoked this session.
+    let current = tx
+        .query_opt(
+            "SELECT id FROM sessions WHERE account_id = $1 AND token_hash = $2
+         AND expires_at > NOW()
+         AND created_at > NOW() - ($3::bigint * INTERVAL '1 minute')",
+            &[&account, &token_hash, &PASSKEY_SECURITY_REAUTH_MINUTES],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    if current.is_none() {
+        return Err(ApiError::Unauthorized);
+    }
+
+    let target_exists =
+        if let Some(chain) = chain {
+            tx.query_opt(
+            "SELECT account_id FROM wallet_message_identities WHERE account_id = $1 AND chain = $2",
+            &[&account, &chain],
+        ).await.map_err(|_| ApiError::Unavailable)?.is_some()
+        } else {
+            tx.query_opt(
+                "SELECT account_id FROM zecauth_identities WHERE account_id = $1",
+                &[&account],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?
+            .is_some()
+        };
+    if !target_exists {
+        return Err(ApiError::NotFound);
+    }
+    if access_method_count(&tx, account).await? <= 1 {
+        return Err(ApiError::Conflict);
+    }
+
+    if let Some(chain) = chain {
+        tx.execute(
+            "DELETE FROM wallet_message_identities WHERE account_id = $1 AND chain = $2",
+            &[&account, &chain],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    } else {
+        tx.execute(
+            "DELETE FROM zecauth_identities WHERE account_id = $1",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    }
+    let revoked = tx
+        .query(
+            "DELETE FROM sessions WHERE account_id = $1 AND auth_method = 'zcash'
+         RETURNING token_hash = $2 AS current",
+            &[&account, &token_hash],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let clear_current = revoked.iter().any(|row| row.get::<_, bool>(0));
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    if clear_current {
+        response.headers_mut().insert(
+            SET_COOKIE,
+            HeaderValue::from_str(&clear_cookie_header(SESSION_COOKIE))
+                .map_err(|_| ApiError::Unavailable)?,
+        );
+    }
+    Ok(response)
+}
+
+async fn remove_zecauth_method(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    remove_linked_zcash_method(state, headers, None).await
+}
+
+async fn remove_wallet_message_method(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(network): Path<String>,
+) -> Result<Response, ApiError> {
+    let chain = match network.as_str() {
+        "testnet" => "zcash:testnet",
+        "mainnet" => "zcash:mainnet",
+        _ => return Err(ApiError::Invalid),
+    };
+    remove_linked_zcash_method(state, headers, Some(chain)).await
 }
 
 fn decode_hex_array<const N: usize>(value: &str) -> Result<[u8; N], ApiError> {
@@ -8414,9 +8560,14 @@ async fn zcash_status(
     Ok(Json(result))
 }
 
+async fn public_zcash_config(State(state): State<AppState>) -> Json<serde_json::Value> {
+    Json(serde_json::json!({ "chain": state.zcash_chain.clone() }))
+}
+
 fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/v1/public/zcash/config", get(public_zcash_config))
         .route("/v1/public/issuers", get(public_issuer_directory))
         .route(
             "/v1/public/issuers/{issuer_id}",
@@ -8452,6 +8603,11 @@ fn app(state: AppState) -> Router {
         .route("/v1/account/export", get(export_account))
         .route("/v1/account/passkeys", get(list_account_passkeys))
         .route("/v1/account/zcash/methods", get(list_linked_zcash_methods))
+        .route("/v1/account/zcash/zecauth", delete(remove_zecauth_method))
+        .route(
+            "/v1/account/zcash/wallet/{network}",
+            delete(remove_wallet_message_method),
+        )
         .route("/v1/account/zcash/challenge", post(account_zcash_challenge))
         .route(
             "/v1/account/zcash/zecauth/callback",
@@ -8813,6 +8969,535 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
 
+    async fn removal_account(
+        client: &deadpool_postgres::Client,
+        passkey: bool,
+        zecauth: bool,
+        chains: &[&str],
+    ) -> (Uuid, String, Option<Uuid>, Option<Vec<u8>>) {
+        let account = Uuid::new_v4();
+        let handle = zerant_public_handle(account.as_bytes());
+        client
+            .execute(
+                "INSERT INTO accounts(id, public_handle) VALUES ($1, $2)",
+                &[&account, &handle],
+            )
+            .await
+            .unwrap();
+        let passkey_id = if passkey {
+            let id = Uuid::new_v4();
+            let credential_id = format!("credential_{id}");
+            client
+                .execute(
+                    "INSERT INTO passkey_credentials(id, account_id, credential_id, passkey)
+                     VALUES ($1, $2, $3, '{}'::jsonb)",
+                    &[&id, &account, &credential_id],
+                )
+                .await
+                .unwrap();
+            Some(id)
+        } else {
+            None
+        };
+        let zecauth_key = if zecauth {
+            let key = Sha256::digest(Uuid::new_v4().as_bytes()).to_vec();
+            client
+                .execute(
+                    "INSERT INTO zecauth_identities(account_id, verification_key) VALUES ($1, $2)",
+                    &[&account, &key],
+                )
+                .await
+                .unwrap();
+            Some(key)
+        } else {
+            None
+        };
+        for chain in chains {
+            let mut key = vec![2_u8];
+            key.extend_from_slice(&Sha256::digest(Uuid::new_v4().as_bytes()));
+            client
+                .execute(
+                    "INSERT INTO wallet_message_identities(account_id, chain, public_key)
+                     VALUES ($1, $2, $3)",
+                    &[&account, chain, &key],
+                )
+                .await
+                .unwrap();
+        }
+        (account, handle, passkey_id, zecauth_key)
+    }
+
+    async fn removal_session(
+        client: &deadpool_postgres::Client,
+        account: Uuid,
+        method: &str,
+    ) -> (String, Vec<u8>) {
+        let token = format!("session_{}", Uuid::new_v4());
+        let hash = Sha256::digest(token.as_bytes()).to_vec();
+        client
+            .execute(
+                "INSERT INTO sessions(id, account_id, token_hash, auth_method, expires_at)
+                 VALUES ($1, $2, $3, $4, NOW() + INTERVAL '1 day')",
+                &[&Uuid::new_v4(), &account, &hash, &method],
+            )
+            .await
+            .unwrap();
+        (token, hash)
+    }
+
+    fn removal_headers(token: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::COOKIE,
+            HeaderValue::from_str(&format!("{SESSION_COOKIE}={token}")).unwrap(),
+        );
+        headers
+    }
+
+    // Run with ZERANT_TEST_DATABASE_URL pointing at a disposable PostgreSQL database.
+    #[tokio::test]
+    async fn zcash_removal_database_contract() {
+        let Ok(database_url) = env::var("ZERANT_TEST_DATABASE_URL") else {
+            return;
+        };
+        let config = tokio_postgres::Config::from_str(&database_url).unwrap();
+        let manager = Manager::from_config(
+            config,
+            NoTls,
+            ManagerConfig {
+                recycling_method: RecyclingMethod::Fast,
+            },
+        );
+        let db = Pool::builder(manager).max_size(8).build().unwrap();
+        run_migrations(&db).await.unwrap();
+        let origin = url::Url::parse("https://zerant.example").unwrap();
+        let webauthn = WebauthnBuilder::new("zerant.example", &origin)
+            .unwrap()
+            .rp_name("Zerant")
+            .build()
+            .unwrap();
+        let state = AppState {
+            db: db.clone(),
+            cipher: Arc::new(VaultCipher {
+                keks: BTreeMap::from([(1, Aes256Gcm::new_from_slice(&[7_u8; 32]).unwrap())]),
+                key_version: 1,
+            }),
+            webauthn: Arc::new(webauthn),
+            public_origin: "https://zerant.example".to_owned(),
+            zcash_chain: "zcash:testnet".to_owned(),
+            light_client_endpoint: None,
+            light_client_allow_loopback: false,
+            allowed_scopes: BTreeSet::from(["auth".to_owned()]),
+        };
+        let client = db_client(&db).await.unwrap();
+        let mut accounts = Vec::new();
+
+        // Unauthenticated and stale requests leave identity and sessions intact.
+        let (account, handle, passkey, key) =
+            removal_account(&client, true, true, &["zcash:testnet", "zcash:mainnet"]).await;
+        accounts.push(account);
+        assert!(passkey.is_some());
+        let key = key.unwrap();
+        let (passkey_token, passkey_hash) = removal_session(&client, account, "passkey").await;
+        let (_other_zcash_token, other_zcash_hash) =
+            removal_session(&client, account, "zcash").await;
+        let (zcash_token, zcash_hash) = removal_session(&client, account, "zcash").await;
+        assert!(matches!(
+            remove_zecauth_method(State(state.clone()), HeaderMap::new()).await,
+            Err(ApiError::Unauthorized)
+        ));
+        client.execute(
+            "UPDATE sessions SET created_at = NOW() - INTERVAL '16 minutes' WHERE token_hash = $1",
+            &[&passkey_hash],
+        ).await.unwrap();
+        assert!(matches!(
+            remove_zecauth_method(State(state.clone()), removal_headers(&passkey_token)).await,
+            Err(ApiError::Forbidden)
+        ));
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM zecauth_identities WHERE account_id = $1",
+                    &[&account]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            1
+        );
+        client
+            .execute(
+                "UPDATE sessions SET created_at = NOW() WHERE token_hash = $1",
+                &[&passkey_hash],
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            remove_wallet_message_method(
+                State(state.clone()),
+                removal_headers(&passkey_token),
+                Path("regtest".to_owned())
+            )
+            .await,
+            Err(ApiError::Invalid)
+        ));
+        assert!(matches!(
+            remove_wallet_message_method(
+                State(state.clone()),
+                removal_headers(&passkey_token),
+                Path("testnet-extra".to_owned())
+            )
+            .await,
+            Err(ApiError::Invalid)
+        ));
+        assert!(matches!(
+            remove_wallet_message_method(
+                State(state.clone()),
+                removal_headers(&passkey_token),
+                Path("testnet".to_owned())
+            )
+            .await
+            .unwrap()
+            .status(),
+            StatusCode::NO_CONTENT
+        ));
+        assert_eq!(client.query_one(
+            "SELECT COUNT(*) FROM wallet_message_identities WHERE account_id = $1 AND chain = 'zcash:mainnet'",
+            &[&account]
+        ).await.unwrap().get::<_, i64>(0), 1);
+        assert_eq!(client.query_one(
+            "SELECT COUNT(*) FROM wallet_message_identities WHERE account_id = $1 AND chain = 'zcash:testnet'",
+            &[&account]
+        ).await.unwrap().get::<_, i64>(0), 0);
+        // The wallet removal revoked both Zcash sessions, including the caller-independent one.
+        for hash in [&zcash_hash, &other_zcash_hash] {
+            assert_eq!(
+                client
+                    .query_one(
+                        "SELECT COUNT(*) FROM sessions WHERE account_id = $1 AND token_hash = $2",
+                        &[&account, hash]
+                    )
+                    .await
+                    .unwrap()
+                    .get::<_, i64>(0),
+                0
+            );
+        }
+        let sessions_before: i64 = client
+            .query_one(
+                "SELECT COUNT(*) FROM sessions WHERE account_id = $1",
+                &[&account],
+            )
+            .await
+            .unwrap()
+            .get(0);
+        assert!(matches!(
+            remove_wallet_message_method(
+                State(state.clone()),
+                removal_headers(&passkey_token),
+                Path("testnet".to_owned())
+            )
+            .await,
+            Err(ApiError::NotFound)
+        ));
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM sessions WHERE account_id = $1",
+                    &[&account]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            sessions_before
+        );
+        assert!(matches!(
+            remove_zecauth_method(State(state.clone()), removal_headers(&zcash_token)).await,
+            Err(ApiError::Unauthorized)
+        ));
+        let response = remove_zecauth_method(State(state.clone()), removal_headers(&passkey_token))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert!(response.headers().get(SET_COOKIE).is_none());
+        assert_eq!(client.query_one(
+            "SELECT COUNT(*) FROM zecauth_identities WHERE account_id = $1 OR verification_key = $2",
+            &[&account, &key]
+        ).await.unwrap().get::<_, i64>(0), 0);
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT public_handle FROM accounts WHERE id = $1",
+                    &[&account]
+                )
+                .await
+                .unwrap()
+                .get::<_, String>(0),
+            handle
+        );
+        assert_eq!(client.query_one(
+            "SELECT COUNT(*) FROM sessions WHERE account_id = $1 AND auth_method = 'passkey'",
+            &[&account]
+        ).await.unwrap().get::<_, i64>(0), 1);
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM sessions WHERE account_id = $1 AND auth_method = 'zcash'",
+                    &[&account]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            0
+        );
+        assert!(matches!(
+            remove_zecauth_method(State(state.clone()), removal_headers(&passkey_token)).await,
+            Err(ApiError::NotFound)
+        ));
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM sessions WHERE account_id = $1",
+                    &[&account]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            1
+        );
+
+        // A sole ZecAuth or wallet-message method cannot be removed.
+        let (sole_zec, _, _, _) = removal_account(&client, false, true, &[]).await;
+        accounts.push(sole_zec);
+        let (sole_zec_token, sole_zec_hash) = removal_session(&client, sole_zec, "zcash").await;
+        assert!(matches!(
+            remove_zecauth_method(State(state.clone()), removal_headers(&sole_zec_token)).await,
+            Err(ApiError::Conflict)
+        ));
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM zecauth_identities WHERE account_id = $1",
+                    &[&sole_zec]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            1
+        );
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM sessions WHERE account_id = $1 AND token_hash = $2",
+                    &[&sole_zec, &sole_zec_hash]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            1
+        );
+        let (sole_wallet, _, _, _) =
+            removal_account(&client, false, false, &["zcash:testnet"]).await;
+        accounts.push(sole_wallet);
+        let (sole_wallet_token, sole_wallet_hash) =
+            removal_session(&client, sole_wallet, "zcash").await;
+        assert!(matches!(
+            remove_wallet_message_method(
+                State(state.clone()),
+                removal_headers(&sole_wallet_token),
+                Path("testnet".to_owned())
+            )
+            .await,
+            Err(ApiError::Conflict)
+        ));
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM wallet_message_identities WHERE account_id = $1",
+                    &[&sole_wallet]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            1
+        );
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM sessions WHERE account_id = $1 AND token_hash = $2",
+                    &[&sole_wallet, &sole_wallet_hash]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            1
+        );
+
+        // Removing ZecAuth from its own recent Zcash session clears that cookie.
+        let (current_zec, current_handle, _, current_key) =
+            removal_account(&client, true, true, &[]).await;
+        accounts.push(current_zec);
+        let (current_token, current_hash) = removal_session(&client, current_zec, "zcash").await;
+        let (_, second_current_hash) = removal_session(&client, current_zec, "zcash").await;
+        let (_, preserved_hash) = removal_session(&client, current_zec, "passkey").await;
+        let response = remove_zecauth_method(State(state.clone()), removal_headers(&current_token))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert!(
+            response
+                .headers()
+                .get(SET_COOKIE)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("Max-Age=0")
+        );
+        for hash in [&current_hash, &second_current_hash, &preserved_hash] {
+            let expected = if hash == &preserved_hash { 1 } else { 0 };
+            assert_eq!(
+                client
+                    .query_one(
+                        "SELECT COUNT(*) FROM sessions WHERE account_id = $1 AND token_hash = $2",
+                        &[&current_zec, hash]
+                    )
+                    .await
+                    .unwrap()
+                    .get::<_, i64>(0),
+                expected
+            );
+        }
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM zecauth_identities WHERE verification_key = $1",
+                    &[&current_key.unwrap()]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            0
+        );
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT public_handle FROM accounts WHERE id = $1",
+                    &[&current_zec]
+                )
+                .await
+                .unwrap()
+                .get::<_, String>(0),
+            current_handle
+        );
+
+        // Both deletion paths lock the account; one of two last-method removals wins.
+        let (race_account, _, race_passkey, _) = removal_account(&client, true, true, &[]).await;
+        accounts.push(race_account);
+        let race_passkey = race_passkey.unwrap();
+        let (race_passkey_token, _) = removal_session(&client, race_account, "passkey").await;
+        let (race_zec_token, _) = removal_session(&client, race_account, "passkey").await;
+        let (passkey_result, zec_result) = tokio::join!(
+            delete_account_passkey(
+                State(state.clone()),
+                removal_headers(&race_passkey_token),
+                Path(race_passkey)
+            ),
+            remove_zecauth_method(State(state.clone()), removal_headers(&race_zec_token)),
+        );
+        let successes = i64::from(passkey_result.is_ok()) + i64::from(zec_result.is_ok());
+        assert_eq!(successes, 1);
+        assert!(matches!(
+            passkey_result,
+            Ok(StatusCode::NO_CONTENT) | Err(ApiError::Conflict)
+        ));
+        assert!(matches!(zec_result, Ok(_) | Err(ApiError::Conflict)));
+        let remaining: i64 = client
+            .query_one(
+                "SELECT (SELECT COUNT(*) FROM passkey_credentials WHERE account_id = $1)
+                  + (SELECT COUNT(*) FROM zecauth_identities WHERE account_id = $1)",
+                &[&race_account],
+            )
+            .await
+            .unwrap()
+            .get(0);
+        assert!(remaining >= 1);
+
+        // Revoke the session while passkey deletion waits on the account row.
+        let (revoked_account, _, revoked_passkey, _) =
+            removal_account(&client, true, true, &[]).await;
+        accounts.push(revoked_account);
+        let revoked_passkey = revoked_passkey.unwrap();
+        let (revoked_token, revoked_hash) =
+            removal_session(&client, revoked_account, "zcash").await;
+        let mut lock_client = db_client(&db).await.unwrap();
+        let lock = lock_client.transaction().await.unwrap();
+        lock.query_one(
+            "SELECT id FROM accounts WHERE id = $1 FOR NO KEY UPDATE",
+            &[&revoked_account],
+        )
+        .await
+        .unwrap();
+        let pending = tokio::spawn(delete_account_passkey(
+            State(state.clone()),
+            removal_headers(&revoked_token),
+            Path(revoked_passkey),
+        ));
+        tokio::time::timeout(StdDuration::from_secs(5), async {
+            loop {
+                if client
+                    .query_opt(
+                        "SELECT 1 FROM account_rate_limits
+                         WHERE account_id = $1 AND action = 'passkey_remove'",
+                        &[&revoked_account],
+                    )
+                    .await
+                    .unwrap()
+                    .is_some()
+                {
+                    break;
+                }
+                tokio::time::sleep(StdDuration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        lock.execute(
+            "DELETE FROM zecauth_identities WHERE account_id = $1",
+            &[&revoked_account],
+        )
+        .await
+        .unwrap();
+        lock.execute(
+            "DELETE FROM sessions WHERE account_id = $1 AND token_hash = $2",
+            &[&revoked_account, &revoked_hash],
+        )
+        .await
+        .unwrap();
+        lock.commit().await.unwrap();
+        assert!(matches!(
+            pending.await.unwrap(),
+            Err(ApiError::Unauthorized)
+        ));
+        assert_eq!(
+            client
+                .query_one(
+                    "SELECT COUNT(*) FROM passkey_credentials WHERE id = $1",
+                    &[&revoked_passkey]
+                )
+                .await
+                .unwrap()
+                .get::<_, i64>(0),
+            1
+        );
+
+        for account in accounts {
+            client
+                .execute("DELETE FROM accounts WHERE id = $1", &[&account])
+                .await
+                .unwrap();
+        }
+    }
+
     async fn challenge_message(response: Response) -> String {
         let body = axum::body::to_bytes(response.into_body(), 1 << 20)
             .await
@@ -8894,7 +9579,10 @@ mod tests {
                 .unwrap();
         }
         let sessions_before: i64 = client
-            .query_one("SELECT COUNT(*) FROM sessions", &[])
+            .query_one(
+                "SELECT COUNT(*) FROM sessions WHERE account_id IN ($1, $2)",
+                &[&first, &second],
+            )
             .await
             .unwrap()
             .get(0);
@@ -8956,7 +9644,10 @@ mod tests {
         assert_eq!(challenge_row.get::<_, Uuid>(0), first);
         assert_eq!(challenge_row.get::<_, Uuid>(1), first_session);
         let accounts_before: i64 = client
-            .query_one("SELECT COUNT(*) FROM accounts", &[])
+            .query_one(
+                "SELECT COUNT(*) FROM accounts WHERE id IN ($1, $2)",
+                &[&first, &second],
+            )
             .await
             .unwrap()
             .get(0);
@@ -9196,7 +9887,10 @@ mod tests {
         );
         assert_eq!(
             client
-                .query_one("SELECT COUNT(*) FROM accounts", &[])
+                .query_one(
+                    "SELECT COUNT(*) FROM accounts WHERE id IN ($1, $2)",
+                    &[&first, &second],
+                )
                 .await
                 .unwrap()
                 .get::<_, i64>(0),
@@ -9204,7 +9898,10 @@ mod tests {
         );
         assert_eq!(
             client
-                .query_one("SELECT COUNT(*) FROM sessions", &[])
+                .query_one(
+                    "SELECT COUNT(*) FROM sessions WHERE account_id IN ($1, $2)",
+                    &[&first, &second],
+                )
                 .await
                 .unwrap()
                 .get::<_, i64>(0),
@@ -9272,7 +9969,10 @@ mod tests {
         ));
         assert_eq!(
             client
-                .query_one("SELECT COUNT(*) FROM accounts", &[])
+                .query_one(
+                    "SELECT COUNT(*) FROM accounts WHERE id IN ($1, $2)",
+                    &[&first, &second],
+                )
                 .await
                 .unwrap()
                 .get::<_, i64>(0),
@@ -9703,7 +10403,10 @@ mod tests {
         assert_eq!(handle, first_handle);
         assert_eq!(
             client
-                .query_one("SELECT COUNT(*) FROM accounts", &[])
+                .query_one(
+                    "SELECT COUNT(*) FROM accounts WHERE id IN ($1, $2)",
+                    &[&first, &second],
+                )
                 .await
                 .unwrap()
                 .get::<_, i64>(0),

@@ -85,3 +85,9 @@ The next wallet/network work should build on maintained Zcash components rather 
 - native mobile SDKs only when Zerant ships platform-specific wallet surfaces.
 
 Any new integration must preserve the current rule: protocol and wallet authority stay behind native/server boundaries; the browser remains a presentation and consent surface.
+
+## Wallet interoperability references
+
+- ZIP-321 is the portable `zcash:` payment-request format used for full-request handoff.
+- ZecAuth is an emerging authentication-specific `zecauth:` handoff; support depends on the wallet.
+- The NoirWallet `zcash-wallet-adapter` documents the Zcash WalletConnect `bip122:00040fe8ec8471911baa1db1266ea15d` namespace and `zcash_getAddress`, `zcash_getBalance`, and `zcash_transfer` methods. Zerant uses the maintained `@walletconnect/sign-client` transport directly because the adapter package currently brings unrelated cross-chain dependencies. Zerant does not call `zcash_getBalance` for connection or authentication. WalletConnect support requires the remote wallet to implement the requested Zcash namespace and methods.

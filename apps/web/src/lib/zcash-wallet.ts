@@ -27,10 +27,14 @@ export type ShieldedPayment = {
 export type ZcashWalletCapabilities = {
   identitySigning: boolean;
   shieldedPayment: boolean;
+  transparentPayment: boolean;
+  paymentRequestHandoff: boolean;
+  walletConnect: boolean;
+  zecAuthHandoff: boolean;
   connectionRestore: boolean;
 };
 
-export interface InjectedZcashWalletAdapter {
+export interface ZcashWalletAdapter {
   readonly id: string;
   readonly name: string;
   readonly capabilities: ZcashWalletCapabilities;
@@ -39,8 +43,12 @@ export interface InjectedZcashWalletAdapter {
   ensureConnection(): Promise<ConnectedZcashWallet>;
   signIdentityChallenge?(message: string): Promise<WalletMessageSignature>;
   sendShieldedPayment?(payment: ShieldedPayment): Promise<string>;
+  sendTransparentPayment?(payment: ShieldedPayment): Promise<string>;
   disconnect?(): Promise<void>;
 }
+
+/** Kept for existing account-link integrations. */
+export type InjectedZcashWalletAdapter = ZcashWalletAdapter;
 
 export type ZecAuthWalletChallenge = {
   domain: string;
@@ -153,12 +161,16 @@ export function buildZecAuthWalletUri(
   );
 }
 
-export class NoirWalletAdapter implements InjectedZcashWalletAdapter {
+export class NoirWalletAdapter implements ZcashWalletAdapter {
   readonly id = "noir";
   readonly name = "Noir Wallet";
   readonly capabilities: ZcashWalletCapabilities = {
     identitySigning: true,
     shieldedPayment: true,
+    transparentPayment: false,
+    paymentRequestHandoff: false,
+    walletConnect: false,
+    zecAuthHandoff: false,
     connectionRestore: true,
   };
 
@@ -199,25 +211,24 @@ export class NoirWalletAdapter implements InjectedZcashWalletAdapter {
   }
 }
 
-function noirAdapter(): InjectedZcashWalletAdapter | null {
+export function detectNoirWallet(): ZcashWalletAdapter | null {
   const wallet = getNoirWallet();
   return wallet ? new NoirWalletAdapter(wallet) : null;
 }
 
-export function getInjectedZcashWallets(): InjectedZcashWalletAdapter[] {
-  if (typeof window === "undefined") return [];
+export type ZcashWalletDetector = () => ZcashWalletAdapter | null;
+const browserDetectors = new Set<ZcashWalletDetector>([detectNoirWallet]);
 
-  const adapters = [noirAdapter()].filter(
-    (adapter): adapter is InjectedZcashWalletAdapter => adapter !== null,
-  );
-
-  return adapters;
+/** Register explicit, reviewed provider detectors. Never enumerate arbitrary window keys. */
+export function registerZcashWalletDetector(detector: ZcashWalletDetector): () => void {
+  browserDetectors.add(detector);
+  return () => { browserDetectors.delete(detector); };
 }
 
-export function getPreferredInjectedZcashWallet(
-  capability: keyof ZcashWalletCapabilities = "identitySigning",
-): InjectedZcashWalletAdapter | null {
-  return (
-    getInjectedZcashWallets().find((adapter) => adapter.capabilities[capability]) ?? null
+export function getInjectedZcashWallets(): ZcashWalletAdapter[] {
+  if (typeof window === "undefined") return [];
+  const adapters = [...browserDetectors].map((detect) => detect()).filter(
+    (adapter): adapter is ZcashWalletAdapter => adapter !== null,
   );
+  return [...new Map(adapters.map((adapter) => [adapter.id, adapter])).values()];
 }
