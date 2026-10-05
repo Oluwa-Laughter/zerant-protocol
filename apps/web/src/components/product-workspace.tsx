@@ -22,10 +22,13 @@ export type WorkspaceZcash = {
 export type WorkspaceZcashNetwork = {
   configured: boolean;
   network: string;
+  state: "ready" | "syncing" | "degraded" | "not_configured";
+  network_actions_enabled: boolean;
   synced: boolean;
   block_height: number | null;
   estimated_height: number | null;
   lag: number | null;
+  last_confirmed_at: string | null;
 } | null;
 
 export function ProductWorkspace({
@@ -109,36 +112,44 @@ export function ProductWorkspace({
         <article className="workspace-card">
           <p className="eyebrow">Zcash readiness</p>
           <h2>
-            {zcashNetwork?.configured
-              ? zcashNetwork.synced
-                ? "Zcash network ready."
-                : "Zcash network syncing."
-              : zcash
-                ? "Zcash services ready."
-                : "Zcash network connection unavailable."}
+            {zcashNetwork?.state === "ready"
+              ? "Zcash network ready."
+              : zcashNetwork?.state === "syncing"
+                ? "Zcash network syncing."
+                : zcashNetwork?.state === "degraded"
+                  ? "Zcash network temporarily unavailable."
+                  : zcash
+                    ? "Zcash services ready."
+                    : "Zcash network connection unavailable."}
           </h2>
           <p className="muted">
-            {zcashNetwork?.configured
-              ? zcashNetwork.synced
-                ? "Zerant is connected to current Zcash network data for supported privacy-preserving actions."
-                : "Zerant is catching up with the Zcash network before network-dependent actions are enabled."
-              : zcash
-                ? "Zerant can validate supported Zcash activity."
-                : "Credentials and private trust remain available while network connectivity is not configured."}
+            {zcashNetwork?.state === "ready"
+              ? "Zerant has a fresh network view for supported Zcash actions."
+              : zcashNetwork?.state === "syncing"
+                ? "Zerant is catching up before network-dependent actions are enabled."
+                : zcashNetwork?.state === "degraded"
+                  ? "Zerant is protecting network-dependent actions until a fresh network check succeeds. Your credentials and private proofs remain available."
+                  : zcash
+                    ? "Zerant can validate supported Zcash activity."
+                    : "Credentials and private trust remain available while network connectivity is not configured."}
           </p>
           <div
             className={
-              zcashNetwork?.synced || zcash ? "workspace-state ready" : "workspace-state"
+              zcashNetwork?.network_actions_enabled || zcash
+                ? "workspace-state ready"
+                : "workspace-state"
             }
           >
             <span />
-            {zcashNetwork?.configured
-              ? zcashNetwork.synced
-                ? "Zcash ready"
-                : "Syncing"
-              : zcash
-                ? "Zcash ready"
-                : "Not connected"}
+            {zcashNetwork?.state === "ready"
+              ? "Zcash ready"
+              : zcashNetwork?.state === "syncing"
+                ? "Syncing"
+                : zcashNetwork?.state === "degraded"
+                  ? "Protected mode"
+                  : zcash
+                    ? "Zcash ready"
+                    : "Not connected"}
           </div>
         </article>
 

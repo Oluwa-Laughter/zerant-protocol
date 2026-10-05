@@ -45,3 +45,31 @@ test("signed-in workspace offers wallet actions beside payment review", () => {
   assert.ok(html.includes('id="zcash-payment-review"'));
   assert.ok(html.indexOf('id="zcash-wallet-actions"') < html.indexOf('id="zcash-payment-review"'));
 });
+
+
+test("workspace renders degraded Zcash state as protected mode", () => {
+  const html = renderToStaticMarkup(
+    <ProductWorkspace
+      session={{ authenticated: true, identity: "test-identity", scopes: [] }}
+      zcash={null}
+      zcashNetwork={{
+        configured: true,
+        network: "testnet",
+        state: "degraded",
+        network_actions_enabled: false,
+        synced: false,
+        block_height: 123,
+        estimated_height: 125,
+        lag: 2,
+        last_confirmed_at: "2026-10-05T00:00:00Z",
+      }}
+    />,
+  );
+
+  assert.ok(html.includes("Zcash network temporarily unavailable."));
+  assert.ok(html.includes("Protected mode"));
+  assert.ok(html.includes("protecting network-dependent actions"));
+  assert.equal(html.includes("PostgreSQL"), false);
+  assert.equal(html.includes("lightwalletd"), false);
+  assert.equal(html.includes("Zaino"), false);
+});

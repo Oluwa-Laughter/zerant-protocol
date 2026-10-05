@@ -111,13 +111,15 @@ const LIGHT_CLIENT_STALE_GRACE: Duration = Duration::seconds(90);
 const LIGHT_CLIENT_REFRESH_LOCK_MAINNET: i64 = 9_248_177_401;
 const LIGHT_CLIENT_REFRESH_LOCK_TESTNET: i64 = 9_248_177_402;
 const LIGHT_CLIENT_MAX_ROLLBACK_BLOCKS: u64 = 20;
+const LIGHT_CLIENT_DEGRADED_DISPLAY_TTL: Duration = Duration::minutes(15);
 
 impl LightClientCacheEntry {
     fn ttl(&self) -> StdDuration {
-        if self.readiness.is_some() {
-            LIGHT_CLIENT_SUCCESS_TTL
-        } else {
-            LIGHT_CLIENT_FAILURE_TTL
+        match self.readiness.as_ref().map(|readiness| readiness.state) {
+            Some(ZcashNetworkState::Ready | ZcashNetworkState::Syncing) => LIGHT_CLIENT_SUCCESS_TTL,
+            Some(ZcashNetworkState::Degraded | ZcashNetworkState::NotConfigured) | None => {
+                LIGHT_CLIENT_FAILURE_TTL
+            }
         }
     }
 
@@ -920,14 +922,26 @@ struct InspectAddress {
     address: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ZcashNetworkState {
+    Ready,
+    Syncing,
+    Degraded,
+    NotConfigured,
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct ZcashNetworkReadiness {
     configured: bool,
     network: String,
+    state: ZcashNetworkState,
+    network_actions_enabled: bool,
     synced: bool,
     block_height: Option<u64>,
     estimated_height: Option<u64>,
     lag: Option<u64>,
+    last_confirmed_at: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -8618,6 +8632,34 @@ fn safe_network_height(value: i64) -> Result<u64, ApiError> {
     Ok(value)
 }
 
+fn network_state_for_fresh_readiness(synced: bool) -> ZcashNetworkState {
+    if synced {
+        ZcashNetworkState::Ready
+    } else {
+        ZcashNetworkState::Syncing
+    }
+}
+
+fn format_network_timestamp(value: OffsetDateTime) -> Result<String, ApiError> {
+    value.format(&Rfc3339).map_err(|_| ApiError::Unavailable)
+}
+
+fn as_degraded_readiness(mut readiness: ZcashNetworkReadiness) -> ZcashNetworkReadiness {
+    readiness.state = ZcashNetworkState::Degraded;
+    readiness.network_actions_enabled = false;
+    readiness.synced = false;
+    readiness
+}
+
+fn last_good_is_recent(last_success_at: OffsetDateTime, now: OffsetDateTime) -> bool {
+    now >= last_success_at && now - last_success_at < LIGHT_CLIENT_DEGRADED_DISPLAY_TTL
+}
+
+fn synced_from_row(row: &Row) -> Result<bool, ApiError> {
+    let synced: Option<bool> = row.get("synced");
+    synced.ok_or(ApiError::Unavailable)
+}
+
 async fn load_shared_light_client_readiness(
     client: &deadpool_postgres::Client,
     network: &str,
@@ -8625,7 +8667,8 @@ async fn load_shared_light_client_readiness(
 ) -> Result<Option<PersistedLightClientReadiness>, ApiError> {
     let Some(row) = client
         .query_opt(
-            "SELECT available, synced, block_height, estimated_height, lag, checked_at
+            "SELECT available, synced, block_height, estimated_height, lag, checked_at,
+                    last_success_at
              FROM zcash_network_readiness
              WHERE network = $1 AND endpoint_fingerprint = $2",
             &[&network, &endpoint_fingerprint],
@@ -8645,15 +8688,19 @@ async fn load_shared_light_client_readiness(
         }));
     }
 
-    let synced: Option<bool> = row.get("synced");
+    let synced = synced_from_row(&row)?;
     let block_height: Option<i64> = row.get("block_height");
     let estimated_height: Option<i64> = row.get("estimated_height");
     let lag: Option<i64> = row.get("lag");
+    let last_success_at: Option<OffsetDateTime> = row.get("last_success_at");
+    let confirmed_at = last_success_at.unwrap_or(checked_at);
 
     let readiness = ZcashNetworkReadiness {
         configured: true,
         network: network.to_owned(),
-        synced: synced.ok_or(ApiError::Unavailable)?,
+        state: network_state_for_fresh_readiness(synced),
+        network_actions_enabled: synced,
+        synced,
         block_height: Some(safe_network_height(
             block_height.ok_or(ApiError::Unavailable)?,
         )?),
@@ -8661,11 +8708,69 @@ async fn load_shared_light_client_readiness(
             estimated_height.ok_or(ApiError::Unavailable)?,
         )?),
         lag: Some(safe_network_height(lag.ok_or(ApiError::Unavailable)?)?),
+        last_confirmed_at: Some(format_network_timestamp(confirmed_at)?),
     };
 
     Ok(Some(PersistedLightClientReadiness {
         checked_at,
         readiness: Some(readiness),
+    }))
+}
+
+async fn load_last_good_light_client_readiness(
+    client: &deadpool_postgres::Client,
+    network: &str,
+    now: OffsetDateTime,
+) -> Result<Option<ZcashNetworkReadiness>, ApiError> {
+    let Some(row) = client
+        .query_opt(
+            "SELECT last_success_block_height, last_success_estimated_height,
+                    last_success_lag, last_success_synced, last_success_at
+             FROM zcash_network_readiness
+             WHERE network = $1",
+            &[&network],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+    else {
+        return Ok(None);
+    };
+
+    let last_success_at: Option<OffsetDateTime> = row.get("last_success_at");
+    let Some(last_success_at) = last_success_at else {
+        return Ok(None);
+    };
+    if !last_good_is_recent(last_success_at, now) {
+        return Ok(None);
+    }
+
+    let block_height: Option<i64> = row.get("last_success_block_height");
+    let estimated_height: Option<i64> = row.get("last_success_estimated_height");
+    let lag: Option<i64> = row.get("last_success_lag");
+    let last_success_synced: Option<bool> = row.get("last_success_synced");
+
+    if block_height.is_none()
+        || estimated_height.is_none()
+        || lag.is_none()
+        || last_success_synced.is_none()
+    {
+        return Ok(None);
+    }
+
+    Ok(Some(ZcashNetworkReadiness {
+        configured: true,
+        network: network.to_owned(),
+        state: ZcashNetworkState::Degraded,
+        network_actions_enabled: false,
+        synced: false,
+        block_height: Some(safe_network_height(
+            block_height.ok_or(ApiError::Unavailable)?,
+        )?),
+        estimated_height: Some(safe_network_height(
+            estimated_height.ok_or(ApiError::Unavailable)?,
+        )?),
+        lag: Some(safe_network_height(lag.ok_or(ApiError::Unavailable)?)?),
+        last_confirmed_at: Some(format_network_timestamp(last_success_at)?),
     }))
 }
 
@@ -8708,8 +8813,11 @@ async fn store_shared_light_client_success(
             "INSERT INTO zcash_network_readiness
              (network, endpoint_fingerprint, available, synced, block_height,
               estimated_height, lag, checked_at, failure_count, last_error_at,
-              high_water_block_height, last_success_at)
-             VALUES ($1, $2, true, $3, $4, $5, $6, NOW(), 0, NULL, $4, NOW())
+              high_water_block_height, last_success_at,
+              last_success_block_height, last_success_estimated_height,
+              last_success_lag, last_success_synced)
+             VALUES ($1, $2, true, $3, $4, $5, $6, NOW(), 0, NULL, $4, NOW(),
+                     $4, $5, $6, $3)
              ON CONFLICT (network)
              DO UPDATE SET endpoint_fingerprint = EXCLUDED.endpoint_fingerprint,
                            available = true,
@@ -8724,7 +8832,11 @@ async fn store_shared_light_client_success(
                                COALESCE(zcash_network_readiness.high_water_block_height, 0),
                                EXCLUDED.block_height
                            ),
-                           last_success_at = NOW()",
+                           last_success_at = NOW(),
+                           last_success_block_height = EXCLUDED.block_height,
+                           last_success_estimated_height = EXCLUDED.estimated_height,
+                           last_success_lag = EXCLUDED.lag,
+                           last_success_synced = EXCLUDED.synced",
             &[
                 &network,
                 &endpoint_fingerprint,
@@ -8790,10 +8902,13 @@ async fn zcash_network_readiness(
         return Ok(Json(ZcashNetworkReadiness {
             configured: false,
             network: network.into(),
+            state: ZcashNetworkState::NotConfigured,
+            network_actions_enabled: false,
             synced: false,
             block_height: None,
             estimated_height: None,
             lag: None,
+            last_confirmed_at: None,
         }));
     }
 
@@ -8818,15 +8933,28 @@ async fn zcash_network_readiness(
     if let Some(entry) = persisted.as_ref()
         && entry.is_fresh(now)
     {
+        if let Some(readiness) = entry.readiness.clone() {
+            *local_cache = Some(LightClientCacheEntry {
+                checked_at: Instant::now(),
+                readiness: Some(readiness.clone()),
+            });
+            return Ok(Json(readiness));
+        }
+
+        if let Some(degraded) = load_last_good_light_client_readiness(&client, network, now).await?
+        {
+            *local_cache = Some(LightClientCacheEntry {
+                checked_at: Instant::now(),
+                readiness: Some(degraded.clone()),
+            });
+            return Ok(Json(degraded));
+        }
+
         *local_cache = Some(LightClientCacheEntry {
             checked_at: Instant::now(),
-            readiness: entry.readiness.clone(),
+            readiness: None,
         });
-        return entry
-            .readiness
-            .clone()
-            .map(Json)
-            .ok_or(ApiError::Unavailable);
+        return Err(ApiError::Unavailable);
     }
 
     let lock_id = light_client_refresh_lock(expected_network);
@@ -8839,13 +8967,23 @@ async fn zcash_network_readiness(
     if !acquired {
         if let Some(entry) = persisted
             && entry.within_stale_grace(now)
+            && let Some(readiness) = entry.readiness
         {
-            let readiness = entry.readiness.ok_or(ApiError::Unavailable)?;
+            let degraded = as_degraded_readiness(readiness);
             *local_cache = Some(LightClientCacheEntry {
                 checked_at: Instant::now(),
-                readiness: Some(readiness.clone()),
+                readiness: Some(degraded.clone()),
             });
-            return Ok(Json(readiness));
+            return Ok(Json(degraded));
+        }
+
+        if let Some(degraded) = load_last_good_light_client_readiness(&client, network, now).await?
+        {
+            *local_cache = Some(LightClientCacheEntry {
+                checked_at: Instant::now(),
+                readiness: Some(degraded.clone()),
+            });
+            return Ok(Json(degraded));
         }
         return Err(ApiError::Unavailable);
     }
@@ -8857,7 +8995,12 @@ async fn zcash_network_readiness(
         if let Some(entry) = refreshed.as_ref()
             && entry.is_fresh(refreshed_now)
         {
-            return entry.readiness.clone().ok_or(ApiError::Unavailable);
+            if let Some(readiness) = entry.readiness.clone() {
+                return Ok(readiness);
+            }
+            return load_last_good_light_client_readiness(&client, network, refreshed_now)
+                .await?
+                .ok_or(ApiError::Unavailable);
         }
 
         let high_water = load_light_client_high_water(&client, network).await?;
@@ -8873,13 +9016,19 @@ async fn zcash_network_readiness(
                 if !light_client_height_is_acceptable(readiness.block_height, high_water) {
                     continue;
                 }
+                let last_confirmed_at = OffsetDateTime::now_utc()
+                    .format(&Rfc3339)
+                    .map_err(|_| ApiError::Unavailable)?;
                 successful_readiness = Some(ZcashNetworkReadiness {
                     configured: true,
                     network: readiness.network,
+                    state: network_state_for_fresh_readiness(readiness.synced),
+                    network_actions_enabled: readiness.synced,
                     synced: readiness.synced,
                     block_height: Some(readiness.block_height),
                     estimated_height: Some(readiness.estimated_height),
                     lag: Some(readiness.lag),
+                    last_confirmed_at: Some(last_confirmed_at),
                 });
                 break;
             }
@@ -8898,7 +9047,9 @@ async fn zcash_network_readiness(
             }
             None => {
                 store_shared_light_client_failure(&client, network, &endpoint_fingerprint).await?;
-                Err(ApiError::Unavailable)
+                load_last_good_light_client_readiness(&client, network, OffsetDateTime::now_utc())
+                    .await?
+                    .ok_or(ApiError::Unavailable)
             }
         }
     }
@@ -9207,6 +9358,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0025_zecauth_link_handoff.sql"),
             include_str!("../migrations/0026_zcash_network_readiness.sql"),
             include_str!("../migrations/0027_zcash_network_high_water.sql"),
+            include_str!("../migrations/0028_zcash_network_last_good.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -9541,10 +9693,13 @@ mod tests {
         let readiness = ZcashNetworkReadiness {
             configured: true,
             network: "testnet".into(),
+            state: ZcashNetworkState::Syncing,
+            network_actions_enabled: false,
             synced: false,
             block_height: Some(100),
             estimated_height: Some(101),
             lag: Some(1),
+            last_confirmed_at: Some("2026-10-05T00:00:00Z".into()),
         };
         let fresh = PersistedLightClientReadiness {
             checked_at: now - Duration::seconds(1),
@@ -9565,10 +9720,13 @@ mod tests {
             readiness: Some(ZcashNetworkReadiness {
                 configured: true,
                 network: "testnet".into(),
+                state: ZcashNetworkState::Ready,
+                network_actions_enabled: true,
                 synced: true,
                 block_height: Some(100),
                 estimated_height: Some(100),
                 lag: Some(0),
+                last_confirmed_at: Some("2026-10-05T00:00:00Z".into()),
             }),
         };
         assert!(!expired.within_stale_grace(now));
@@ -9616,14 +9774,67 @@ mod tests {
     }
 
     #[test]
+    fn degraded_network_state_never_enables_actions() {
+        let ready = ZcashNetworkReadiness {
+            configured: true,
+            network: "testnet".into(),
+            state: ZcashNetworkState::Ready,
+            network_actions_enabled: true,
+            synced: true,
+            block_height: Some(200),
+            estimated_height: Some(200),
+            lag: Some(0),
+            last_confirmed_at: Some("2026-10-05T00:00:00Z".into()),
+        };
+        let degraded = as_degraded_readiness(ready);
+        assert_eq!(degraded.state, ZcashNetworkState::Degraded);
+        assert!(!degraded.network_actions_enabled);
+        assert!(!degraded.synced);
+        assert_eq!(degraded.block_height, Some(200));
+
+        let cached = LightClientCacheEntry {
+            checked_at: Instant::now(),
+            readiness: Some(degraded),
+        };
+        assert_eq!(cached.ttl(), LIGHT_CLIENT_FAILURE_TTL);
+    }
+
+    #[test]
+    fn degraded_last_good_state_has_bounded_display_window() {
+        let now = OffsetDateTime::now_utc();
+        assert!(last_good_is_recent(now - Duration::minutes(14), now));
+        assert!(!last_good_is_recent(now - Duration::minutes(15), now));
+        assert!(!last_good_is_recent(now + Duration::seconds(1), now));
+    }
+
+    #[test]
+    fn last_good_migration_contains_no_wallet_private_data() {
+        let schema = include_str!("../migrations/0028_zcash_network_last_good.sql");
+        for required in [
+            "last_success_block_height",
+            "last_success_estimated_height",
+            "last_success_lag",
+            "last_success_synced",
+        ] {
+            assert!(schema.contains(required), "{required}");
+        }
+        for forbidden in ["wallet_address", "balance", "memo", "seed", "txid"] {
+            assert!(!schema.contains(forbidden), "{forbidden}");
+        }
+    }
+
+    #[test]
     fn light_client_success_cache_is_short_lived() {
         let readiness = ZcashNetworkReadiness {
             configured: true,
             network: "testnet".into(),
+            state: ZcashNetworkState::Ready,
+            network_actions_enabled: true,
             synced: true,
             block_height: Some(100),
             estimated_height: Some(100),
             lag: Some(0),
+            last_confirmed_at: Some("2026-10-05T00:00:00Z".into()),
         };
         let fresh = LightClientCacheEntry {
             checked_at: Instant::now(),
