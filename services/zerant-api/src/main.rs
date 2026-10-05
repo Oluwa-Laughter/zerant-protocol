@@ -1070,6 +1070,56 @@ struct VerifierProofPackage {
     revocation_jws: String,
     decided_at: OffsetDateTime,
     proof_expires_at: OffsetDateTime,
+    verified_result: VerifiedProofResultView,
+}
+
+#[derive(Serialize)]
+struct VerifiedProofResultView {
+    claim_type: String,
+    value: Value,
+    context: Option<String>,
+}
+
+#[derive(Serialize)]
+struct VerifierHumanProofView {
+    request_id: Uuid,
+    verifier_origin: String,
+    credential_name: Option<String>,
+    credential_version: Option<i32>,
+    issuer_id: String,
+    claim_type: String,
+    value: Value,
+    context: Option<String>,
+    decided_at: OffsetDateTime,
+    proof_expires_at: OffsetDateTime,
+}
+
+fn verified_proof_result(claim: &Claim) -> Result<VerifiedProofResultView, ApiError> {
+    match claim {
+        Claim::Ordinary(claim) => {
+            let value = match &claim.value {
+                ClaimValue::String(value) => Value::String(value.clone()),
+                ClaimValue::Boolean(value) => Value::Bool(*value),
+                ClaimValue::Integer(value) => {
+                    if value.unsigned_abs() > MAX_SAFE_INTEGER {
+                        return Err(ApiError::Unavailable);
+                    }
+                    Value::Number((*value).into())
+                }
+            };
+            Ok(VerifiedProofResultView {
+                claim_type: claim.claim_type.clone(),
+                value,
+                context: claim.context.clone(),
+            })
+        }
+        Claim::Threshold(claim) => Ok(VerifiedProofResultView {
+            claim_type: claim.claim_type.clone(),
+            value: Value::Bool(claim.value),
+            context: Some(claim.context.clone()),
+        }),
+        Claim::Source(_) => Err(ApiError::Unavailable),
+    }
 }
 
 #[derive(Deserialize)]
@@ -6518,12 +6568,11 @@ async fn get_integration_verification_request(
     }))
 }
 
-async fn get_integration_verifier_proof(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<Uuid>,
-) -> Result<Json<VerifierProofPackage>, ApiError> {
-    let account = verifier_api_account_id(&headers, &state.db, "proofs:read").await?;
+async fn verifier_proof_for_account(
+    state: &AppState,
+    account: Uuid,
+    id: Uuid,
+) -> Result<VerifierProofPackage, ApiError> {
     let client = db_client(&state.db).await?;
 
     let row = client
@@ -6773,7 +6822,7 @@ async fn get_integration_verifier_proof(
         return Err(ApiError::Unavailable);
     }
 
-    verify_response(
+    let verified_payload = verify_response(
         &request_jws,
         &response_jws,
         &disclosure_context,
@@ -6782,8 +6831,9 @@ async fn get_integration_verifier_proof(
         0,
     )
     .map_err(|_| ApiError::Unavailable)?;
+    let verified_result = verified_proof_result(&verified_payload.claim)?;
 
-    Ok(Json(VerifierProofPackage {
+    Ok(VerifierProofPackage {
         schema: VERIFIER_PROOF_PACKAGE_SCHEMA,
         request_id: id,
         protocol_request_id,
@@ -6798,6 +6848,45 @@ async fn get_integration_verifier_proof(
         revocation_jws,
         decided_at,
         proof_expires_at,
+        verified_result,
+    })
+}
+
+async fn get_integration_verifier_proof(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<VerifierProofPackage>, ApiError> {
+    let account = verifier_api_account_id(&headers, &state.db, "proofs:read").await?;
+    Ok(Json(verifier_proof_for_account(&state, account, id).await?))
+}
+
+async fn get_verifier_proof(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<VerifierHumanProofView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    let proof = verifier_proof_for_account(&state, account, id).await?;
+    let credential_name = proof
+        .credential_schema
+        .as_ref()
+        .map(|schema| schema.display_name.clone());
+    let credential_version = proof
+        .credential_schema
+        .as_ref()
+        .map(|schema| schema.version);
+    Ok(Json(VerifierHumanProofView {
+        request_id: proof.request_id,
+        verifier_origin: proof.verifier_origin,
+        credential_name,
+        credential_version,
+        issuer_id: proof.issuer_id,
+        claim_type: proof.verified_result.claim_type,
+        value: proof.verified_result.value,
+        context: proof.verified_result.context,
+        decided_at: proof.decided_at,
+        proof_expires_at: proof.proof_expires_at,
     }))
 }
 
@@ -10276,6 +10365,7 @@ fn app(state: AppState) -> Router {
             "/v1/verifier/requests",
             get(list_verifier_requests).post(create_verification_request),
         )
+        .route("/v1/verifier/requests/{id}/proof", get(get_verifier_proof))
         .route(
             "/v1/integrations/verifier/requests",
             post(create_integration_verification_request),
@@ -12896,6 +12986,41 @@ mod tests {
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn verified_proof_result_exposes_only_bounded_claim_values() {
+        let ordinary = Claim::Ordinary(OrdinaryClaim {
+            claim_type: "membership".into(),
+            value: ClaimValue::String("active".into()),
+            context: Some("community".into()),
+        });
+        let ordinary_view = verified_proof_result(&ordinary).unwrap();
+        assert_eq!(ordinary_view.claim_type, "membership");
+        assert_eq!(ordinary_view.value, Value::String("active".into()));
+        assert_eq!(ordinary_view.context.as_deref(), Some("community"));
+
+        let threshold = Claim::Threshold(zerant_credential::ThresholdAttestationClaim {
+            claim_type: "reputation.threshold".into(),
+            value: true,
+            context: "grant".into(),
+            policy_id: "policy".into(),
+            policy_version: "1".into(),
+            policy_digest: "digest".into(),
+            as_of: 1,
+            threshold: 10,
+            operator: ">=".into(),
+        });
+        let threshold_view = verified_proof_result(&threshold).unwrap();
+        assert_eq!(threshold_view.value, Value::Bool(true));
+        assert_eq!(threshold_view.context.as_deref(), Some("grant"));
+
+        let too_large = Claim::Ordinary(OrdinaryClaim {
+            claim_type: "count".into(),
+            value: ClaimValue::Integer((MAX_SAFE_INTEGER + 1) as i64),
+            context: None,
+        });
+        assert!(verified_proof_result(&too_large).is_err());
     }
 
     #[test]

@@ -87,6 +87,19 @@ export type VerificationRequestItem = {
   expires_at: string;
 };
 
+type VerifierHumanProof = {
+  request_id: string;
+  verifier_origin: string;
+  credential_name: string | null;
+  credential_version: number | null;
+  issuer_id: string;
+  claim_type: string;
+  value: string | boolean | number;
+  context: string | null;
+  decided_at: string;
+  proof_expires_at: string;
+};
+
 type VerificationRequestReview = {
   holderId: string;
   purpose: string;
@@ -154,6 +167,8 @@ export function VerifierWorkspace({
   const [status, setStatus] = useState("");
   const [refreshingRequests, setRefreshingRequests] = useState(false);
   const requestsRefreshInFlight = useRef(false);
+  const [proofResult, setProofResult] = useState<VerifierHumanProof | null>(null);
+  const [proofLoadingId, setProofLoadingId] = useState<string | null>(null);
 
   const selectedSchema = availableSchemas.find((schema) => schema.id === schemaId);
   const pendingRequestCount = requests.filter((request) => request.status === "pending").length;
@@ -173,7 +188,13 @@ export function VerifierWorkspace({
         if (announce) setStatus("Verification requests could not be refreshed right now.");
         return;
       }
-      setRequests((await response.json()) as VerificationRequestItem[]);
+      const nextRequests = (await response.json()) as VerificationRequestItem[];
+      setRequests(nextRequests);
+      setProofResult((current) =>
+        current && nextRequests.some((request) => request.id === current.request_id && request.verified)
+          ? current
+          : null,
+      );
       if (announce) setStatus("Verification requests refreshed.");
     } catch {
       if (announce) setStatus("Verification requests could not be refreshed right now.");
@@ -387,6 +408,47 @@ export function VerifierWorkspace({
       current.map((item) => (item.id === disabled.id ? disabled : item)),
     );
     setStatus("Webhook disabled. Pending deliveries for it will not be sent.");
+  }
+
+  function proofValueLabel(value: VerifierHumanProof["value"]): string {
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    return String(value);
+  }
+
+  async function loadProofResult(id: string) {
+    if (proofLoadingId) return;
+    if (proofResult?.request_id === id) {
+      setProofResult(null);
+      setStatus("Narrow result closed.");
+      return;
+    }
+    setProofLoadingId(id);
+    setStatus("Verifying the approved result…");
+    try {
+      const response = await fetch(
+        "/api/zerant/verifier/requests/" + encodeURIComponent(id) + "/proof",
+        { credentials: "same-origin", cache: "no-store" },
+      );
+      if (!response.ok) {
+        setStatus(
+          response.status === 409
+            ? "This request does not have an approved proof result yet."
+            : response.status === 404
+              ? "This proof result does not belong to this verifier account."
+              : "The approved proof could not be verified right now.",
+        );
+        setProofResult(null);
+        return;
+      }
+      const result = (await response.json()) as VerifierHumanProof;
+      setProofResult(result);
+      setStatus("Approved result verified. Only the bounded claim is shown below.");
+    } catch {
+      setProofResult(null);
+      setStatus("The approved proof could not be verified right now.");
+    } finally {
+      setProofLoadingId(null);
+    }
   }
 
   function reviewRequest() {
@@ -914,6 +976,31 @@ export function VerifierWorkspace({
                     {request.context} · {request.holder_zerant_id}
                   </p>
                   <p className="small muted">Created {new Date(request.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · expires {new Date(request.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                  {request.verified ? (
+                    <div className="verification-result-actions">
+                      <Button variant="secondary" disabled={proofLoadingId !== null} onClick={() => void loadProofResult(request.id)}>
+                        {proofLoadingId === request.id ? "Verifying…" : proofResult?.request_id === request.id ? "Close narrow result" : "View narrow result"}
+                      </Button>
+                    </div>
+                  ) : null}
+                  {proofResult?.request_id === request.id ? (
+                    <div className="verification-result-card" aria-label="Verified narrow result">
+                      <div className="verification-result-heading">
+                        <div><span className="eyebrow">Verified result</span><h3>{proofResult.credential_name ?? request.credential_name ?? "Trusted claim"}{proofResult.credential_version ? ` v${proofResult.credential_version}` : ""}</h3></div>
+                        <span className="request-status approved">Verified</span>
+                      </div>
+                      <div className="verification-result-value"><span className="eyebrow">Bounded claim</span><strong>{proofValueLabel(proofResult.value)}</strong></div>
+                      <dl>
+                        <div><dt>Claim type</dt><dd>{proofResult.claim_type}</dd></div>
+                        <div><dt>Context</dt><dd>{proofResult.context ?? request.context}</dd></div>
+                        <div><dt>Trusted issuer</dt><dd className="mono">{proofResult.issuer_id}</dd></div>
+                        <div><dt>Verified for</dt><dd>{proofResult.verifier_origin}</dd></div>
+                        <div><dt>Holder decided</dt><dd>{new Date(proofResult.decided_at).toLocaleString()}</dd></div>
+                        <div><dt>Proof expires</dt><dd>{new Date(proofResult.proof_expires_at).toLocaleString()}</dd></div>
+                      </dl>
+                      <p className="small muted">This view is produced only after Zerant re-verifies the signed request, holder response, issuer key, verifier key and revocation evidence. The holder’s full credential, wallet address, balance and wallet history are not included.</p>
+                    </div>
+                  ) : null}
                 </article>
               ))
             ) : (
