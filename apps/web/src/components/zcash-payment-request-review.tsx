@@ -30,11 +30,16 @@ type PaymentRecord = {
   recipient: string;
   amount_zat: number;
   network: string;
+  min_confirmations: number;
   state: "prepared" | "submitted" | "expired";
   txid: string | null;
   created_at: string;
   expires_at: string;
   submitted_at: string | null;
+  network_state: "mempool" | "mined" | "forked" | null;
+  observed_height: number | null;
+  confirmations: number | null;
+  observed_at: string | null;
   payment_uri: string | null;
   transparent_only: boolean;
 };
@@ -56,7 +61,35 @@ function formatZec(zat: number | null): string {
   return whole.toLocaleString() + (fraction ? "." + fraction : "") + " ZEC";
 }
 
-export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
+export function paymentNetworkStatus(record: Pick<PaymentRecord, "state" | "network_state" | "confirmations" | "min_confirmations">) {
+  if (record.state !== "submitted") {
+    return record.state === "expired"
+      ? { label: "Expired", tone: "expired", detail: "This prepared request expired before submission." }
+      : { label: "Prepared", tone: "prepared", detail: "Prepared in Zerant; no transaction has been submitted yet." };
+  }
+  if (record.network_state === "mempool") {
+    return { label: "Seen in mempool", tone: "observed", detail: "The exact transaction ID is visible in the Zcash mempool and is not mined yet." };
+  }
+  if (record.network_state === "forked") {
+    return { label: "Forked · waiting", tone: "forked", detail: "This transaction was observed outside the current main chain. Zerant will not treat it as confirmed." };
+  }
+  if (record.network_state === "mined") {
+    const confirmations = record.confirmations ?? 0;
+    if (confirmations >= record.min_confirmations) {
+      return { label: `Depth reached · ${confirmations}/${record.min_confirmations}`, tone: "depth", detail: `This txid is mined with ${confirmations} confirmation${confirmations === 1 ? "" : "s"}. Shielded recipient and amount verification remain separate.` };
+    }
+    return { label: `Mined · ${confirmations}/${record.min_confirmations}`, tone: "observed", detail: "This txid is mined and is still below Zerant’s configured confirmation-depth target." };
+  }
+  return { label: "Submitted · pending", tone: "submitted", detail: "Submission is recorded. Zerant has not observed this transaction on the configured Zcash network yet." };
+}
+
+export function ZcashPaymentRequestReview({
+  enabled,
+  observationAvailable = false,
+}: {
+  enabled: boolean;
+  observationAvailable?: boolean;
+}) {
   const connection = useZcashConnection();
   const [flow, setFlow] = useState<Flow>("send");
   const [recipient, setRecipient] = useState("");
@@ -67,6 +100,7 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
   const [records, setRecords] = useState<PaymentRecord[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [txidDrafts, setTxidDrafts] = useState<Record<string, string>>({});
+  const [observingId, setObservingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(enabled
     ? "Enter a Zcash recipient and amount to prepare a private payment."
@@ -212,6 +246,33 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
     setStatus("Transaction submitted. Zerant saved it. Network verification is pending.");
   }
 
+  async function observePayment(id: string) {
+    if (observingId) return;
+    setObservingId(id);
+    try {
+      const response = await fetch("/api/zerant/zcash/payments/" + encodeURIComponent(id) + "/observe", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        setStatus(response.status === 503
+          ? "Zcash network observation is temporarily unavailable. Your submitted payment record is unchanged."
+          : "Zerant could not check this transaction right now.");
+        return;
+      }
+      const observed = (await response.json()) as PaymentRecord;
+      setRecords((current) => current.map((item) => item.id === id ? observed : item));
+      setRecord((current) => current?.id === id ? observed : current);
+      const next = paymentNetworkStatus(observed);
+      setStatus(next.label + ". " + next.detail);
+    } catch {
+      setStatus("Zcash network observation is temporarily unavailable. Your submitted payment record is unchanged.");
+    } finally {
+      setObservingId(null);
+    }
+  }
+
   async function selectWallet(connector: ZcashConnector) {
     if (!summary) return;
     if (connector.capabilities.has("zip321Handoff")) {
@@ -349,7 +410,7 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
         <p className="small muted">Use a wallet on the same Zcash network. Zingo PC documents testnet and payment-link support; other wallets may also support this format. Review the exact details again in your wallet.</p>
       </div> : null}
       {record ? <p className="small muted">Saved payment: {record.state === "submitted" ? "Submitted" : "Prepared"}. If your wallet opens separately, enter its transaction ID in Recent payments after submission.</p> : null}
-      <p className="small muted payment-request-note">A wallet transaction ID records submission here. Zerant cannot verify testnet settlement yet, so this payment will remain pending.</p>
+      <p className="small muted payment-request-note">A wallet transaction ID records submission here. Zerant can observe that exact txid on Zcash testnet without reading wallet history. Network inclusion does not independently reveal or verify a shielded recipient or amount.</p>
       {flow === "review" && summary.payments.length > 1 ? <div className="request-payment-list">{summary.payments.map((item) => <article key={item.index} className="request-payment"><div><span className="eyebrow">Recipient {item.index + 1}</span><span className="mono">{item.recipient}</span></div><dl><div><dt>Amount</dt><dd>{formatZec(item.amount_zat)}</dd></div><div><dt>Label</dt><dd>{item.label ?? "None"}</dd></div><div><dt>Message</dt><dd>{item.message ?? "None"}</dd></div><div><dt>Memo</dt><dd>{item.memo_present ? "Present" : "None"}</dd></div></dl></article>)}</div> : null}
     </div> : null}
     {enabled ? <div className="request-summary zcash-payment-history" aria-label="Recent Zcash payments">
@@ -363,10 +424,12 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
           <Button variant="secondary" onClick={() => void refreshRecords().then(() => setStatus("Saved payments refreshed."), () => setStatus("Could not refresh saved payments."))}>Refresh</Button>
         </div>
       </div>
-      {records.length ? <div className="payment-activity-list">{records.map((item) => <article className={`request-payment payment-activity-card state-${item.state}`} key={item.id}>
+      {records.length ? <div className="payment-activity-list">{records.map((item) => {
+        const networkStatus = paymentNetworkStatus(item);
+        return <article className={`request-payment payment-activity-card state-${item.state}`} key={item.id}>
         <div className="payment-activity-top">
           <div>
-            <span className={`payment-status-pill ${item.state}`}><span aria-hidden="true" />{item.state === "submitted" ? "Submitted · pending" : item.state === "expired" ? "Expired" : "Prepared"}</span>
+            <span className={`payment-status-pill ${networkStatus.tone}`}><span aria-hidden="true" />{networkStatus.label}</span>
             <strong>{formatZec(item.amount_zat)}</strong>
           </div>
           <time className="small muted" dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time>
@@ -376,7 +439,12 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
           <div><span className="eyebrow">Transaction ID</span><code className="payment-txid-value" title={item.txid}>{item.txid}</code></div>
           <Button variant="secondary" onClick={() => void copyTransactionId(item.txid!)}>Copy txid</Button>
         </div> : null}
-        {item.state === "submitted" ? <p className="small muted payment-pending-note"><span aria-hidden="true" />Submission recorded. Zerant is not claiming settlement until trustworthy testnet observation is available.</p> : null}
+        {item.state === "submitted" ? <div className="payment-observation">
+          <p className="small muted payment-pending-note"><span aria-hidden="true" />{networkStatus.detail}</p>
+          {item.network_state === "mined" && item.observed_height ? <p className="small muted">Observed at block {item.observed_height.toLocaleString()}{item.observed_at ? ` · checked ${new Date(item.observed_at).toLocaleString()}` : ""}</p> : null}
+          <p className="small muted">Network confirmation proves inclusion of this txid. Zerant has not independently decrypted the shielded recipient or amount.</p>
+          {observationAvailable ? <Button variant="secondary" disabled={observingId !== null} onClick={() => void observePayment(item.id)}>{observingId === item.id ? "Checking network…" : "Check network status"}</Button> : <p className="small muted">Trusted testnet observation is not configured for this deployment yet.</p>}
+        </div> : null}
         {item.state === "prepared" && item.payment_uri && item.transparent_only ? <p className="small muted">Transparent destination: this payment reveals more information on chain. Choose it only if that is acceptable to you.</p> : null}
         {item.state === "prepared" && item.payment_uri ? <div className="vault-actions wrap">
           <Button variant="secondary" onClick={() => reopenSavedPayment(item.payment_uri)}>{item.transparent_only ? "Open transparent payment in wallet" : "Open in wallet"}</Button>
@@ -390,7 +458,7 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
             <Button variant="secondary" disabled={!/^[0-9a-f]{64}$/i.test(txidDrafts[item.id] ?? "")} onClick={() => void submitTxid(item.id, txidDrafts[item.id] ?? "").catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Could not save transaction ID."))}>Save submission</Button>
           </div>
         </div> : null}
-      </article>)}</div> : <div className="payment-history-empty"><strong>No saved payments yet.</strong><p className="small muted">Prepare a payment above and Zerant will keep its exact request available here until it is submitted or expires.</p></div>}
+      </article>;})}</div> : <div className="payment-history-empty"><strong>No saved payments yet.</strong><p className="small muted">Prepare a payment above and Zerant will keep its exact request available here until it is submitted or expires.</p></div>}
       {nextCursor ? <div className="vault-actions"><Button variant="secondary" onClick={() => void loadMore()}>Load more payments</Button></div> : null}
     </div> : null}
   </section>;

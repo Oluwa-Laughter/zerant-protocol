@@ -5,6 +5,10 @@
 use super::*;
 use zerant_zcash::{
     address::inspect_address,
+    lightclient::{
+        LightClientNetwork, LightClientTransactionState, fetch_light_client_readiness,
+        fetch_light_client_transaction_state,
+    },
     payment::validate_txid,
     zip321::{create_payment_request, inspect_payment_request},
 };
@@ -37,6 +41,10 @@ pub(super) struct PaymentExportView {
     created_at: OffsetDateTime,
     expires_at: OffsetDateTime,
     submitted_at: Option<OffsetDateTime>,
+    network_state: Option<String>,
+    observed_height: Option<i64>,
+    confirmations: Option<i64>,
+    observed_at: Option<OffsetDateTime>,
 }
 
 pub(super) async fn export(
@@ -47,7 +55,8 @@ pub(super) async fn export(
     let rows = client
         .query(
             "SELECT id, request_digest, recipient, amount_zat, network, min_confirmations,
-                state, txid, created_at, expires_at, submitted_at
+                state, txid, created_at, expires_at, submitted_at, network_state,
+                observed_height, confirmations, observed_at
          FROM zcash_payments WHERE account_id = $1
          ORDER BY created_at DESC, id DESC LIMIT $2",
             &[&account, &(MAX_EXPORT_PAYMENT_RECORDS + 1)],
@@ -72,6 +81,10 @@ pub(super) async fn export(
                 created_at: row.get("created_at"),
                 expires_at: row.get("expires_at"),
                 submitted_at: row.get("submitted_at"),
+                network_state: row.get("network_state"),
+                observed_height: row.get("observed_height"),
+                confirmations: row.get("confirmations"),
+                observed_at: row.get("observed_at"),
             }
         })
         .collect();
@@ -125,6 +138,10 @@ pub(super) struct PaymentView {
     created_at: OffsetDateTime,
     expires_at: OffsetDateTime,
     submitted_at: Option<OffsetDateTime>,
+    network_state: Option<String>,
+    observed_height: Option<i64>,
+    confirmations: Option<i64>,
+    observed_at: Option<OffsetDateTime>,
     payment_uri: Option<String>,
     transparent_only: bool,
 }
@@ -178,6 +195,10 @@ fn view(row: &Row) -> PaymentView {
         created_at: row.get("created_at"),
         expires_at: row.get("expires_at"),
         submitted_at: row.get("submitted_at"),
+        network_state: row.get("network_state"),
+        observed_height: row.get("observed_height"),
+        confirmations: row.get("confirmations"),
+        observed_at: row.get("observed_at"),
         payment_uri,
         transparent_only: inspect_address(row.get("recipient"))
             .map(|address| address.transparent_only)
@@ -185,7 +206,32 @@ fn view(row: &Row) -> PaymentView {
     }
 }
 
-const VIEW_COLUMNS: &str = "id, request_digest, recipient, amount_zat, network, min_confirmations, state, txid, created_at, expires_at, submitted_at";
+const VIEW_COLUMNS: &str = "id, request_digest, recipient, amount_zat, network, min_confirmations, state, txid, created_at, expires_at, submitted_at, network_state, observed_height, confirmations, observed_at";
+
+fn payment_light_client_network(network: &str) -> Result<LightClientNetwork, ApiError> {
+    match network {
+        "zcash:mainnet" => Ok(LightClientNetwork::Mainnet),
+        "zcash:testnet" => Ok(LightClientNetwork::Testnet),
+        _ => Err(ApiError::Unavailable),
+    }
+}
+
+fn observation_projection(
+    observation: LightClientTransactionState,
+) -> Result<(&'static str, Option<i64>, i64), ApiError> {
+    match observation {
+        LightClientTransactionState::Mempool => Ok(("mempool", None, 0)),
+        LightClientTransactionState::Forked => Ok(("forked", None, 0)),
+        LightClientTransactionState::Mined {
+            height,
+            confirmations,
+        } => Ok((
+            "mined",
+            Some(i64::try_from(height).map_err(|_| ApiError::Unavailable)?),
+            i64::try_from(confirmations).map_err(|_| ApiError::Unavailable)?,
+        )),
+    }
+}
 
 fn trackable_request(
     uri: &str,
@@ -358,6 +404,85 @@ pub(super) async fn submit(
     Ok(Json(view(&row)))
 }
 
+pub(super) async fn observe(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<PaymentView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "zcash_payment_observe", 60).await?;
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            &format!("SELECT {VIEW_COLUMNS} FROM zcash_payments WHERE id = $1 AND account_id = $2"),
+            &[&id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let current = view(&row);
+    if current.state != "submitted" || current.network != state.zcash_chain {
+        return Err(ApiError::Conflict);
+    }
+    let txid = current.txid.as_deref().ok_or(ApiError::Conflict)?;
+    if state.light_client_endpoints.is_empty() {
+        return Err(ApiError::Unavailable);
+    }
+    let expected_network = payment_light_client_network(&current.network)?;
+    let network_label = light_client_network_label(expected_network);
+    let high_water = load_light_client_high_water(&client, network_label).await?;
+    let mut observed = None;
+    for endpoint in &state.light_client_endpoints {
+        let Ok(readiness) = fetch_light_client_readiness(
+            endpoint,
+            expected_network,
+            state.light_client_allow_loopback,
+        )
+        .await
+        else {
+            continue;
+        };
+        if !readiness.synced
+            || !light_client_height_is_acceptable(readiness.block_height, high_water)
+        {
+            continue;
+        }
+        if let Ok(value) = fetch_light_client_transaction_state(
+            endpoint,
+            expected_network,
+            state.light_client_allow_loopback,
+            txid,
+        )
+        .await
+        {
+            observed = Some(value);
+            break;
+        }
+    }
+    let (network_state, observed_height, confirmations) =
+        observation_projection(observed.ok_or(ApiError::Unavailable)?)?;
+    let row = client
+        .query_one(
+            &format!(
+                "UPDATE zcash_payments
+                 SET network_state = $1, observed_height = $2, confirmations = $3, observed_at = NOW()
+                 WHERE id = $4 AND account_id = $5 AND state = 'submitted' AND txid = $6
+                 RETURNING {VIEW_COLUMNS}"
+            ),
+            &[
+                &network_state,
+                &observed_height,
+                &confirmations,
+                &id,
+                &account,
+                &txid,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    Ok(Json(view(&row)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,6 +509,26 @@ mod tests {
         assert!(reopen_payment_uri(ADDRESS, amount + 1, "zcash:testnet", &digest).is_none());
         assert!(reopen_payment_uri(ADDRESS, amount, "zcash:mainnet", &digest).is_none());
         assert!(reopen_payment_uri(ADDRESS, amount, "zcash:testnet", &[0; 32]).is_none());
+    }
+
+    #[test]
+    fn network_observation_projection_keeps_intent_verification_separate() {
+        assert_eq!(
+            observation_projection(LightClientTransactionState::Mempool).unwrap(),
+            ("mempool", None, 0)
+        );
+        assert_eq!(
+            observation_projection(LightClientTransactionState::Forked).unwrap(),
+            ("forked", None, 0)
+        );
+        assert_eq!(
+            observation_projection(LightClientTransactionState::Mined {
+                height: 100,
+                confirmations: 7,
+            })
+            .unwrap(),
+            ("mined", Some(100), 7)
+        );
     }
 
     // Run with ZERANT_TEST_DATABASE_URL pointing at a disposable PostgreSQL database.
@@ -468,6 +613,17 @@ mod tests {
         .0;
         assert_eq!(first.state, "prepared");
         assert_eq!(first.amount_zat, 125_000_000);
+        assert!(
+            client
+                .execute(
+                    "UPDATE zcash_payments
+                     SET network_state = 'mempool', confirmations = 0, observed_at = NOW()
+                     WHERE id = $1",
+                    &[&first.id],
+                )
+                .await
+                .is_err()
+        );
         assert_eq!(
             parse_page_cursor(&page_cursor(&first)).unwrap(),
             (first.created_at, first.id)
@@ -516,6 +672,54 @@ mod tests {
         .0;
         assert_eq!(submitted.state, "submitted");
         assert_eq!(submitted.txid.as_deref(), Some(txid.as_str()));
+        assert!(submitted.network_state.is_none());
+        client
+            .execute(
+                "UPDATE zcash_payments
+                 SET network_state = 'mempool', confirmations = 0, observed_at = NOW()
+                 WHERE id = $1",
+                &[&first.id],
+            )
+            .await
+            .unwrap();
+        let observed_mempool = list(
+            State(state.clone()),
+            headers[0].clone(),
+            Query(ListQuery { cursor: None }),
+        )
+        .await
+        .unwrap()
+        .0
+        .items
+        .into_iter()
+        .find(|payment| payment.id == first.id)
+        .unwrap();
+        assert_eq!(observed_mempool.network_state.as_deref(), Some("mempool"));
+        assert_eq!(observed_mempool.confirmations, Some(0));
+        assert!(observed_mempool.observed_height.is_none());
+        assert!(observed_mempool.observed_at.is_some());
+        assert!(
+            client
+                .execute(
+                    "UPDATE zcash_payments
+                     SET network_state = 'mined', observed_height = NULL,
+                         confirmations = 10, observed_at = NOW()
+                     WHERE id = $1",
+                    &[&first.id],
+                )
+                .await
+                .is_err()
+        );
+        client
+            .execute(
+                "UPDATE zcash_payments
+                 SET network_state = 'mined', observed_height = 100,
+                     confirmations = 10, observed_at = NOW()
+                 WHERE id = $1",
+                &[&first.id],
+            )
+            .await
+            .unwrap();
         assert!(
             client
                 .execute(
@@ -654,6 +858,10 @@ mod tests {
             submitted_export.txid.as_deref(),
             Some(expected_txid.as_str())
         );
+        assert_eq!(submitted_export.network_state.as_deref(), Some("mined"));
+        assert_eq!(submitted_export.observed_height, Some(100));
+        assert_eq!(submitted_export.confirmations, Some(10));
+        assert!(submitted_export.observed_at.is_some());
         assert_eq!(
             URL_SAFE_NO_PAD
                 .decode(&submitted_export.request_digest)

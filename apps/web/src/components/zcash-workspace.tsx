@@ -97,7 +97,10 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         </section>
       ) : null}
 
-      <ZcashPaymentRequestReview enabled={authenticated} />
+      <ZcashPaymentRequestReview
+        enabled={authenticated}
+        observationAvailable={Boolean(network?.network_actions_enabled)}
+      />
 
       {authenticated ? (
         <section id="zcash-wallet-actions" className="workspace-wallet" aria-label="Zcash wallet access">

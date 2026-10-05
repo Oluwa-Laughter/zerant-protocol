@@ -10330,6 +10330,7 @@ fn app(state: AppState) -> Router {
             get(payments::list).post(payments::prepare),
         )
         .route("/v1/zcash/payments/{id}/submit", post(payments::submit))
+        .route("/v1/zcash/payments/{id}/observe", post(payments::observe))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -10380,6 +10381,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0030_operational_health.sql"),
             include_str!("../migrations/0031_zcash_payments.sql"),
             include_str!("../migrations/0032_discoverable_passkeys.sql"),
+            include_str!("../migrations/0033_zcash_payment_observation.sql"),
         ] {
             client
                 .batch_execute(migration)
