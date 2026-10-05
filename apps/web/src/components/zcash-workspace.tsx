@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import { ZcashAddressInspector } from "@/components/zcash-address-inspector";
 import { ZcashConnect } from "@/components/zcash-connect";
@@ -15,7 +18,8 @@ function readinessCopy(network: WorkspaceZcashNetwork, zcash: WorkspaceZcash) {
 
 export function ZcashWorkspace({ session, zcash, network }: { session: WorkspaceSession; zcash: WorkspaceZcash; network: WorkspaceZcashNetwork }) {
   const authenticated = Boolean(session?.authenticated);
-  const readiness = readinessCopy(network, zcash);
+  const [liveNetwork, setLiveNetwork] = useState<WorkspaceZcashNetwork>(network);
+  const readiness = readinessCopy(liveNetwork, zcash);
 
   return (
     <main id="main" className="product-app zcash-workspace-page">
@@ -28,7 +32,7 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         <span className="pill">{authenticated ? "Zerant account connected" : "Sign-in required"}</span>
       </section>
 
-      <ZcashLiveStatus authenticated={authenticated} networkState={network?.state ?? null} />
+      <ZcashLiveStatus authenticated={authenticated} network={liveNetwork} onNetworkUpdate={setLiveNetwork} />
 
       <nav className="zcash-shortcuts" aria-label="Zcash tools">
         <a href="#zcash-payment-review">Prepare or review a payment</a>
@@ -66,7 +70,7 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
             <span className="status-dot" aria-hidden="true" />
           </div>
           <p>{readiness.body}</p>
-          <div className={network?.network_actions_enabled || zcash ? "workspace-state ready" : "workspace-state"}><span />{readiness.label}</div>
+          <div className={liveNetwork?.network_actions_enabled || zcash ? "workspace-state ready" : "workspace-state"}><span />{readiness.label}</div>
         </article>
 
         <article className="workspace-card">
@@ -99,7 +103,7 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
 
       <ZcashPaymentRequestReview
         enabled={authenticated}
-        observationAvailable={Boolean(network?.network_actions_enabled)}
+        observationAvailable={Boolean(liveNetwork?.network_actions_enabled)}
       />
 
       {authenticated ? (

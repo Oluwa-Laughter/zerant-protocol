@@ -2,21 +2,24 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import type { WorkspaceZcashNetwork } from "@/components/product-workspace";
 import { useZcashConnection } from "@/lib/zcash-connection";
 
 export function ZcashLiveStatus({
   authenticated,
-  networkState,
+  network,
+  onNetworkUpdate,
 }: {
   authenticated: boolean;
-  networkState: "ready" | "syncing" | "degraded" | "not_configured" | null;
+  network: WorkspaceZcashNetwork;
+  onNetworkUpdate?: (network: WorkspaceZcashNetwork) => void;
 }) {
   const connection = useZcashConnection();
-  const [liveNetworkState, setLiveNetworkState] = useState(networkState);
+  const [liveNetwork, setLiveNetwork] = useState(network);
   const [refreshingNetwork, setRefreshingNetwork] = useState(false);
   const lastNetworkRefresh = useRef(0);
   const walletConnected = connection.status === "connected" && Boolean(connection.account);
-  const networkReady = liveNetworkState === "ready";
+  const networkReady = liveNetwork?.state === "ready";
 
   const refreshNetwork = useCallback(async (announce = false) => {
     if (!authenticated || refreshingNetwork) return;
@@ -27,19 +30,20 @@ export function ZcashLiveStatus({
         cache: "no-store",
       });
       if (!response.ok) return;
-      const value = await response.json() as { state?: unknown };
-      if (["ready", "syncing", "degraded", "not_configured"].includes(String(value.state))) {
-        setLiveNetworkState(value.state as "ready" | "syncing" | "degraded" | "not_configured");
+      const value = await response.json() as WorkspaceZcashNetwork;
+      if (value && ["ready", "syncing", "degraded", "not_configured"].includes(value.state)) {
+        setLiveNetwork(value);
+        onNetworkUpdate?.(value);
         lastNetworkRefresh.current = Date.now();
       }
     } finally {
       setRefreshingNetwork(false);
     }
-  }, [authenticated, refreshingNetwork]);
+  }, [authenticated, onNetworkUpdate, refreshingNetwork]);
 
   useEffect(() => {
-    setLiveNetworkState(networkState);
-  }, [networkState]);
+    setLiveNetwork(network);
+  }, [network]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -71,7 +75,7 @@ export function ZcashLiveStatus({
         <div className="zcash-live-network-actions">
           <span className={networkReady ? "zcash-live-network is-ready" : "zcash-live-network"}>
             <span aria-hidden="true" />
-            {networkReady ? "Testnet ready" : liveNetworkState === "syncing" ? "Testnet syncing" : "Network protected"}
+            {networkReady ? "Testnet ready" : liveNetwork?.state === "syncing" ? "Testnet syncing" : "Network protected"}
           </span>
           {authenticated ? <Button variant="secondary" disabled={refreshingNetwork} onClick={() => void refreshNetwork(true)}>{refreshingNetwork ? "Checking…" : "Refresh network"}</Button> : null}
         </div>
