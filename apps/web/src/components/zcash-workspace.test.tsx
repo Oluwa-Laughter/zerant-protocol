@@ -31,6 +31,7 @@ test("dedicated Zcash workspace owns wallet and payment actions", () => {
   assert.ok(html.includes("Your Zerant ID is not a Zcash address."));
   assert.ok(html.includes("Live workflow"));
   assert.ok(html.includes("From Zerant account to Zcash payment."));
+  assert.ok(html.includes("Refresh network"));
   assert.ok(html.includes("Track submission"));
 
   assert.ok(html.includes("Testnet wallet setup"));
