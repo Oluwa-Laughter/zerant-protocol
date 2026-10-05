@@ -67,7 +67,9 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       return;
     }
     setBusy(true);
-    setStatus("Opening wallet connection…");
+    setStatus(connector.walletId === "noir"
+      ? "Opening Noir’s Connect Request. Keep the Noir popup open, select at least one Testnet account if none is selected, then click Connect."
+      : "Opening wallet connection…");
     let chain: "zcash:mainnet" | "zcash:testnet" | null = null;
     let approvalHint: number | undefined;
     try {
@@ -75,7 +77,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       if (connector.walletId === "noir") {
         approvalHint = window.setTimeout(() => {
           setStatus(chain === "zcash:testnet"
-            ? "Still waiting for Noir. Open and unlock the Testnet Noir extension in Chrome, then check for its site approval prompt. Your Zerant account remains usable without this connection."
+            ? "Still waiting for Noir. In Noir’s Connect Request window, make sure at least one Testnet account is selected. If it says no wallets selected, choose Edit accounts, select one account, then click Connect. Keep that window open until it closes itself."
             : "Still waiting for Noir. Open and unlock the Noir extension in Chrome, then check for its site approval prompt. Your Zerant account remains usable without this connection.");
         }, 8000);
       }
@@ -87,7 +89,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       const message = error instanceof Error ? error.message : "";
       const kind = classifyInjectedWalletError(error);
       if (connector.walletId === "noir" && kind === "rejected") {
-        setStatus("Noir closed or rejected the connection request. Reopen Testnet Noir and approve this site when you are ready.");
+        setStatus("Noir ended the connection request. Noir reports this same result when its approval popup is closed without completing Connect. Try again, keep the Connect Request window open, select at least one Testnet account (use Edit accounts if needed), then click Connect.");
       } else if (connector.walletId === "noir" && kind === "unauthorized") {
         setStatus(chain === "zcash:testnet"
           ? "Testnet Noir has not authorized this site yet. Unlock the Testnet Noir extension, choose Connect again, and approve Zerant when the wallet prompt opens."
