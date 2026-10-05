@@ -303,3 +303,28 @@
 .zcash-wallet-setup .workspace-card{height:100%}
 .zcash-wallet-setup code{font-size:.88em}
 @media (max-width:800px){.zcash-wallet-setup-grid{grid-template-columns:1fr}}
+
+/* Zcash workflow: motion reinforces state changes without becoming decorative noise. */
+.zcash-live-status{margin:28px 0 6px;padding:24px;border:1px solid var(--border);border-radius:18px;background:linear-gradient(135deg,var(--card),color-mix(in srgb,var(--soft) 72%,var(--card)));overflow:hidden;position:relative}
+.zcash-live-status::after{content:"";position:absolute;inset:-40% auto auto 62%;width:260px;height:260px;border-radius:999px;background:color-mix(in srgb,var(--accent) 7%,transparent);filter:blur(10px);pointer-events:none}
+.zcash-live-status-head{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:flex-start;gap:24px}
+.zcash-live-status-head h2{margin:7px 0 0;font-size:clamp(1.45rem,2.5vw,2.15rem);letter-spacing:-.035em}
+.zcash-live-network{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:7px 11px;border:1px solid var(--border);border-radius:999px;background:var(--background);font-size:.76rem;font-weight:700;white-space:nowrap}
+.zcash-live-network>span{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.zcash-live-network.is-ready>span{background:var(--accent);box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 12%,transparent);animation:zcash-status-pulse 2.4s ease-in-out infinite}
+.zcash-flow-rail{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) 38px minmax(0,1fr) 38px minmax(0,1fr) 38px minmax(0,1fr);align-items:center;gap:0;margin-top:24px}
+.zcash-flow-step{min-height:104px;display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;padding:16px;border:1px solid var(--border);border-radius:14px;background:color-mix(in srgb,var(--background) 90%,transparent);transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease}
+.zcash-flow-step:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent) 30%,var(--border));box-shadow:0 10px 28px rgba(0,0,0,.05)}
+.zcash-flow-number{display:grid;place-items:center;width:30px;height:30px;border:1px solid var(--border);border-radius:10px;font:700 .68rem "SFMono-Regular",Consolas,monospace;color:var(--muted);background:var(--card)}
+.zcash-flow-step>div{display:grid;gap:5px;min-width:0}.zcash-flow-step strong{font-size:.92rem}.zcash-flow-step>div>span{font-size:.77rem;line-height:1.45;color:var(--muted)}
+.zcash-flow-step.is-complete{border-color:color-mix(in srgb,var(--accent) 35%,var(--border))}.zcash-flow-step.is-complete .zcash-flow-number{background:var(--accent);border-color:var(--accent);color:var(--background)}
+.zcash-flow-step.is-active{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 9%,transparent)}
+.zcash-flow-step.is-active .zcash-flow-number{animation:zcash-step-breathe 1.7s ease-in-out infinite}
+.zcash-flow-step.is-next{opacity:.82}
+.zcash-flow-line{height:1px;background:linear-gradient(90deg,var(--border),color-mix(in srgb,var(--accent) 26%,var(--border)),var(--border));transform-origin:left center;animation:zcash-line-in .55s ease both}
+@keyframes zcash-status-pulse{0%,100%{transform:scale(1);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 9%,transparent)}50%{transform:scale(1.08);box-shadow:0 0 0 7px color-mix(in srgb,var(--accent) 4%,transparent)}}
+@keyframes zcash-step-breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+@keyframes zcash-line-in{from{transform:scaleX(0);opacity:.25}to{transform:scaleX(1);opacity:1}}
+@media(max-width:1000px){.zcash-flow-rail{grid-template-columns:1fr 1fr;gap:12px}.zcash-flow-line{display:none}}
+@media(max-width:640px){.zcash-live-status{padding:20px}.zcash-live-status-head{display:grid}.zcash-live-network{justify-self:start}.zcash-flow-rail{grid-template-columns:1fr}.zcash-flow-step{min-height:auto}}
+@media(prefers-reduced-motion:reduce){.zcash-live-network.is-ready>span,.zcash-flow-step.is-active .zcash-flow-number,.zcash-flow-line{animation:none}.zcash-flow-step{transition:none}.zcash-flow-step:hover{transform:none}}

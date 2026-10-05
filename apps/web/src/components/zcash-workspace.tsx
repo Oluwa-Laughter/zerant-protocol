@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ZcashAddressInspector } from "@/components/zcash-address-inspector";
 import { ZcashConnect } from "@/components/zcash-connect";
 import { ZcashPaymentRequestReview } from "@/components/zcash-payment-request-review";
+import { ZcashLiveStatus } from "@/components/zcash-live-status";
 import type { WorkspaceSession, WorkspaceZcash, WorkspaceZcashNetwork } from "@/components/product-workspace";
 
 function readinessCopy(network: WorkspaceZcashNetwork, zcash: WorkspaceZcash) {
@@ -26,6 +27,8 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         </div>
         <span className="pill">{authenticated ? "Zerant account connected" : "Sign-in required"}</span>
       </section>
+
+      <ZcashLiveStatus authenticated={authenticated} networkState={network?.state ?? null} />
 
       <nav className="zcash-shortcuts" aria-label="Zcash tools">
         <a href="#zcash-payment-review">Prepare or review a payment</a>
