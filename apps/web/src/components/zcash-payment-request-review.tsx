@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
 import { zip321Connector, type ZcashConnector } from "@/lib/zcash-connectors";
@@ -83,6 +83,17 @@ export function paymentNetworkStatus(record: Pick<PaymentRecord, "state" | "netw
   return { label: "Submitted · pending", tone: "submitted", detail: "Submission is recorded. Zerant has not observed this transaction on the configured Zcash network yet." };
 }
 
+export function shouldAutoObservePayment(
+  record: Pick<PaymentRecord, "state" | "network_state" | "confirmations" | "min_confirmations" | "observed_at">,
+  nowMs = Date.now(),
+): boolean {
+  if (record.state !== "submitted") return false;
+  if (record.network_state === "mined" && (record.confirmations ?? 0) >= record.min_confirmations) return false;
+  if (!record.observed_at) return true;
+  const observedAt = Date.parse(record.observed_at);
+  return !Number.isFinite(observedAt) || nowMs - observedAt >= 30_000;
+}
+
 export function ZcashPaymentRequestReview({
   enabled,
   observationAvailable = false,
@@ -101,6 +112,7 @@ export function ZcashPaymentRequestReview({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [txidDrafts, setTxidDrafts] = useState<Record<string, string>>({});
   const [observingId, setObservingId] = useState<string | null>(null);
+  const observationInFlight = useRef(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(enabled
     ? "Enter a Zcash recipient and amount to prepare a private payment."
@@ -112,6 +124,7 @@ export function ZcashPaymentRequestReview({
     const page = (await response.json()) as PaymentPage;
     setRecords(page.items);
     setNextCursor(page.next_cursor);
+    return page;
   }, []);
 
   async function loadMore() {
@@ -143,18 +156,6 @@ export function ZcashPaymentRequestReview({
     return () => controller.abort();
   }, [enabled]);
 
-
-  useEffect(() => {
-    if (!enabled) return;
-    const refresh = () => { void refreshRecords().catch(() => undefined); };
-    const visibility = () => { if (document.visibilityState === "visible") refresh(); };
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", visibility);
-    return () => {
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", visibility);
-    };
-  }, [enabled, refreshRecords]);
 
   function reset(next: Flow) {
     setFlow(next);
@@ -246,9 +247,10 @@ export function ZcashPaymentRequestReview({
     setStatus("Transaction submitted. Zerant saved it. Network verification is pending.");
   }
 
-  async function observePayment(id: string) {
-    if (observingId) return;
-    setObservingId(id);
+  const observePayment = useCallback(async (id: string, announce = true) => {
+    if (observationInFlight.current) return;
+    observationInFlight.current = true;
+    if (announce) setObservingId(id);
     try {
       const response = await fetch("/api/zerant/zcash/payments/" + encodeURIComponent(id) + "/observe", {
         method: "POST",
@@ -256,22 +258,51 @@ export function ZcashPaymentRequestReview({
         cache: "no-store",
       });
       if (!response.ok) {
-        setStatus(response.status === 503
-          ? "Zcash network observation is temporarily unavailable. Your submitted payment record is unchanged."
-          : "Zerant could not check this transaction right now.");
+        if (announce) {
+          setStatus(response.status === 503
+            ? "Zcash network observation is temporarily unavailable. Your submitted payment record is unchanged."
+            : "Zerant could not check this transaction right now.");
+        }
         return;
       }
       const observed = (await response.json()) as PaymentRecord;
       setRecords((current) => current.map((item) => item.id === id ? observed : item));
       setRecord((current) => current?.id === id ? observed : current);
-      const next = paymentNetworkStatus(observed);
-      setStatus(next.label + ". " + next.detail);
+      if (announce) {
+        const next = paymentNetworkStatus(observed);
+        setStatus(next.label + ". " + next.detail);
+      }
     } catch {
-      setStatus("Zcash network observation is temporarily unavailable. Your submitted payment record is unchanged.");
+      if (announce) {
+        setStatus("Zcash network observation is temporarily unavailable. Your submitted payment record is unchanged.");
+      }
     } finally {
-      setObservingId(null);
+      observationInFlight.current = false;
+      if (announce) setObservingId(null);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const refresh = async () => {
+      try {
+        const page = await refreshRecords();
+        if (!observationAvailable) return;
+        const target = page.items.find((item) => shouldAutoObservePayment(item));
+        if (target) await observePayment(target.id, false);
+      } catch {
+        // Focus refresh is best-effort; explicit actions surface errors.
+      }
+    };
+    const onFocus = () => { void refresh(); };
+    const onVisibility = () => { if (document.visibilityState === "visible") void refresh(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [enabled, observationAvailable, observePayment, refreshRecords]);
 
   async function selectWallet(connector: ZcashConnector) {
     if (!summary) return;
