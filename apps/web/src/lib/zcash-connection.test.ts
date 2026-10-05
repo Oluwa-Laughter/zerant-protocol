@@ -145,3 +145,29 @@ test("silent wallet probe distinguishes authorization and network mismatch", asy
   const pending = injectedConnector({ ...fakeAdapter("pending"), existingConnection: async () => null });
   assert.equal(await probeExistingConnection(pending, "zcash:testnet"), "not_authorized");
 });
+
+
+test("wallet events refresh same-network accounts and clear stale network state", async () => {
+  let onChange: (() => void) | null = null;
+  let current = { providerId: "events", providerName: "Testnet Noir", shieldedAddress: "utest1first", transparentAddress: "tmFirst", accountCount: 1 };
+  const adapter: ZcashWalletAdapter = {
+    ...fakeAdapter("events"),
+    connect: async () => current,
+    existingConnection: async () => current,
+    subscribeConnectionChanges: (handler) => { onChange = handler; return () => { onChange = null; }; },
+  };
+  const selected = injectedConnector(adapter);
+  await connectConnector(selected, "zcash:testnet");
+  assert.equal(getZcashConnectionSnapshot().account?.shieldedAddress, "utest1first");
+
+  current = { ...current, shieldedAddress: "utest1second", transparentAddress: "tmSecond" };
+  (onChange as (() => void) | null)?.();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(getZcashConnectionSnapshot().account?.shieldedAddress, "utest1second");
+
+  current = { ...current, shieldedAddress: "u1mainnet", transparentAddress: "t1mainnet" };
+  (onChange as (() => void) | null)?.();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(getZcashConnectionSnapshot().account, null);
+  assert.equal(getZcashConnectionSnapshot().selected, null);
+});

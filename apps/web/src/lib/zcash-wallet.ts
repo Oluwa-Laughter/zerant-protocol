@@ -56,6 +56,7 @@ export interface ZcashWalletAdapter {
   sendShieldedPayment?(payment: ShieldedPayment): Promise<string>;
   sendTransparentPayment?(payment: ShieldedPayment): Promise<string>;
   disconnect?(): Promise<void>;
+  subscribeConnectionChanges?(handler: () => void): () => void;
 }
 
 /** Kept for existing account-link integrations. */
@@ -222,6 +223,16 @@ export class NoirWalletAdapter implements ZcashWalletAdapter {
 
   async disconnect(): Promise<void> {
     await this.wallet.zcash.disconnect();
+  }
+
+  subscribeConnectionChanges(handler: () => void): () => void {
+    const onChange = () => handler();
+    this.wallet.zcash.on("accountsChanged", onChange);
+    this.wallet.zcash.on("chainChanged", onChange);
+    return () => {
+      this.wallet.zcash.removeListener("accountsChanged", onChange);
+      this.wallet.zcash.removeListener("chainChanged", onChange);
+    };
   }
 }
 

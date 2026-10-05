@@ -16,6 +16,7 @@ export type ConnectionSnapshot = {
 const empty: ConnectionSnapshot = { activeChain: null, walletConnectProjectId: process.env.NEXT_PUBLIC_ZCASH_WALLETCONNECT_PROJECT_ID ?? "", selected: null, adapter: null, account: null, status: "idle", displayUri: null };
 let snapshot = empty;
 let configLoading: Promise<ZcashChain> | null = null;
+let connectionCleanup: (() => void) | null = null;
 const listeners = new Set<() => void>();
 function update(change: Partial<ConnectionSnapshot>) {
   snapshot = { ...snapshot, ...change };
@@ -45,6 +46,35 @@ export async function ensureZcashConfig(request: typeof fetch = fetch): Promise<
 }
 
 export function setZcashDisplayUri(uri: string): void { update({ displayUri: uri }); }
+
+function clearConnectionState(): void {
+  connectionCleanup?.();
+  connectionCleanup = null;
+  update({ selected: null, adapter: null, account: null, status: "idle", displayUri: null });
+}
+
+async function refreshSelectedConnection(connector: ZcashConnector, chain: ZcashChain): Promise<void> {
+  if (snapshot.selected?.id !== connector.id || !connector.existingConnection) return;
+  try {
+    const account = await connector.existingConnection();
+    if (!account || connectedWalletNetwork(account) !== chain) {
+      clearConnectionState();
+      return;
+    }
+    update({ account, status: "connected" });
+  } catch {
+    clearConnectionState();
+  }
+}
+
+function attachConnectionEvents(connector: ZcashConnector, chain: ZcashChain): void {
+  connectionCleanup?.();
+  connectionCleanup = null;
+  if (!connector.adapter?.subscribeConnectionChanges) return;
+  connectionCleanup = connector.adapter.subscribeConnectionChanges(() => {
+    void refreshSelectedConnection(connector, chain);
+  });
+}
 
 export type WalletAuthorizationProbe =
   | "not_authorized"
@@ -88,9 +118,10 @@ export async function connectConnector(connector: ZcashConnector, chain: ZcashCh
       throw error;
     }
     update({ account, status: "connected" });
+    attachConnectionEvents(connector, chain);
     return account;
   } catch (error) {
-    update({ selected: null, adapter: null, account: null, status: "idle" });
+    clearConnectionState();
     throw error;
   }
 }
@@ -100,13 +131,21 @@ export async function restoreConnection(connectors: ZcashConnector[], chain: Zca
     if (!connector.adapter || !connector.capabilities.has("connectionRestore") || !connector.existingConnection) continue;
     try {
       const account = await connector.existingConnection();
-      if (account) { requireWalletNetwork(account, chain); update({ selected: connector, adapter: connector.adapter, account, status: "connected" }); return account; }
+      if (account) {
+        requireWalletNetwork(account, chain);
+        update({ selected: connector, adapter: connector.adapter, account, status: "connected" });
+        attachConnectionEvents(connector, chain);
+        return account;
+      }
     } catch { /* A stale session must not prevent another adapter restoring. */ }
   }
   return null;
 }
 
 export async function disconnectZcash(): Promise<void> {
-  try { await snapshot.selected?.disconnect?.(); }
+  const disconnect = snapshot.selected?.disconnect;
+  connectionCleanup?.();
+  connectionCleanup = null;
+  try { await disconnect?.(); }
   finally { update({ selected: null, adapter: null, account: null, status: "idle", displayUri: null }); }
 }
