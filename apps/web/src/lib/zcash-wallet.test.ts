@@ -3,12 +3,21 @@ import test from "node:test";
 import type { NoirWalletProvider } from "@noir-wallet/sdk";
 import {
   buildZecAuthWalletUri,
+  classifyInjectedWalletError,
   connectedWalletNetwork,
   NoirWalletAdapter,
   normalizeDerivedSignature,
   normalizeWalletConnection,
   zatoshiToZec,
 } from "./zcash-wallet";
+
+test("classifies only standard injected wallet request failures", () => {
+  assert.equal(classifyInjectedWalletError({ code: 4001, message: "User rejected the request" }), "rejected");
+  assert.equal(classifyInjectedWalletError({ code: 4100, message: "Unauthorized" }), "unauthorized");
+  assert.equal(classifyInjectedWalletError({ code: -32002, message: "Request already pending" }), "pending");
+  assert.equal(classifyInjectedWalletError(new Error("Not authorized")), "unauthorized");
+  assert.equal(classifyInjectedWalletError(new Error("Unexpected provider failure")), "unknown");
+});
 
 test("wallet network check rejects mixed and unrecognized addresses", () => {
   const base = { providerId: "wallet", providerName: "Wallet", accountCount: 1 };

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
 import { signInWithZcashWallet, type SignInChallenge, type ZcashSignInStage } from "@/lib/zcash-auth";
 import { discoverZcashConnectors, type ZcashConnector } from "@/lib/zcash-connectors";
+import { classifyInjectedWalletError } from "@/lib/zcash-wallet";
 import { connectConnector, disconnectZcash, ensureZcashConfig, getZcashConnectionSnapshot, restoreConnection, useZcashConnection } from "@/lib/zcash-connection";
 
 function signInStageCopy(stage: ZcashSignInStage): string {
@@ -84,10 +85,15 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
         : "Wallet available for supported Zcash actions. Your Zerant account remains independent of this wallet session.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      if (/rejected/i.test(message) && connector.walletId === "noir") {
+      const kind = classifyInjectedWalletError(error);
+      if (connector.walletId === "noir" && kind === "rejected") {
+        setStatus("Noir closed or rejected the connection request. Reopen Testnet Noir and approve this site when you are ready.");
+      } else if (connector.walletId === "noir" && kind === "unauthorized") {
         setStatus(chain === "zcash:testnet"
-          ? "Noir did not authorize this connection. Zerant is on Zcash testnet, so make sure you are using the separate Testnet Noir Wallet build, unlock it, then approve this site when Noir opens."
-          : "Noir did not authorize this connection. Unlock Noir Wallet and approve this site when the account-access request opens.");
+          ? "Testnet Noir has not authorized this site yet. Unlock the Testnet Noir extension, choose Connect again, and approve Zerant when the wallet prompt opens."
+          : "Noir has not authorized this site yet. Unlock Noir, choose Connect again, and approve Zerant when the wallet prompt opens.");
+      } else if (connector.walletId === "noir" && kind === "pending") {
+        setStatus("Noir already has a connection request waiting. Open the extension and finish or dismiss that request before trying again.");
       } else {
         setStatus(message || "Wallet connection failed.");
       }
@@ -105,9 +111,16 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       onConnected?.();
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      setStatus(/rejected/i.test(message)
-        ? "The wallet did not approve the sign-in request. If you did not reject it, unlock Noir Wallet, confirm this site is connected, and try again."
-        : message || "Wallet sign-in failed.");
+      const kind = classifyInjectedWalletError(error);
+      if (kind === "rejected") {
+        setStatus("Noir closed or rejected the sign-in request. Reopen Testnet Noir and approve the identity-signature prompt when you are ready.");
+      } else if (kind === "unauthorized") {
+        setStatus("Noir is detected but this site is no longer authorized. Disconnect the wallet here, reconnect Testnet Noir, then start sign-in again.");
+      } else if (kind === "pending") {
+        setStatus("Noir already has a sign-in request waiting. Open the extension and finish or dismiss that request before trying again.");
+      } else {
+        setStatus(message || "Wallet sign-in failed.");
+      }
     }
     finally { setBusy(false); }
   }

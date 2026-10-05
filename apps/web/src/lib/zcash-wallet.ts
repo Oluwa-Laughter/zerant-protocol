@@ -30,6 +30,32 @@ export type WalletMessageSignature = {
   signingMode: "derived";
 };
 
+export type InjectedWalletErrorKind =
+  | "rejected"
+  | "unauthorized"
+  | "pending"
+  | "unknown";
+
+/** Classify only standard injected-provider errors. Unknown wallet errors stay unknown. */
+export function classifyInjectedWalletError(error: unknown): InjectedWalletErrorKind {
+  const record = error && typeof error === "object" && !Array.isArray(error)
+    ? error as Record<string, unknown>
+    : null;
+  const code = typeof record?.code === "number" ? record.code : null;
+  const message = error instanceof Error
+    ? error.message
+    : typeof record?.message === "string"
+      ? record.message
+      : typeof error === "string"
+        ? error
+        : "";
+
+  if (code === 4001 || /user rejected|request rejected|denied by user/i.test(message)) return "rejected";
+  if (code === 4100 || /not authorized|unauthori[sz]ed|not connected/i.test(message)) return "unauthorized";
+  if (code === -32002 || /already pending|request.*pending|already processing/i.test(message)) return "pending";
+  return "unknown";
+}
+
 export type ShieldedPayment = {
   to: string;
   amount: string;
