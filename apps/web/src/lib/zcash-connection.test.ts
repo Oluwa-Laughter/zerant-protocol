@@ -62,12 +62,18 @@ test("payment-only connection cannot authenticate and creates no network request
 
 test("identity signing uses challenge and verification, never address or balance", async () => {
   const calls: string[] = [];
+  const stages: string[] = [];
   const request = (async (url: string | URL | Request) => {
     calls.push(String(url));
     return String(url).includes("challenge") ? Response.json({ message: "challenge" }) : Response.json({});
   }) as typeof fetch;
-  await signInWithZcashWallet(injectedConnector(fakeAdapter("identity", true)), request);
+  await signInWithZcashWallet(
+    injectedConnector(fakeAdapter("identity", true)),
+    request,
+    (stage) => stages.push(stage),
+  );
   assert.deepEqual(calls, ["/api/zerant/auth/challenge?scopes=signin", "/api/zerant/auth/wallet/verify", "/api/zerant/auth/session"]);
+  assert.deepEqual(stages, ["challenge", "wallet_approval", "verification", "session"]);
 });
 
 test("rich or shielded requests cannot be downgraded to transparent payment", () => {

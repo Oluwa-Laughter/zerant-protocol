@@ -2,14 +2,23 @@ import type { ZecAuthWalletChallenge } from "./zcash-wallet";
 import type { ZcashConnector } from "./zcash-connectors";
 
 export type SignInChallenge = ZecAuthWalletChallenge & { message: string };
-export async function signInWithZcashWallet(connector: ZcashConnector, request: typeof fetch = fetch): Promise<void> {
+export type ZcashSignInStage = "challenge" | "wallet_approval" | "verification" | "session";
+
+export async function signInWithZcashWallet(
+  connector: ZcashConnector,
+  request: typeof fetch = fetch,
+  onStage?: (stage: ZcashSignInStage) => void,
+): Promise<void> {
   if (!connector.capabilities.has("identitySigning") || !connector.signIdentityChallenge) {
     throw new Error("This wallet does not support Zerant sign-in. Use a passkey for account access.");
   }
+  onStage?.("challenge");
   const response = await request("/api/zerant/auth/challenge?scopes=signin", { credentials: "same-origin", cache: "no-store" });
   if (!response.ok) throw new Error("Zerant could not create a wallet sign-in request.");
   const challenge = (await response.json()) as SignInChallenge;
+  onStage?.("wallet_approval");
   const signed = await connector.signIdentityChallenge(challenge.message);
+  onStage?.("verification");
   const verified = await request("/api/zerant/auth/wallet/verify", {
     method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
     body: JSON.stringify({ pubkey: signed.pubkey, signature: signed.signature,
@@ -24,6 +33,7 @@ export async function signInWithZcashWallet(connector: ZcashConnector, request: 
     }
     throw new Error("Noir approved signing, but Zerant could not accept the wallet signature response.");
   }
+  onStage?.("session");
   const redeemed = await request("/api/zerant/auth/session", { credentials: "same-origin", cache: "no-store" });
   if (!redeemed.ok) {
     throw new Error("Wallet signature verified, but the Zerant session could not be completed. Start sign-in again.");

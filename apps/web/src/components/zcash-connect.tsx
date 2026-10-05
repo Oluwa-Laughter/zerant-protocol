@@ -3,9 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
-import { signInWithZcashWallet, type SignInChallenge } from "@/lib/zcash-auth";
+import { signInWithZcashWallet, type SignInChallenge, type ZcashSignInStage } from "@/lib/zcash-auth";
 import { discoverZcashConnectors, type ZcashConnector } from "@/lib/zcash-connectors";
 import { connectConnector, disconnectZcash, ensureZcashConfig, getZcashConnectionSnapshot, restoreConnection, useZcashConnection } from "@/lib/zcash-connection";
+
+function signInStageCopy(stage: ZcashSignInStage): string {
+  switch (stage) {
+    case "challenge": return "Creating a short-lived Zerant sign-in request…";
+    case "wallet_approval": return "Waiting for Noir to approve the private identity signature…";
+    case "verification": return "Noir approved. Verifying the signature against this Zerant request…";
+    case "session": return "Signature verified. Completing your Zerant session…";
+  }
+}
 
 async function createChallenge(): Promise<SignInChallenge> {
   const response = await fetch("/api/zerant/auth/challenge?scopes=signin", { credentials: "same-origin", cache: "no-store" });
@@ -89,7 +98,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
     setBusy(true);
     setStatus("Approve Zerant sign-in in your wallet…");
     try {
-      await signInWithZcashWallet(connection.selected);
+      await signInWithZcashWallet(connection.selected, fetch, (stage) => setStatus(signInStageCopy(stage)));
       setStatus("Signed in to Zerant.");
       onConnected?.();
     } catch (error) {
