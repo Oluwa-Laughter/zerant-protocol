@@ -49,7 +49,7 @@ export function ZcashAddressInspector({ enabled }: { enabled: boolean }) {
   }
 
   return (
-    <section className="zcash-address-inspector" aria-labelledby="zcash-address-title">
+    <section id="zcash-address-inspector" className="zcash-address-inspector" aria-labelledby="zcash-address-title">
       <div className="section-heading">
         <p className="eyebrow">Zcash address validation</p>
         <h2 id="zcash-address-title">Understand the destination before using it.</h2>

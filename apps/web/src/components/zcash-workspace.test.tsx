@@ -27,8 +27,12 @@ const zcash = {
 
 test("dedicated Zcash workspace owns wallet and payment actions", () => {
   const html = renderToStaticMarkup(<ZcashWorkspace session={session} zcash={zcash} network={network} />);
-  assert.ok(html.includes("Zcash workspace"));
+  assert.ok(html.includes("Zerant on Zcash · Testnet"));
+  assert.ok(html.includes("Your Zerant ID is not a Zcash address."));
   assert.ok(html.includes('id="zcash-wallet-actions"'));
+  assert.ok(html.includes('href="#zcash-payment-review"'));
+  assert.ok(html.includes('href="#zcash-address-inspector"'));
+  assert.ok(html.includes('href="#zcash-wallet-actions"'));
   assert.ok(html.includes("Prepare, review, then approve in your wallet."));
   assert.ok(html.includes("Testnet settlement verification is not available yet"));
   assert.ok(html.includes("Prepared"));
@@ -42,4 +46,5 @@ test("signed-out Zcash workspace directs users to account access", () => {
   assert.ok(html.includes("Sign in before using private Zcash actions."));
   assert.ok(html.includes("Choose a sign-in method"));
   assert.equal(html.includes('id="zcash-wallet-actions"'), false);
+  assert.equal(html.includes('href="#zcash-wallet-actions"'), false);
 });

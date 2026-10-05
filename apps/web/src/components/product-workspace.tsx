@@ -43,10 +43,10 @@ export function ProductWorkspace({
     <main id="main" className="product-app">
       <section className="app-heading workspace-intro">
         <div>
-          <p className="eyebrow">Zerant workspace</p>
-          <h1>Your private trust workspace.</h1>
+          <p className="eyebrow">Zerant · Zcash testnet</p>
+          <h1>Private trust for the Zcash ecosystem.</h1>
           <p>
-            Zerant helps you build portable trust, prove what matters, and keep unrelated identity and wallet information private.
+            Receive credentials, approve specific proofs, and prepare Zcash payments from one workspace. Your Zerant ID and wallet serve different purposes.
           </p>
         </div>
         <span className="pill">{authenticated ? "Signed in" : "Sign-in required"}</span>
@@ -55,12 +55,13 @@ export function ProductWorkspace({
       <section className="workspace-explainer">
         <div>
           <span className="eyebrow">What happens here</span>
-          <h2>Connect. Receive. Prove.</h2>
+          <h2>Sign in. Receive. Prove. Pay when needed.</h2>
         </div>
         <ol>
-          <li><strong>Open your Zerant account</strong><span>Use a passkey or compatible wallet sign-in without publishing your payment address or wallet history.</span></li>
+          <li><strong>Open your Zerant account</strong><span>Use a passkey. Your Zerant ID is where organizations send credentials, never a payment address.</span></li>
           <li><strong>Receive trusted credentials</strong><span>Collect proof of contributions, roles, memberships, achievements or eligibility from trusted issuers.</span></li>
           <li><strong>Approve narrow verification requests</strong><span>Zerant returns only the bounded result after native trust, revocation, audience and replay checks pass.</span></li>
+          <li><strong>Use Zcash testnet for payments</strong><span>Prepare a payment in Zerant, then approve it in a compatible wallet. Submission stays pending until Zerant can verify settlement.</span></li>
         </ol>
       </section>
 
@@ -72,7 +73,7 @@ export function ProductWorkspace({
           </div>
           <p>
             {authenticated
-              ? "Your private credentials are ready."
+              ? "Your vault is ready for credentials issued to your Zerant ID."
               : "Sign in to start receiving and proving trusted credentials."}
           </p>
           <p className="small muted">
@@ -98,16 +99,15 @@ export function ProductWorkspace({
 
         <article className="workspace-card">
           <p className="eyebrow">Verification requests</p>
-          <h2>No request waiting for you.</h2>
+          <h2>Decide what each verifier learns.</h2>
           <p className="muted">
-            Incoming requests will show requester origin, purpose, requested conditions and
-            disclosure boundaries before approval.
+            Review the requester, purpose, issuer and exact claim before you approve. Denying a request shares no proof.
           </p>
           <Link className="text-link" href="/requests">Review requests <span aria-hidden="true">→</span></Link>
         </article>
 
         <article className="workspace-card">
-          <p className="eyebrow">Zcash readiness</p>
+          <p className="eyebrow">Zcash testnet</p>
           <h2>
             {zcashNetwork?.state === "ready"
               ? "Zcash network ready."
@@ -148,16 +148,16 @@ export function ProductWorkspace({
                     ? "Zcash ready"
                     : "Not connected"}
           </div>
-          <Link className="text-link" href="/zcash">Open Zcash workspace <span aria-hidden="true">→</span></Link>
+          <Link className="text-link" href="/zcash">Prepare a Zcash payment <span aria-hidden="true">→</span></Link>
         </article>
 
         <article className="workspace-card">
-          <p className="eyebrow">Shared approvals</p>
-          <h2>Require more than one person when it matters.</h2>
+          <p className="eyebrow">How Zcash fits</p>
+          <h2>Use Zcash without making your wallet your identity.</h2>
           <p className="muted">
-            Teams and organizations can use shared approval policies for sensitive treasury actions instead of relying on one person alone.
+            Zcash moves funds. Zerant coordinates the payment request and keeps its saved state tied to your account. Credentials and consent remain private Zerant workflows.
           </p>
-          <div className="workspace-state"><span />Shared approval support</div>
+          <Link className="text-link" href="/zcash">Explore Zcash payments <span aria-hidden="true">→</span></Link>
         </article>
 
         <article className="workspace-card">

@@ -20,12 +20,18 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
     <main id="main" className="product-app zcash-workspace-page">
       <section className="app-heading workspace-intro">
         <div>
-          <p className="eyebrow">Zcash workspace</p>
-          <h1>Private payments, separate from your Zerant ID.</h1>
-          <p>Your passkey opens Zerant. A Zcash wallet holds funds and approves payments. Connect one only when you choose to pay.</p>
+          <p className="eyebrow">Zerant on Zcash · Testnet</p>
+          <h1>Prepare a Zcash payment. Keep control in your wallet.</h1>
+          <p>Zerant is built for the Zcash ecosystem. It prepares and tracks a specific payment request while a compatible Zcash wallet holds funds and approves the transaction.</p>
         </div>
         <span className="pill">{authenticated ? "Zerant account connected" : "Sign-in required"}</span>
       </section>
+
+      <nav className="zcash-shortcuts" aria-label="Zcash tools">
+        <a href="#zcash-payment-review">Prepare or review a payment</a>
+        <a href="#zcash-address-inspector">Check a Zcash address</a>
+        {authenticated ? <a href="#zcash-wallet-actions">Connect a testnet wallet</a> : null}
+      </nav>
 
       <section className="workspace-grid zcash-overview-grid" aria-label="Zcash status">
         <article className="workspace-card workspace-card-primary">
@@ -38,9 +44,9 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         </article>
 
         <article className="workspace-card">
-          <p className="eyebrow">Privacy boundary</p>
-          <h2>Your wallet stays separate from Zerant identity.</h2>
-          <p className="muted">Zerant does not use your balance, payment address, or transaction history as your account identity.</p>
+          <p className="eyebrow">Identity and payments</p>
+          <h2>Your Zerant ID is not a Zcash address.</h2>
+          <p className="muted">Your passkey opens your Zerant account. A Zcash wallet approves payments. Zerant does not use wallet balances or history as your identity.</p>
           <Link className="text-link" href="/account">Manage account access <span aria-hidden="true">→</span></Link>
         </article>
 

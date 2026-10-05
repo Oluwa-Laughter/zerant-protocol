@@ -9,9 +9,10 @@ test("workspace renders server and Zcash boundaries without browser-local persis
   );
 
   for (const text of [
-    "Connect. Receive. Prove.",
+    "Private trust for the Zcash ecosystem.",
+    "Sign in. Receive. Prove. Pay when needed.",
     "Open your Zerant account",
-    "Require more than one person when it matters.",
+    "Use Zcash testnet for payments",
     "Issue trust. Verify privately.",
   ]) {
     assert.ok(html.includes(text), "missing production state: " + text);
@@ -41,7 +42,7 @@ test("signed-in workspace links into the dedicated Zcash workspace", () => {
   );
 
   assert.ok(html.includes('href="/zcash"'));
-  assert.ok(html.includes("Open Zcash workspace"));
+  assert.ok(html.includes("Prepare a Zcash payment"));
   assert.equal(html.includes('id="zcash-wallet-actions"'), false);
   assert.equal(html.includes('id="zcash-payment-review"'), false);
 });

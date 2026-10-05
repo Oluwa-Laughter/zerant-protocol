@@ -25,6 +25,16 @@ It intentionally avoids shields, locks, eyes, and chain-link clichés. The mark 
 Target WCAG 2.2 AA. Maintain visible focus, keyboard navigation, semantic status announcements, adequate contrast, and 44px interactive targets where practical. Never rely on color alone.
 
 ## Product surfaces
+
+The landing page and authenticated workspace should identify Zerant as a product
+for the Zcash ecosystem and label the current network as testnet. Navigation
+should name the action or content users will find: credentials, verification
+requests, Zcash payments, issuer tools, verifier tools, and account settings.
+Explain that Zcash moves funds through a separate wallet while Zerant handles
+credential issuance and consent. Do not present credentials as on-chain assets
+or a submitted transaction as confirmed settlement. Show capabilities from
+actual product state, without seeded balances, requests, or credentials.
+
 M1A:
 - Landing page
 - Holder preview
