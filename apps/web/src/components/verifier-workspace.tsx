@@ -156,6 +156,9 @@ export function VerifierWorkspace({
   const requestsRefreshInFlight = useRef(false);
 
   const selectedSchema = availableSchemas.find((schema) => schema.id === schemaId);
+  const pendingRequestCount = requests.filter((request) => request.status === "pending").length;
+  const approvedRequestCount = requests.filter((request) => request.status === "approved" && request.verified).length;
+  const deniedOrExpiredCount = requests.filter((request) => request.status === "denied" || request.status === "expired").length;
 
   const refreshRequests = useCallback(async (announce = false) => {
     if (!authenticated || !profile || requestsRefreshInFlight.current) return;
@@ -516,6 +519,35 @@ export function VerifierWorkspace({
         <span className="pill">{profile.origin}</span>
       </section>
 
+      <section className="verifier-progress" aria-label="Verifier request progress">
+        <div className="verifier-progress-heading">
+          <div><p className="eyebrow">Verification flow</p><h2>Ask for one fact. Receive one bounded result.</h2></div>
+          <span className="small muted">Audience-bound · holder-approved</span>
+        </div>
+        <div className="verifier-progress-grid">
+          <article className="verifier-progress-step complete">
+            <span className="verifier-progress-number">01</span>
+            <div><strong>Verifier profile</strong><span>{profile.display_name}</span></div>
+            <span className="verifier-progress-state">Complete</span>
+          </article>
+          <a className={availableSchemas.length ? "verifier-progress-step complete" : "verifier-progress-step current"} href="#new-verification-request">
+            <span className="verifier-progress-number">02</span>
+            <div><strong>Choose trusted claim</strong><span>{availableSchemas.length ? `${availableSchemas.length} credential type${availableSchemas.length === 1 ? "" : "s"} available` : "Waiting for a trusted issuer credential type"}</span></div>
+            <span className="verifier-progress-state">{availableSchemas.length ? "Ready" : "Next"}</span>
+          </a>
+          <a className={requests.length ? "verifier-progress-step complete" : availableSchemas.length ? "verifier-progress-step current" : "verifier-progress-step"} href="#new-verification-request">
+            <span className="verifier-progress-number">03</span>
+            <div><strong>Request proof</strong><span>{requests.length ? `${requests.length} request${requests.length === 1 ? "" : "s"} created` : "Recipient reviews the exact claim and purpose"}</span></div>
+            <span className="verifier-progress-state">{requests.length ? "Active" : availableSchemas.length ? "Next" : "Waiting"}</span>
+          </a>
+          <a className={approvedRequestCount ? "verifier-progress-step complete" : pendingRequestCount ? "verifier-progress-step current" : "verifier-progress-step"} href="#verification-results">
+            <span className="verifier-progress-number">04</span>
+            <div><strong>Bounded result</strong><span>{approvedRequestCount ? `${approvedRequestCount} verified · ${pendingRequestCount} pending` : pendingRequestCount ? `${pendingRequestCount} waiting for holder decision` : deniedOrExpiredCount ? `${deniedOrExpiredCount} denied or expired` : "No result collected yet"}</span></div>
+            <span className="verifier-progress-state">{approvedRequestCount ? "Ready" : pendingRequestCount ? "Waiting" : "Pending"}</span>
+          </a>
+        </div>
+      </section>
+
       <section className="verifier-security-section">
         <article className="verifier-panel">
           <p className="eyebrow">Verification security</p>
@@ -779,7 +811,7 @@ export function VerifierWorkspace({
         </article>
       </section>
 
-      <section className="verifier-grid">
+      <section className="verifier-grid" id="new-verification-request">
         <article className="verifier-panel">
           <p className="eyebrow">New request</p>
           <h2>What do you need to verify?</h2>
@@ -862,7 +894,7 @@ export function VerifierWorkspace({
           {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
         </article>
 
-        <article className="verifier-panel">
+        <article className="verifier-panel" id="verification-results">
           <div className="verifier-request-list-heading">
             <div><p className="eyebrow">Requests</p><h2>{requests.length} request{requests.length === 1 ? "" : "s"}</h2></div>
             <Button variant="secondary" disabled={refreshingRequests} onClick={() => void refreshRequests(true)}>{refreshingRequests ? "Refreshing…" : "Refresh requests"}</Button>
