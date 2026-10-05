@@ -45,6 +45,10 @@
     {
       "path": "/api/zerant/maintenance/retention",
       "schedule": "17 3 * * *"
+    },
+    {
+      "path": "/api/zerant/maintenance/health",
+      "schedule": "23 * * * *"
     }
   ]
 }

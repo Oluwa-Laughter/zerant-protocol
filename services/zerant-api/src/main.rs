@@ -368,6 +368,45 @@ struct Health {
     zcash_boundary: &'static str,
 }
 
+#[derive(Serialize)]
+struct OperationalZcashHealth {
+    configured: bool,
+    network: String,
+    available: Option<bool>,
+    synced: Option<bool>,
+    checked_at: Option<OffsetDateTime>,
+    last_success_at: Option<OffsetDateTime>,
+    stale: bool,
+}
+
+#[derive(Serialize)]
+struct OperationalHealthSnapshot {
+    healthy: bool,
+    attention_required: bool,
+    pending_verifications: i64,
+    overdue_verifications: i64,
+    webhook_pending: i64,
+    webhook_dead: i64,
+    maintenance_last_success_at: Option<OffsetDateTime>,
+    maintenance_stale: bool,
+    zcash: OperationalZcashHealth,
+}
+
+fn operational_health_flags(
+    maintenance_stale: bool,
+    zcash_unhealthy: bool,
+    overdue_verifications: i64,
+    webhook_pending: i64,
+    webhook_dead: i64,
+) -> (bool, bool) {
+    let attention_required = maintenance_stale
+        || zcash_unhealthy
+        || overdue_verifications > 0
+        || webhook_dead > 0
+        || webhook_pending > 100;
+    (!attention_required, attention_required)
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StoreCredential {
@@ -9551,6 +9590,115 @@ async fn public_zcash_config(State(state): State<AppState>) -> Json<serde_json::
     Json(serde_json::json!({ "chain": state.zcash_chain.clone() }))
 }
 
+async fn operational_health_internal(
+    State(state): State<AppState>,
+) -> Result<Json<OperationalHealthSnapshot>, ApiError> {
+    let client = db_client(&state.db).await?;
+    let counts = client
+        .query_one(
+            "SELECT
+                (SELECT COUNT(*) FROM verification_requests
+                 WHERE status = 'pending' AND expires_at > NOW()) AS pending_verifications,
+                (SELECT COUNT(*) FROM verification_requests
+                 WHERE status = 'pending' AND expires_at <= NOW()) AS overdue_verifications,
+                (SELECT COUNT(*) FROM webhook_deliveries
+                 WHERE status IN ('pending', 'delivering')) AS webhook_pending,
+                (SELECT COUNT(*) FROM webhook_deliveries
+                 WHERE status = 'dead') AS webhook_dead,
+                (SELECT last_success_at FROM maintenance_job_state
+                 WHERE job = 'retention') AS maintenance_last_success_at",
+            &[],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let pending_verifications: i64 = counts.get(0);
+    let overdue_verifications: i64 = counts.get(1);
+    let webhook_pending: i64 = counts.get(2);
+    let webhook_dead: i64 = counts.get(3);
+    let maintenance_last_success_at: Option<OffsetDateTime> = counts.get(4);
+    if pending_verifications < 0
+        || overdue_verifications < 0
+        || webhook_pending < 0
+        || webhook_dead < 0
+    {
+        return Err(ApiError::Unavailable);
+    }
+
+    let now = OffsetDateTime::now_utc();
+    let maintenance_stale = maintenance_last_success_at
+        .is_none_or(|last| last > now || now - last > Duration::hours(36));
+
+    let configured = !state.light_client_endpoints.is_empty();
+    let network = match state.zcash_chain.as_str() {
+        "zcash:mainnet" => "mainnet",
+        "zcash:testnet" => "testnet",
+        _ => return Err(ApiError::Unavailable),
+    }
+    .to_owned();
+
+    let zcash_row = if configured {
+        client
+            .query_opt(
+                "SELECT available, synced, checked_at, last_success_at
+                 FROM zcash_network_readiness
+                 WHERE network = $1",
+                &[&network],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?
+    } else {
+        None
+    };
+
+    let (available, synced, checked_at, last_success_at, stale) = match zcash_row {
+        Some(row) => {
+            let available: bool = row.get(0);
+            let synced: Option<bool> = row.get(1);
+            let checked_at: OffsetDateTime = row.get(2);
+            let last_success_at: Option<OffsetDateTime> = row.get(3);
+            let stale = checked_at > now || now - checked_at > LIGHT_CLIENT_DEGRADED_DISPLAY_TTL;
+            (
+                Some(available),
+                synced,
+                Some(checked_at),
+                last_success_at,
+                stale,
+            )
+        }
+        None => (None, None, None, None, configured),
+    };
+
+    let zcash_unhealthy = configured && (stale || available != Some(true) || synced != Some(true));
+    let (healthy, attention_required) = operational_health_flags(
+        maintenance_stale,
+        zcash_unhealthy,
+        overdue_verifications,
+        webhook_pending,
+        webhook_dead,
+    );
+
+    Ok(Json(OperationalHealthSnapshot {
+        healthy,
+        attention_required,
+        pending_verifications,
+        overdue_verifications,
+        webhook_pending,
+        webhook_dead,
+        maintenance_last_success_at,
+        maintenance_stale,
+        zcash: OperationalZcashHealth {
+            configured,
+            network,
+            available,
+            synced,
+            checked_at,
+            last_success_at,
+            stale,
+        },
+    }))
+}
+
 async fn retention_maintenance_internal(
     State(state): State<AppState>,
 ) -> Result<Json<RetentionMaintenanceSummary>, ApiError> {
@@ -9715,6 +9863,27 @@ async fn retention_maintenance_internal(
         .await
         .map_err(|_| ApiError::Unavailable)?;
 
+    let summary = serde_json::json!({
+        "expired_requests": expired_requests,
+        "sessions": sessions,
+        "zecauth_challenges": zecauth_challenges,
+        "passkey_challenges": passkey_challenges,
+        "rate_limits": rate_limits,
+        "webhook_deliveries": webhook_deliveries,
+        "proof_material": proof_material,
+    });
+    tx.execute(
+        "INSERT INTO maintenance_job_state(job, last_success_at, last_summary, updated_at)
+         VALUES ('retention', NOW(), $1, NOW())
+         ON CONFLICT (job)
+         DO UPDATE SET last_success_at = EXCLUDED.last_success_at,
+                       last_summary = EXCLUDED.last_summary,
+                       updated_at = EXCLUDED.updated_at",
+        &[&summary],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
     tx.commit().await.map_err(|_| ApiError::Unavailable)?;
 
     Ok(Json(RetentionMaintenanceSummary {
@@ -9877,6 +10046,7 @@ fn app(state: AppState) -> Router {
             "/v1/internal/maintenance/retention",
             post(retention_maintenance_internal),
         )
+        .route("/v1/internal/ops/health", get(operational_health_internal))
         .route(
             "/v1/verifier/policies",
             get(list_verification_policies).post(create_verification_policy),
@@ -9985,6 +10155,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0027_zcash_network_high_water.sql"),
             include_str!("../migrations/0028_zcash_network_last_good.sql"),
             include_str!("../migrations/0029_verifier_proof_packages.sql"),
+            include_str!("../migrations/0030_operational_health.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -10492,6 +10663,61 @@ mod tests {
             readiness: None,
         };
         assert!(!stale_failure.is_fresh());
+    }
+
+    #[test]
+    fn operational_health_fails_closed_on_actionable_conditions() {
+        assert_eq!(
+            operational_health_flags(false, false, 0, 0, 0),
+            (true, false)
+        );
+        assert_eq!(
+            operational_health_flags(true, false, 0, 0, 0),
+            (false, true)
+        );
+        assert_eq!(
+            operational_health_flags(false, true, 0, 0, 0),
+            (false, true)
+        );
+        assert_eq!(
+            operational_health_flags(false, false, 1, 0, 0),
+            (false, true)
+        );
+        assert_eq!(
+            operational_health_flags(false, false, 0, 101, 0),
+            (false, true)
+        );
+        assert_eq!(
+            operational_health_flags(false, false, 0, 100, 0),
+            (true, false)
+        );
+        assert_eq!(
+            operational_health_flags(false, false, 0, 0, 1),
+            (false, true)
+        );
+    }
+
+    #[test]
+    fn operational_health_migration_stores_only_bounded_job_state() {
+        let schema = include_str!("../migrations/0030_operational_health.sql");
+        for required in [
+            "maintenance_job_state",
+            "last_success_at",
+            "last_summary",
+            "updated_at",
+        ] {
+            assert!(schema.contains(required), "{required}");
+        }
+        for forbidden in [
+            "credential",
+            "wallet_address",
+            "public_key",
+            "private_key",
+            "session_token",
+            "memo",
+        ] {
+            assert!(!schema.contains(forbidden), "{forbidden}");
+        }
     }
 
     #[tokio::test]

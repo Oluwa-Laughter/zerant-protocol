@@ -1,4 +1,5 @@
 import "server-only";
+import type { OperationalHealthSnapshot } from "@/lib/operational-health";
 
 const MAX_PROXY_BODY = 300_000;
 
@@ -242,4 +243,22 @@ export async function runRetentionMaintenanceToZerant(): Promise<RetentionMainte
     throw new Error("Zerant retention maintenance failed");
   }
   return (await upstream.json()) as RetentionMaintenanceSummary;
+}
+
+export async function fetchOperationalHealthToZerant(): Promise<OperationalHealthSnapshot> {
+  let upstream: Response;
+  try {
+    upstream = await fetch(new URL("/v1/internal/ops/health", backendOrigin()), {
+      method: "GET",
+      redirect: "manual",
+      cache: "no-store",
+    });
+  } catch {
+    throw new Error("Zerant operational health unavailable");
+  }
+
+  if (!upstream.ok) {
+    throw new Error("Zerant operational health failed");
+  }
+  return (await upstream.json()) as OperationalHealthSnapshot;
 }
