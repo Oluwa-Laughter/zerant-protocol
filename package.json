@@ -9,7 +9,7 @@
     "test": "pnpm --filter @zerant/web test"
   },
   "engines": {
-    "node": ">=22.13.0 <23",
+    "node": "22.x",
     "pnpm": ">=10 <11"
   },
   "packageManager": "pnpm@10.34.6",
