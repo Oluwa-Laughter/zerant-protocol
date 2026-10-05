@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { connectConnector, disconnectZcash, getZcashConnectionSnapshot, restoreConnection } from "./zcash-connection";
+import { connectConnector, disconnectZcash, getZcashConnectionSnapshot, probeExistingConnection, restoreConnection } from "./zcash-connection";
 import { discoverZcashConnectors, injectedConnector, walletConnectConnector } from "./zcash-connectors";
 import { registerZcashWalletDetector, type ZcashWalletAdapter } from "./zcash-wallet";
 import { signInWithZcashWallet } from "./zcash-auth";
@@ -126,4 +126,22 @@ test("WalletConnect does not advertise payment without transfer method or transp
     assert.equal(connector.capabilities.has("shieldedPayment"), false);
     assert.deepEqual(requests, []);
   }
+});
+
+
+test("silent wallet probe distinguishes authorization and network mismatch", async () => {
+  const base = injectedConnector({
+    ...fakeAdapter("test"),
+    existingConnection: async () => ({
+      providerId: "test",
+      providerName: "Test wallet",
+      shieldedAddress: "utest1example",
+      transparentAddress: "tmExample",
+      accountCount: 1,
+    }),
+  });
+  assert.equal(await probeExistingConnection(base, "zcash:testnet"), "ready");
+  assert.equal(await probeExistingConnection(base, "zcash:mainnet"), "wrong_network");
+  const pending = injectedConnector({ ...fakeAdapter("pending"), existingConnection: async () => null });
+  assert.equal(await probeExistingConnection(pending, "zcash:testnet"), "not_authorized");
 });

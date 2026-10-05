@@ -46,6 +46,29 @@ export async function ensureZcashConfig(request: typeof fetch = fetch): Promise<
 
 export function setZcashDisplayUri(uri: string): void { update({ displayUri: uri }); }
 
+export type WalletAuthorizationProbe =
+  | "not_authorized"
+  | "ready"
+  | "wrong_network"
+  | "unavailable";
+
+/** Silent local diagnostic only. Never requests approval, balance, or history. */
+export async function probeExistingConnection(
+  connector: ZcashConnector,
+  chain: ZcashChain,
+): Promise<WalletAuthorizationProbe> {
+  if (!connector.existingConnection || !connector.capabilities.has("connectionRestore")) {
+    return "unavailable";
+  }
+  try {
+    const account = await connector.existingConnection();
+    if (!account) return "not_authorized";
+    return connectedWalletNetwork(account) === chain ? "ready" : "wrong_network";
+  } catch {
+    return "unavailable";
+  }
+}
+
 function requireWalletNetwork(account: ConnectedZcashWallet, chain: ZcashChain): void {
   if (connectedWalletNetwork(account) !== chain) {
     const expected = chain === "zcash:testnet" ? "testnet" : "mainnet";
