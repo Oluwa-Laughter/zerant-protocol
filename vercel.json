@@ -40,5 +40,11 @@
         "service": "web"
       }
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/zerant/maintenance/retention",
+      "schedule": "17 3 * * *"
+    }
   ]
 }

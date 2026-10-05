@@ -82,6 +82,8 @@ const MAX_ACTIVE_ZECAUTH_CHALLENGES: i64 = 10_000;
 const MAX_ACTIVE_VERIFIER_API_KEYS: i64 = 20;
 const MAX_ACTIVE_VERIFIER_WEBHOOKS: i64 = 5;
 const MAX_ACTIVE_VERIFICATION_POLICIES: i64 = 100;
+const RETENTION_BATCH_LIMIT: i64 = 5_000;
+const RETENTION_LOCK_ID: i64 = 9_248_177_302;
 const MAX_WEBHOOK_ATTEMPTS: i32 = 8;
 const VERIFIER_API_KEY_PREFIX: &str = "zrt_vk_";
 const VERIFIER_PROOF_PACKAGE_SCHEMA: &str = "zerant.verifier-proof-package.v0.1";
@@ -344,6 +346,18 @@ impl IntoResponse for ApiError {
         )
             .into_response()
     }
+}
+
+#[derive(Serialize)]
+struct RetentionMaintenanceSummary {
+    skipped: bool,
+    expired_requests: u64,
+    sessions: u64,
+    zecauth_challenges: u64,
+    passkey_challenges: u64,
+    rate_limits: u64,
+    webhook_deliveries: u64,
+    proof_material: u64,
 }
 
 #[derive(Serialize)]
@@ -9537,6 +9551,184 @@ async fn public_zcash_config(State(state): State<AppState>) -> Json<serde_json::
     Json(serde_json::json!({ "chain": state.zcash_chain.clone() }))
 }
 
+async fn retention_maintenance_internal(
+    State(state): State<AppState>,
+) -> Result<Json<RetentionMaintenanceSummary>, ApiError> {
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    tx.batch_execute("SET LOCAL lock_timeout = '5s'; SET LOCAL statement_timeout = '60s'")
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let locked: bool = tx
+        .query_one(
+            "SELECT pg_try_advisory_xact_lock($1)",
+            &[&RETENTION_LOCK_ID],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    if !locked {
+        tx.rollback().await.map_err(|_| ApiError::Unavailable)?;
+        return Ok(Json(RetentionMaintenanceSummary {
+            skipped: true,
+            expired_requests: 0,
+            sessions: 0,
+            zecauth_challenges: 0,
+            passkey_challenges: 0,
+            rate_limits: 0,
+            webhook_deliveries: 0,
+            proof_material: 0,
+        }));
+    }
+
+    let expired_requests = tx
+        .execute(
+            "WITH doomed AS (
+                SELECT id
+                FROM verification_requests
+                WHERE status = 'pending' AND expires_at <= NOW()
+                ORDER BY expires_at
+                LIMIT $1
+                FOR UPDATE SKIP LOCKED
+             )
+             UPDATE verification_requests r
+             SET status = 'expired', decided_at = COALESCE(r.decided_at, NOW())
+             FROM doomed d
+             WHERE r.id = d.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let sessions = tx
+        .execute(
+            "WITH doomed AS (
+                SELECT id
+                FROM sessions
+                WHERE expires_at <= NOW() - INTERVAL '1 day'
+                ORDER BY expires_at
+                LIMIT $1
+             )
+             DELETE FROM sessions s USING doomed d WHERE s.id = d.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let zecauth_challenges = tx
+        .execute(
+            "WITH doomed AS (
+                SELECT id
+                FROM zecauth_challenges
+                WHERE expires_at <= NOW() - INTERVAL '1 day'
+                ORDER BY expires_at
+                LIMIT $1
+             )
+             DELETE FROM zecauth_challenges c USING doomed d WHERE c.id = d.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let passkey_challenges = tx
+        .execute(
+            "WITH doomed AS (
+                SELECT id
+                FROM passkey_challenges
+                WHERE expires_at <= NOW() - INTERVAL '1 day'
+                ORDER BY expires_at
+                LIMIT $1
+             )
+             DELETE FROM passkey_challenges c USING doomed d WHERE c.id = d.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let rate_limits = tx
+        .execute(
+            "WITH doomed AS (
+                SELECT account_id, action
+                FROM account_rate_limits
+                WHERE window_started_at <= NOW() - INTERVAL '10 minutes'
+                ORDER BY window_started_at
+                LIMIT $1
+             )
+             DELETE FROM account_rate_limits r
+             USING doomed d
+             WHERE r.account_id = d.account_id AND r.action = d.action",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let webhook_deliveries = tx
+        .execute(
+            "WITH doomed AS (
+                SELECT id
+                FROM webhook_deliveries
+                WHERE status IN ('delivered', 'dead')
+                  AND created_at <= NOW() - INTERVAL '30 days'
+                ORDER BY created_at
+                LIMIT $1
+             )
+             DELETE FROM webhook_deliveries w USING doomed d WHERE w.id = d.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let proof_material = tx
+        .execute(
+            "WITH doomed AS (
+                SELECT id
+                FROM verification_requests
+                WHERE status = 'approved'
+                  AND expires_at <= NOW() - INTERVAL '1 day'
+                  AND (
+                    response_ciphertext IS NOT NULL
+                    OR proof_revocation_jws IS NOT NULL
+                    OR proof_issuer_id IS NOT NULL
+                    OR proof_issuer_key_id IS NOT NULL
+                  )
+                ORDER BY expires_at
+                LIMIT $1
+                FOR UPDATE SKIP LOCKED
+             )
+             UPDATE verification_requests r
+             SET response_ciphertext = NULL,
+                 response_data_nonce = NULL,
+                 response_wrapped_dek = NULL,
+                 response_wrap_nonce = NULL,
+                 response_key_version = NULL,
+                 proof_issuer_id = NULL,
+                 proof_issuer_key_id = NULL,
+                 proof_revocation_jws = NULL
+             FROM doomed d
+             WHERE r.id = d.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(RetentionMaintenanceSummary {
+        skipped: false,
+        expired_requests,
+        sessions,
+        zecauth_challenges,
+        passkey_challenges,
+        rate_limits,
+        webhook_deliveries,
+        proof_material,
+    }))
+}
+
 fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -9680,6 +9872,10 @@ fn app(state: AppState) -> Router {
         .route(
             "/v1/internal/webhooks/requests/{request_id}/dispatch",
             post(dispatch_request_webhooks_internal),
+        )
+        .route(
+            "/v1/internal/maintenance/retention",
+            post(retention_maintenance_internal),
         )
         .route(
             "/v1/verifier/policies",

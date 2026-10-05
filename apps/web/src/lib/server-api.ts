@@ -214,3 +214,32 @@ export async function dispatchWebhookRequestToZerant(
 
   return (await upstream.json()) as WebhookDispatchSummary;
 }
+
+export type RetentionMaintenanceSummary = {
+  skipped: boolean;
+  expired_requests: number;
+  sessions: number;
+  zecauth_challenges: number;
+  passkey_challenges: number;
+  rate_limits: number;
+  webhook_deliveries: number;
+  proof_material: number;
+};
+
+export async function runRetentionMaintenanceToZerant(): Promise<RetentionMaintenanceSummary> {
+  let upstream: Response;
+  try {
+    upstream = await fetch(new URL("/v1/internal/maintenance/retention", backendOrigin()), {
+      method: "POST",
+      redirect: "manual",
+      cache: "no-store",
+    });
+  } catch {
+    throw new Error("Zerant retention maintenance unavailable");
+  }
+
+  if (!upstream.ok) {
+    throw new Error("Zerant retention maintenance failed");
+  }
+  return (await upstream.json()) as RetentionMaintenanceSummary;
+}
