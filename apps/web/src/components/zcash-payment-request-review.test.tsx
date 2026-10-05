@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { paymentNetworkStatus, shouldAutoObservePayment, ZcashPaymentRequestReview } from "./zcash-payment-request-review";
+import { paymentNetworkStatus, shouldAutoObservePayment, shouldObserveAfterSubmit, ZcashPaymentRequestReview } from "./zcash-payment-request-review";
 
 test("Zcash payment experience starts with sender-side private payment review", () => {
   const html = renderToStaticMarkup(<ZcashPaymentRequestReview enabled />);
@@ -32,4 +32,12 @@ test("auto observation is bounded to stale submitted payments below target depth
   assert.equal(shouldAutoObservePayment({ state: "submitted", network_state: "mempool", confirmations: 0, min_confirmations: 10, observed_at: "2026-10-05T19:59:45Z" }, now), false);
   assert.equal(shouldAutoObservePayment({ state: "submitted", network_state: "mempool", confirmations: 0, min_confirmations: 10, observed_at: "2026-10-05T19:59:00Z" }, now), true);
   assert.equal(shouldAutoObservePayment({ state: "submitted", network_state: "mined", confirmations: 10, min_confirmations: 10, observed_at: "2026-10-05T19:00:00Z" }, now), false);
+});
+
+
+test("immediate observation only runs for newly submitted unobserved payments", () => {
+  assert.equal(shouldObserveAfterSubmit(true, { state: "submitted", network_state: null }), true);
+  assert.equal(shouldObserveAfterSubmit(false, { state: "submitted", network_state: null }), false);
+  assert.equal(shouldObserveAfterSubmit(true, { state: "prepared", network_state: null }), false);
+  assert.equal(shouldObserveAfterSubmit(true, { state: "submitted", network_state: "mempool" }), false);
 });

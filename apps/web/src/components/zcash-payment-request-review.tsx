@@ -94,6 +94,13 @@ export function shouldAutoObservePayment(
   return !Number.isFinite(observedAt) || nowMs - observedAt >= 30_000;
 }
 
+export function shouldObserveAfterSubmit(
+  observationAvailable: boolean,
+  record: Pick<PaymentRecord, "state" | "network_state">,
+): boolean {
+  return observationAvailable && record.state === "submitted" && record.network_state === null;
+}
+
 export function ZcashPaymentRequestReview({
   enabled,
   observationAvailable = false,
@@ -245,10 +252,17 @@ export function ZcashPaymentRequestReview({
     setTxidDrafts((current) => ({ ...current, [id]: "" }));
     await refreshRecords().catch(() => undefined);
     setStatus("Transaction submitted. Zerant saved it. Network verification is pending.");
+    if (shouldObserveAfterSubmit(observationAvailable, saved)) {
+      const observed = await observePayment(id, false);
+      if (observed) {
+        const next = paymentNetworkStatus(observed);
+        setStatus(`Transaction submitted. ${next.label}. ${next.detail}`);
+      }
+    }
   }
 
-  const observePayment = useCallback(async (id: string, announce = true) => {
-    if (observationInFlight.current) return;
+  const observePayment = useCallback(async (id: string, announce = true): Promise<PaymentRecord | null> => {
+    if (observationInFlight.current) return null;
     observationInFlight.current = true;
     if (announce) setObservingId(id);
     try {
@@ -263,7 +277,7 @@ export function ZcashPaymentRequestReview({
             ? "Zcash network observation is temporarily unavailable. Your submitted payment record is unchanged."
             : "Zerant could not check this transaction right now.");
         }
-        return;
+        return null;
       }
       const observed = (await response.json()) as PaymentRecord;
       setRecords((current) => current.map((item) => item.id === id ? observed : item));
@@ -272,10 +286,12 @@ export function ZcashPaymentRequestReview({
         const next = paymentNetworkStatus(observed);
         setStatus(next.label + ". " + next.detail);
       }
+      return observed;
     } catch {
       if (announce) {
         setStatus("Zcash network observation is temporarily unavailable. Your submitted payment record is unchanged.");
       }
+      return null;
     } finally {
       observationInFlight.current = false;
       if (announce) setObservingId(null);
