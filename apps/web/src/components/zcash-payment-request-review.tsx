@@ -109,6 +109,19 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
     return () => controller.abort();
   }, [enabled]);
 
+
+  useEffect(() => {
+    if (!enabled) return;
+    const refresh = () => { void refreshRecords().catch(() => undefined); };
+    const visibility = () => { if (document.visibilityState === "visible") refresh(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [enabled, refreshRecords]);
+
   function reset(next: Flow) {
     setFlow(next);
     setSummary(null);
@@ -147,6 +160,16 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
       setStatus("Payment link copied. Check the recipient and amount in your testnet wallet before approval.");
     } catch {
       setStatus("Copy failed. Try opening this payment in your wallet.");
+    }
+  }
+
+
+  async function copyTransactionId(txid: string) {
+    try {
+      await navigator.clipboard.writeText(txid);
+      setStatus("Transaction ID copied. Submission is recorded, but network settlement is still pending verification.");
+    } catch {
+      setStatus("Could not copy the transaction ID. Select it below and copy it manually.");
     }
   }
 
@@ -260,6 +283,8 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
     ? directPaymentMode(summary, connection.selected)
     : null;
   const payment = summary?.payments[0] ?? null;
+  const preparedCount = records.filter((item) => item.state === "prepared").length;
+  const submittedCount = records.filter((item) => item.state === "submitted").length;
 
   return <section id="zcash-payment-review" className="zcash-request-review" aria-labelledby="zcash-request-title">
     <div className="section-heading">
@@ -327,23 +352,45 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
       <p className="small muted payment-request-note">A wallet transaction ID records submission here. Zerant cannot verify testnet settlement yet, so this payment will remain pending.</p>
       {flow === "review" && summary.payments.length > 1 ? <div className="request-payment-list">{summary.payments.map((item) => <article key={item.index} className="request-payment"><div><span className="eyebrow">Recipient {item.index + 1}</span><span className="mono">{item.recipient}</span></div><dl><div><dt>Amount</dt><dd>{formatZec(item.amount_zat)}</dd></div><div><dt>Label</dt><dd>{item.label ?? "None"}</dd></div><div><dt>Message</dt><dd>{item.message ?? "None"}</dd></div><div><dt>Memo</dt><dd>{item.memo_present ? "Present" : "None"}</dd></div></dl></article>)}</div> : null}
     </div> : null}
-    {enabled ? <div className="request-summary" aria-label="Recent Zcash payments">
-      <div className="section-heading compact"><p className="eyebrow">Recent payments</p><h3>Saved payment activity</h3></div>
-      {records.length ? records.map((item) => <article className="request-payment" key={item.id}>
-        <div><strong>{item.state === "submitted" ? "Submitted · Network verification pending" : item.state === "expired" ? "Expired" : "Prepared"}</strong><span className="mono">{item.recipient}</span></div>
-        <p className="small muted">{formatZec(item.amount_zat)} · {new Date(item.created_at).toLocaleString()}</p>
-        {item.txid ? <p className="small muted">Transaction <span className="mono">{item.txid}</span></p> : null}
+    {enabled ? <div className="request-summary zcash-payment-history" aria-label="Recent Zcash payments">
+      <div className="zcash-payment-history-header">
+        <div className="section-heading compact"><p className="eyebrow">Recent payments</p><h3>Saved payment activity</h3><p className="small muted">Zerant keeps only the payment records you prepared here. Submitted means the wallet returned a transaction ID; it does not mean settled.</p></div>
+        <div className="payment-history-actions">
+          <div className="payment-history-stats" aria-label="Payment counts">
+            <span><strong>{preparedCount}</strong> prepared</span>
+            <span><strong>{submittedCount}</strong> submitted</span>
+          </div>
+          <Button variant="secondary" onClick={() => void refreshRecords().then(() => setStatus("Saved payments refreshed."), () => setStatus("Could not refresh saved payments."))}>Refresh</Button>
+        </div>
+      </div>
+      {records.length ? <div className="payment-activity-list">{records.map((item) => <article className={`request-payment payment-activity-card state-${item.state}`} key={item.id}>
+        <div className="payment-activity-top">
+          <div>
+            <span className={`payment-status-pill ${item.state}`}><span aria-hidden="true" />{item.state === "submitted" ? "Submitted · pending" : item.state === "expired" ? "Expired" : "Prepared"}</span>
+            <strong>{formatZec(item.amount_zat)}</strong>
+          </div>
+          <time className="small muted" dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time>
+        </div>
+        <div className="payment-activity-destination"><span className="eyebrow">Destination</span><span className="mono">{item.recipient}</span></div>
+        {item.txid ? <div className="payment-txid-row">
+          <div><span className="eyebrow">Transaction ID</span><code className="payment-txid-value" title={item.txid}>{item.txid}</code></div>
+          <Button variant="secondary" onClick={() => void copyTransactionId(item.txid!)}>Copy txid</Button>
+        </div> : null}
+        {item.state === "submitted" ? <p className="small muted payment-pending-note"><span aria-hidden="true" />Submission recorded. Zerant is not claiming settlement until trustworthy testnet observation is available.</p> : null}
         {item.state === "prepared" && item.payment_uri && item.transparent_only ? <p className="small muted">Transparent destination: this payment reveals more information on chain. Choose it only if that is acceptable to you.</p> : null}
         {item.state === "prepared" && item.payment_uri ? <div className="vault-actions wrap">
           <Button variant="secondary" onClick={() => reopenSavedPayment(item.payment_uri)}>{item.transparent_only ? "Open transparent payment in wallet" : "Open in wallet"}</Button>
           <Button variant="secondary" onClick={() => void copySavedPayment(item.payment_uri)}>{item.transparent_only ? "Copy transparent payment link" : "Copy payment link"}</Button>
         </div> : null}
-        {item.state === "prepared" ? <div className="vault-actions wrap">
-          <label htmlFor={"payment-txid-" + item.id}>Wallet transaction ID</label>
-          <input id={"payment-txid-" + item.id} value={txidDrafts[item.id] ?? ""} onChange={(event) => setTxidDrafts((current) => ({ ...current, [item.id]: event.target.value }))} spellCheck={false} autoComplete="off" maxLength={64} placeholder="64-character transaction ID" />
-          <Button variant="secondary" disabled={!/^[0-9a-f]{64}$/i.test(txidDrafts[item.id] ?? "")} onClick={() => void submitTxid(item.id, txidDrafts[item.id] ?? "").catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Could not save transaction ID."))}>Save submission</Button>
+        {item.state === "prepared" ? <div className="payment-submit-form">
+          <label htmlFor={"payment-txid-" + item.id}>Already submitted in another wallet?</label>
+          <p className="small muted">Paste the exact 64-character transaction ID returned by your wallet. This records submission only.</p>
+          <div className="payment-submit-row">
+            <input id={"payment-txid-" + item.id} value={txidDrafts[item.id] ?? ""} onChange={(event) => setTxidDrafts((current) => ({ ...current, [item.id]: event.target.value }))} spellCheck={false} autoComplete="off" maxLength={64} placeholder="64-character transaction ID" />
+            <Button variant="secondary" disabled={!/^[0-9a-f]{64}$/i.test(txidDrafts[item.id] ?? "")} onClick={() => void submitTxid(item.id, txidDrafts[item.id] ?? "").catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Could not save transaction ID."))}>Save submission</Button>
+          </div>
         </div> : null}
-      </article>) : <p className="muted">No saved payments yet.</p>}
+      </article>)}</div> : <div className="payment-history-empty"><strong>No saved payments yet.</strong><p className="small muted">Prepare a payment above and Zerant will keep its exact request available here until it is submitted or expires.</p></div>}
       {nextCursor ? <div className="vault-actions"><Button variant="secondary" onClick={() => void loadMore()}>Load more payments</Button></div> : null}
     </div> : null}
   </section>;
