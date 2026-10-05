@@ -37,6 +37,8 @@ Linked Zcash sign-in methods can be removed with `DELETE /v1/account/zcash/zecau
 
 ## Privacy boundary
 
+Account export version 2 includes the account's stored payment metadata (canonical request digest, recipient, exact zatoshis, network, state, txid and timestamps) alongside credentials and activity. Export still requires recent authentication. Payment export is bounded to 5,000 newest records and marks `payments_complete=false` if older records exist; the authenticated payment-history API remains paginated. Account deletion removes payment records through the existing account foreign key.
+
 Passkeys are an account-access mechanism only. They are not credentials, reputation signals, payment identities, or proof inputs. Zerant does not expose WebAuthn credential IDs through the customer UI or verifier APIs.
 
 ## Operational notes

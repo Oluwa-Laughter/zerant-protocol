@@ -8,6 +8,7 @@ use zerant_zcash::{
 };
 
 const MAX_PAYMENT_RECORDS: i64 = 50;
+const MAX_EXPORT_PAYMENT_RECORDS: i64 = 5_000;
 const MIN_CONFIRMATIONS: i32 = 10;
 
 #[derive(Deserialize)]
@@ -19,6 +20,60 @@ pub(super) struct ListQuery {
 pub(super) struct PaymentPage {
     items: Vec<PaymentView>,
     next_cursor: Option<String>,
+}
+
+#[derive(Serialize)]
+pub(super) struct PaymentExportView {
+    id: Uuid,
+    request_digest: String,
+    recipient: String,
+    amount_zat: i64,
+    network: String,
+    min_confirmations: i32,
+    state: String,
+    txid: Option<String>,
+    created_at: OffsetDateTime,
+    expires_at: OffsetDateTime,
+    submitted_at: Option<OffsetDateTime>,
+}
+
+pub(super) async fn export(
+    db: &Pool,
+    account: Uuid,
+) -> Result<(Vec<PaymentExportView>, bool), ApiError> {
+    let client = db_client(db).await?;
+    let rows = client
+        .query(
+            "SELECT id, request_digest, recipient, amount_zat, network, min_confirmations,
+                state, txid, created_at, expires_at, submitted_at
+         FROM zcash_payments WHERE account_id = $1
+         ORDER BY created_at DESC, id DESC LIMIT $2",
+            &[&account, &(MAX_EXPORT_PAYMENT_RECORDS + 1)],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let complete = rows.len() <= MAX_EXPORT_PAYMENT_RECORDS as usize;
+    let payments = rows
+        .into_iter()
+        .take(MAX_EXPORT_PAYMENT_RECORDS as usize)
+        .map(|row| {
+            let digest: Vec<u8> = row.get("request_digest");
+            PaymentExportView {
+                id: row.get("id"),
+                request_digest: URL_SAFE_NO_PAD.encode(digest),
+                recipient: row.get("recipient"),
+                amount_zat: row.get("amount_zat"),
+                network: row.get("network"),
+                min_confirmations: row.get("min_confirmations"),
+                state: row.get("state"),
+                txid: row.get("txid"),
+                created_at: row.get("created_at"),
+                expires_at: row.get("expires_at"),
+                submitted_at: row.get("submitted_at"),
+            }
+        })
+        .collect();
+    Ok((payments, complete))
 }
 
 fn page_cursor(payment: &PaymentView) -> String {
@@ -535,6 +590,26 @@ mod tests {
         .0;
         assert_eq!(next.items.len(), 2);
         assert!(next.next_cursor.is_none());
+        let (exported, complete) = export(&db, accounts[0]).await.unwrap();
+        assert!(complete);
+        assert_eq!(exported.len(), 52);
+        let submitted_export = exported
+            .iter()
+            .find(|payment| payment.id == first.id)
+            .unwrap();
+        let expected_txid = "a".repeat(64);
+        assert_eq!(
+            submitted_export.txid.as_deref(),
+            Some(expected_txid.as_str())
+        );
+        assert_eq!(
+            URL_SAFE_NO_PAD
+                .decode(&submitted_export.request_digest)
+                .unwrap()
+                .len(),
+            32
+        );
+        assert_eq!(export(&db, accounts[1]).await.unwrap().0.len(), 2);
         for account in accounts {
             client
                 .execute("DELETE FROM accounts WHERE id = $1", &[&account])

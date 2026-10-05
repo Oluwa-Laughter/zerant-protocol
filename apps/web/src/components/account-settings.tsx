@@ -52,7 +52,7 @@ export function AccountSettings({
       return;
     }
 
-    const payload = await response.json();
+    const payload = (await response.json()) as { payments_complete?: boolean };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
@@ -64,7 +64,9 @@ export function AccountSettings({
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
-    setStatus("Your Zerant data export is ready.");
+    setStatus(payload.payments_complete === false
+      ? "Export ready. For older payments, use the paginated history in your Zcash workspace."
+      : "Your Zerant data export is ready.");
   }
 
   async function deleteAccount() {
@@ -162,7 +164,7 @@ export function AccountSettings({
           <p className="eyebrow">Export</p>
           <h2>Take your Zerant data with you.</h2>
           <p className="muted">
-            Download your private credentials and account activity as a portable JSON file.
+            Download your private credentials, account activity, and saved payment details as a portable JSON file. Keep it private.
           </p>
           <Button onClick={downloadExport}>Download my data</Button>
         </article>

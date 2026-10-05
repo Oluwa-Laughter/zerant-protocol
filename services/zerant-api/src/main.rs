@@ -480,6 +480,8 @@ struct AccountExport {
     credentials: Vec<StoredCredential>,
     activity: Vec<ActivityEventView>,
     activity_complete: bool,
+    payments: Vec<payments::PaymentExportView>,
+    payments_complete: bool,
 }
 
 #[derive(Deserialize)]
@@ -4114,13 +4116,17 @@ async fn export_account(
         });
     }
 
+    let (payments, payments_complete) = payments::export(&state.db, account).await?;
+
     Ok(Json(AccountExport {
-        export_version: 1,
+        export_version: 2,
         generated_at: OffsetDateTime::now_utc(),
         zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
         credentials,
         activity,
         activity_complete,
+        payments,
+        payments_complete,
     }))
 }
 
