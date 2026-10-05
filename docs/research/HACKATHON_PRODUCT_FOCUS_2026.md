@@ -37,6 +37,17 @@ identity.
   documents testnet wallets and ZIP-321 `zcash:` URI handling. It is a plausible
   portable testnet payment route, without claiming a Zerant browser connection
   or a completed interoperability test.
+- [ZecHub's wallet catalog](https://zechub.wiki/wallets) lists wallets and
+  payment pools, including ZODL, Zingo, Zallet, Noir, and Nozy. A listing is not
+  a common dapp connection standard. Zerant should support a wallet only after
+  checking its testnet build, request handling, privacy behavior, and return
+  semantics. ZIP-321 remains the wallet-agnostic payment handoff.
+- [ZecHub's 2026 hackathon archive](https://zechub.wiki/hackathon) lists 36
+  submissions, including wallet login, accounting, infrastructure, and FROST
+  entries. Those examples establish ecosystem interest, not product behavior
+  Zerant can claim. Zerant's distinct complete flow is organization-issued
+  contextual credentials, holder review of the exact claim, and bounded
+  verifier results. Do not import another submission's code or claims.
 - [NEAR Intents](https://docs.near-intents.org/) documents a cross-chain swap
   system. It does not solve Zerant's credential consent or exact Zcash shielded
   settlement verification. It is outside the first complete Zerant flow.

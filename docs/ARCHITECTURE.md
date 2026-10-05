@@ -26,6 +26,20 @@ prevention step and never grants authority. It requests no wallet information.
 
 ## Load-bearing decisions
 
+### Holder proof preview binding (2026-10-05)
+
+Before an authenticated holder approves a pending verification request, the
+service returns a holder-only preview of the exact claim value and responsible
+issuer selected under the request's issuer allowlist and credential context. The
+preview includes the requester, authenticated origin, purpose, and expiry; it
+returns no source credential, signature, wallet information, or other credential
+history. The decision request must echo the previewed value and issuer ID. The
+service repeats credential eligibility, revocation, request-expiry, audience,
+issuer-trust, and replay checks, then rejects approval if the currently selected
+value or issuer differs. Denial requires no preview and emits no proof. Preview
+does not reserve consent, persist another credential copy, or grant the verifier
+access. A changed request or available credential requires another holder review.
+
 ### Explicit Noir connection gesture (2026-10-05)
 
 The user-initiated Noir connection calls `zcash_requestAccounts` directly. Silent

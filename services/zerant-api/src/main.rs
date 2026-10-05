@@ -1002,6 +1002,14 @@ struct HolderRequestView {
 }
 
 #[derive(Serialize)]
+struct HolderRequestPreview {
+    request: HolderRequestView,
+    issuer_id: String,
+    issuer_name: String,
+    value: String,
+}
+
+#[derive(Serialize)]
 struct VerifierRequestView {
     id: Uuid,
     holder_zerant_id: String,
@@ -1056,6 +1064,14 @@ struct VerifierProofPackage {
 #[serde(deny_unknown_fields)]
 struct DecideRequest {
     decision: String,
+    expected_issuer_id: Option<String>,
+    expected_value: Option<String>,
+}
+
+fn approval_matches_preview(input: &DecideRequest, issuer_id: &str, value: &str) -> bool {
+    input.decision == "approve"
+        && input.expected_issuer_id.as_deref() == Some(issuer_id)
+        && input.expected_value.as_deref() == Some(value)
 }
 
 #[derive(Deserialize)]
@@ -6877,6 +6893,136 @@ async fn list_holder_requests(
     ))
 }
 
+async fn preview_holder_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<HolderRequestPreview>, ApiError> {
+    let holder_account = account_id(&headers, &state.db).await?;
+    let client = db_client(&state.db).await?;
+    let row = client
+        .query_opt(
+            "SELECT r.id, v.display_name, v.origin, r.purpose, s.display_name,
+                r.claim_type, r.context, r.created_at, r.expires_at, r.accepted_issuer_ids
+         FROM verification_requests r
+         JOIN verifier_profiles v ON v.id = r.verifier_profile_id
+         LEFT JOIN credential_schemas s ON s.id = r.credential_schema_id
+         WHERE r.id = $1 AND r.subject_account_id = $2
+           AND r.status = 'pending' AND r.expires_at > NOW()",
+            &[&id, &holder_account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let request = HolderRequestView {
+        id: row.get(0),
+        verifier_name: row.get(1),
+        verifier_origin: row.get(2),
+        purpose: row.get(3),
+        credential_name: row.get(4),
+        claim_type: row.get(5),
+        context: row.get(6),
+        created_at: row.get(7),
+        expires_at: row.get(8),
+    };
+    let accepted: Vec<String> =
+        serde_json::from_value(row.get::<_, Value>(9)).map_err(|_| ApiError::Unavailable)?;
+    let (candidate, value, _) = select_holder_credential(
+        &state,
+        &client,
+        holder_account,
+        &request.claim_type,
+        &request.context,
+        &accepted,
+    )
+    .await?;
+    Ok(Json(HolderRequestPreview {
+        request,
+        issuer_id: candidate.get(3),
+        issuer_name: candidate.get(15),
+        value,
+    }))
+}
+
+async fn select_holder_credential(
+    state: &AppState,
+    client: &deadpool_postgres::Client,
+    holder_account: Uuid,
+    claim_type: &str,
+    context: &str,
+    accepted: &[String],
+) -> Result<(Row, String, String), ApiError> {
+    let candidates = client
+        .query(
+            "SELECT c.vault_record_id,
+                    p.id, p.account_id, p.issuer_id,
+                    k.id, k.issuer_key_id, k.public_jwk,
+                    k.ciphertext, k.data_nonce, k.wrapped_dek, k.wrap_nonce, k.key_version,
+                    k.valid_from, k.compromised_at, c.expires_at, p.display_name
+             FROM issued_credentials c
+             JOIN issuer_profiles p ON p.id = c.issuer_profile_id
+             JOIN issuer_signing_keys k
+               ON k.issuer_profile_id = p.id
+              AND k.issuer_key_id = c.issuer_key_id
+             WHERE c.subject_account_id = $1
+               AND c.claim_type = $2
+               AND c.context = $3
+               AND c.revoked_at IS NULL
+               AND c.expires_at > NOW()
+             ORDER BY c.created_at DESC",
+            &[&holder_account, &claim_type, &context],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let candidate = candidates
+        .into_iter()
+        .find(|row| {
+            let issuer_id: String = row.get(3);
+            let vault_record_id: Option<Uuid> = row.get(0);
+            vault_record_id.is_some() && accepted.contains(&issuer_id)
+        })
+        .ok_or(ApiError::NotFound)?;
+
+    let vault_record_id: Uuid = candidate
+        .get::<_, Option<Uuid>>(0)
+        .ok_or(ApiError::NotFound)?;
+    let vault_row = client
+        .query_opt(
+            "SELECT id, ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version,
+                    created_at, updated_at
+             FROM credential_envelopes
+             WHERE id = $1 AND account_id = $2",
+            &[&vault_record_id, &holder_account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let vault_row = CredentialRow::from_row(vault_row);
+    let mut private_record = state.cipher.decrypt(holder_account, &vault_row)?;
+    let record: Value =
+        serde_json::from_slice(&private_record).map_err(|_| ApiError::Unavailable)?;
+    private_record.fill(0);
+    if record.get("type").and_then(Value::as_str) != Some("zerant.private-credential")
+        || record.get("claim_type").and_then(Value::as_str) != Some(claim_type)
+        || record.get("context").and_then(Value::as_str) != Some(context)
+    {
+        return Err(ApiError::Invalid);
+    }
+    let value = record
+        .get("value")
+        .and_then(Value::as_str)
+        .ok_or(ApiError::Invalid)?
+        .to_owned();
+    let source_jws = record
+        .get("signed_credential")
+        .and_then(Value::as_str)
+        .ok_or(ApiError::Invalid)?
+        .to_owned();
+
+    Ok((candidate, value, source_jws))
+}
+
 async fn decide_holder_request(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -6959,73 +7105,19 @@ async fn decide_holder_request(
     let accepted: Vec<String> =
         serde_json::from_value(accepted_value).map_err(|_| ApiError::Unavailable)?;
 
-    let candidates = client
-        .query(
-            "SELECT c.vault_record_id,
-                    p.id, p.account_id, p.issuer_id,
-                    k.id, k.issuer_key_id, k.public_jwk,
-                    k.ciphertext, k.data_nonce, k.wrapped_dek, k.wrap_nonce, k.key_version,
-                    k.valid_from, k.compromised_at, c.expires_at
-             FROM issued_credentials c
-             JOIN issuer_profiles p ON p.id = c.issuer_profile_id
-             JOIN issuer_signing_keys k
-               ON k.issuer_profile_id = p.id
-              AND k.issuer_key_id = c.issuer_key_id
-             WHERE c.subject_account_id = $1
-               AND c.claim_type = $2
-               AND c.context = $3
-               AND c.revoked_at IS NULL
-               AND c.expires_at > NOW()
-             ORDER BY c.created_at DESC",
-            &[&holder_account, &claim_type, &context],
-        )
-        .await
-        .map_err(|_| ApiError::Unavailable)?;
+    let (candidate, value, source_jws) = select_holder_credential(
+        &state,
+        &client,
+        holder_account,
+        &claim_type,
+        &context,
+        &accepted,
+    )
+    .await?;
 
-    let candidate = candidates
-        .into_iter()
-        .find(|row| {
-            let issuer_id: String = row.get(3);
-            let vault_record_id: Option<Uuid> = row.get(0);
-            vault_record_id.is_some() && accepted.contains(&issuer_id)
-        })
-        .ok_or(ApiError::NotFound)?;
-
-    let vault_record_id: Uuid = candidate
-        .get::<_, Option<Uuid>>(0)
-        .ok_or(ApiError::NotFound)?;
-    let vault_row = client
-        .query_opt(
-            "SELECT id, ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version,
-                    created_at, updated_at
-             FROM credential_envelopes
-             WHERE id = $1 AND account_id = $2",
-            &[&vault_record_id, &holder_account],
-        )
-        .await
-        .map_err(|_| ApiError::Unavailable)?
-        .ok_or(ApiError::NotFound)?;
-    let vault_row = CredentialRow::from_row(vault_row);
-    let mut private_record = state.cipher.decrypt(holder_account, &vault_row)?;
-    let record: Value =
-        serde_json::from_slice(&private_record).map_err(|_| ApiError::Unavailable)?;
-    private_record.fill(0);
-    if record.get("type").and_then(Value::as_str) != Some("zerant.private-credential")
-        || record.get("claim_type").and_then(Value::as_str) != Some(claim_type.as_str())
-        || record.get("context").and_then(Value::as_str) != Some(context.as_str())
-    {
-        return Err(ApiError::Invalid);
+    if !approval_matches_preview(&input, &candidate.get::<_, String>(3), &value) {
+        return Err(ApiError::Conflict);
     }
-    let value = record
-        .get("value")
-        .and_then(Value::as_str)
-        .ok_or(ApiError::Invalid)?
-        .to_owned();
-    let source_jws = record
-        .get("signed_credential")
-        .and_then(Value::as_str)
-        .ok_or(ApiError::Invalid)?
-        .to_owned();
 
     let issuer_profile_id: Uuid = candidate.get(1);
     let issuer_account: Uuid = candidate.get(2);
@@ -10185,6 +10277,10 @@ fn app(state: AppState) -> Router {
         )
         .route("/v1/holder/requests", get(list_holder_requests))
         .route(
+            "/v1/holder/requests/{id}/preview",
+            get(preview_holder_request),
+        )
+        .route(
             "/v1/holder/requests/{id}/decision",
             post(decide_holder_request),
         )
@@ -10429,6 +10525,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn approval_requires_the_exact_previewed_issuer_and_claim() {
+        let mut input: DecideRequest = serde_json::from_str(r#"{"decision":"approve"}"#).unwrap();
+        assert!(!approval_matches_preview(&input, "issuer-a", "member"));
+        input.expected_issuer_id = Some("issuer-a".into());
+        input.expected_value = Some("member".into());
+        assert!(approval_matches_preview(&input, "issuer-a", "member"));
+        assert!(!approval_matches_preview(&input, "issuer-b", "member"));
+        assert!(!approval_matches_preview(&input, "issuer-a", "admin"));
+    }
 
     async fn removal_account(
         client: &deadpool_postgres::Client,

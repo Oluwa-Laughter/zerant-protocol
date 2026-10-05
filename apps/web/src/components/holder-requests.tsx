@@ -16,6 +16,13 @@ export type HolderVerificationRequest = {
   expires_at: string;
 };
 
+type ProofPreview = {
+  request: HolderVerificationRequest;
+  issuer_id: string;
+  issuer_name: string;
+  value: string;
+};
+
 export function HolderRequests({
   authenticated,
   backendAvailable,
@@ -27,33 +34,76 @@ export function HolderRequests({
 }) {
   const [requests, setRequests] = useState(initialRequests);
   const [status, setStatus] = useState("");
+  const [preview, setPreview] = useState<ProofPreview | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function review(id: string) {
+    if (busyId) return;
+    setBusyId(id);
+    setStatus("");
+    try {
+      const response = await fetch(
+        "/api/zerant/holder/requests/" + encodeURIComponent(id) + "/preview",
+        { credentials: "same-origin", cache: "no-store" },
+      );
+      if (!response.ok) {
+        setStatus(response.status === 404
+          ? "This request has expired, or no matching private credential is available."
+          : "The proof could not be reviewed right now.");
+        return;
+      }
+      setPreview(await response.json() as ProofPreview);
+    } catch {
+      setStatus("The proof could not be reviewed right now.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function decide(id: string, decision: "approve" | "deny") {
-    const response = await fetch(
-      "/api/zerant/holder/requests/" + encodeURIComponent(id) + "/decision",
-      {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ decision }),
-      },
-    );
-    if (!response.ok) {
-      if (response.status === 429) { setStatus("You’re doing that too quickly. Try again in a minute."); return; }
-      setStatus(
-        response.status === 404
-          ? "A matching private credential could not be found for this request."
-          : "This request could not be completed. It may have expired.",
+    if (busyId || (decision === "approve" && preview?.request.id !== id)) return;
+    setBusyId(id);
+    setStatus("");
+    try {
+      const response = await fetch(
+        "/api/zerant/holder/requests/" + encodeURIComponent(id) + "/decision",
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(decision === "approve" ? {
+            decision,
+            expected_issuer_id: preview?.issuer_id,
+            expected_value: preview?.value,
+          } : { decision }),
+        },
       );
-      return;
-    }
+      if (!response.ok) {
+        if (response.status === 429) {
+          setStatus("You’re doing that too quickly. Try again in a minute.");
+          return;
+        }
+        setPreview(null);
+        setStatus(
+          response.status === 404
+            ? "A matching private credential could not be found for this request."
+            : "The request or available credential changed. Review it again if it is still waiting.",
+        );
+        return;
+      }
 
-    setRequests((current) => current.filter((item) => item.id !== id));
-    setStatus(
-      decision === "approve"
-        ? "Approved. Zerant sent only the requested proof."
-        : "Request denied. No credential information was shared.",
-    );
+      setRequests((current) => current.filter((item) => item.id !== id));
+      setPreview(null);
+      setStatus(
+        decision === "approve"
+          ? "Approved. The claim you reviewed is now available to this verifier."
+          : "Request denied. No credential information was shared.",
+      );
+    } catch {
+      setStatus("This request could not be completed. Try again.");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   if (!backendAvailable) {
@@ -108,7 +158,7 @@ export function HolderRequests({
             </div>
 
             <div className="request-disclosure">
-              <p><strong>If you approve:</strong> Zerant will return only a proof for this request.</p>
+              <p><strong>If you approve:</strong> Zerant will share the exact claim shown in your review with this requester.</p>
               <p><strong>It will not share:</strong> your complete credential, other credentials, payment address, balance or wallet history.</p>
             </div>
 
@@ -120,9 +170,22 @@ export function HolderRequests({
               })}
             </p>
 
+            {preview?.request.id === request.id ? (
+              <div className="request-purpose">
+                <span className="eyebrow">Claim to be shared</span>
+                <p><strong>{preview.value}</strong></p>
+                <p>Issued by {preview.issuer_name}</p>
+                <p>For {preview.request.verifier_name} at {preview.request.verifier_origin}</p>
+                <p>Purpose: {preview.request.purpose}</p>
+              </div>
+            ) : null}
             <div className="vault-actions">
-              <Button onClick={() => decide(request.id, "approve")}>Approve proof</Button>
-              <Button variant="secondary" onClick={() => decide(request.id, "deny")}>Deny</Button>
+              {preview?.request.id === request.id ? (
+                <Button disabled={busyId !== null} onClick={() => decide(request.id, "approve")}>Approve this claim</Button>
+              ) : (
+                <Button disabled={busyId !== null} onClick={() => review(request.id)}>Review proof</Button>
+              )}
+              <Button variant="secondary" disabled={busyId !== null} onClick={() => decide(request.id, "deny")}>Deny</Button>
             </div>
           </article>
         )) : (
