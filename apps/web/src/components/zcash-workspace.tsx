@@ -33,6 +33,29 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         {authenticated ? <a href="#zcash-wallet-actions">Connect a testnet wallet</a> : null}
       </nav>
 
+      <section className="zcash-wallet-setup" aria-labelledby="zcash-testnet-wallet-title">
+        <div className="section-heading">
+          <p className="eyebrow">Testnet wallet setup</p>
+          <h2 id="zcash-testnet-wallet-title">Use a wallet that is actually on Zcash testnet.</h2>
+          <p className="muted">The Noir Wallet from the Chrome Web Store is mainnet. For Zerant testnet, use Noir's separate official testnet extension build, or use a compatible testnet wallet through the reviewed ZIP-321 payment link.</p>
+        </div>
+        <div className="zcash-wallet-setup-grid">
+          <article className="workspace-card">
+            <p className="eyebrow">Direct connection</p>
+            <h3>Testnet Noir Wallet</h3>
+            <p className="muted">Noir publishes a separate testnet extension on its official GitHub Releases page. Download the asset ending in <code>-testnet.zip</code>, unzip it, then load the extracted extension from Chrome's Extensions page in Developer mode. The installed extension should identify itself as <strong>[Testnet] Noir Wallet</strong>.</p>
+            <a className="button" href="https://github.com/NoirWallet/noir-wallet-sdk/releases" target="_blank" rel="noreferrer">Open official Noir releases <span aria-hidden="true">↗</span></a>
+          </article>
+          <article className="workspace-card">
+            <p className="eyebrow">Portable payment</p>
+            <h3>ZIP-321 testnet wallet</h3>
+            <p className="muted">A wallet does not need a Zerant browser connection to pay a reviewed request. Zerant can produce the canonical <code>zcash:</code> payment link; wallets such as Zingo document testnet wallets and ZIP-321 URI handling.</p>
+            <a className="text-link" href="https://github.com/zingolabs/zingo-pc" target="_blank" rel="noreferrer">Review Zingo PC support <span aria-hidden="true">↗</span></a>
+          </article>
+        </div>
+        <p className="small muted">Wallet installation and payment approval stay outside Zerant. Never enter a recovery phrase, spending key, or wallet password into Zerant.</p>
+      </section>
+
       <section className="workspace-grid zcash-overview-grid" aria-label="Zcash status">
         <article className="workspace-card workspace-card-primary">
           <div className="workspace-card-top">

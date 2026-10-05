@@ -29,6 +29,13 @@ test("dedicated Zcash workspace owns wallet and payment actions", () => {
   const html = renderToStaticMarkup(<ZcashWorkspace session={session} zcash={zcash} network={network} />);
   assert.ok(html.includes("Zerant on Zcash · Testnet"));
   assert.ok(html.includes("Your Zerant ID is not a Zcash address."));
+  assert.ok(html.includes("Testnet wallet setup"));
+  assert.ok(html.includes("Open official Noir releases"));
+  assert.ok(html.includes("noir-wallet-sdk/releases"));
+  assert.ok(html.includes("[Testnet] Noir Wallet"));
+  assert.ok(html.includes("ZIP-321 testnet wallet"));
+  assert.ok(html.includes("github.com/zingolabs/zingo-pc"));
+  assert.ok(html.includes("Never enter a recovery phrase"));
   assert.ok(html.includes('id="zcash-wallet-actions"'));
   assert.ok(html.includes('href="#zcash-payment-review"'));
   assert.ok(html.includes('href="#zcash-address-inspector"'));

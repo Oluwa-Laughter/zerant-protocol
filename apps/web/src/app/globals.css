@@ -297,3 +297,9 @@
   .product-shell .verifier-hero h1 { font-size: clamp(2rem, 9vw, 2.7rem); }
   .issuer-start-steps { padding: 22px; }
 }
+
+.zcash-wallet-setup{margin:1.5rem 0 2rem;padding:1.25rem;border:1px solid var(--border);border-radius:1rem;background:var(--card)}
+.zcash-wallet-setup-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin:1rem 0}
+.zcash-wallet-setup .workspace-card{height:100%}
+.zcash-wallet-setup code{font-size:.88em}
+@media (max-width:800px){.zcash-wallet-setup-grid{grid-template-columns:1fr}}

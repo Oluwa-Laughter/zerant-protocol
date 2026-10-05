@@ -57,8 +57,10 @@ For the hosted `zcash:testnet` product, a detected mainnet Noir extension is not
 a usable direct payment wallet. The SDK does not expose a safe network check before
 the connection approval. Zerant checks the returned account's address network in
 browser memory after approval and refuses unknown, mixed, or mainnet accounts.
-The official [Testnet Noir build](https://docs.zknoir.com/developers/) is separate
-from the Chrome Web Store mainnet extension. A portable ZIP-321 request offers a
+The official [Testnet Noir build](https://github.com/NoirWallet/noir-wallet-sdk/releases) is separate
+from the Chrome Web Store mainnet extension. Noir's SDK repository documents that the
+testnet asset ends in `-testnet.zip`, installs as `[Testnet] Noir Wallet`, uses isolated
+wallet data, and cannot be reached by switching the mainnet extension at runtime. A portable ZIP-321 request offers a
 path for a wallet without a Zerant browser adapter.
 [Zingo PC](https://github.com/zingolabs/zingo-pc) documents testnet wallets and a ZIP-321 URI handler;
 this does not mean Zingo has a live Zerant connection. Keep the external wallet's
@@ -83,11 +85,12 @@ ZecAuth is an authentication-specific handoff, not the definition of wallet supp
 
 | Wallet / route | Injected identity signing | ZecAuth auth handoff | WalletConnect Zcash transport | ZIP-321 payment URI | Direct shielded payment | Restore connection |
 | --- | --- | --- | --- | --- | --- | --- |
-| Noir injected provider | Yes, derived mode | Unknown | Separate optional reference transport | Unknown | Yes, `sendTransaction` shielded funding | Yes, `getAccounts` |
+| Noir injected provider | Yes, derived mode | Unknown | Separate optional reference transport | N/A for direct adapter | Yes, including the official separate testnet extension | Yes, `getAccounts` |
 | Noir WalletConnect reference | No | Unknown | Yes, mainnet `bip122` with limited methods | Unknown | No | Yes, approved session |
 | NozyWallet extension | Unknown; contract not verified for Zerant | Unknown | Unknown | Unknown | Unknown | Unknown |
 | ZecAuth-compatible wallet (unbranded) | N/A | Yes, if wallet implements draft | N/A | Unknown | Unknown | N/A |
 | ZIP-321-compatible wallet (unbranded) | N/A | N/A | N/A | Yes, if wallet implements ZIP 321 | N/A | N/A |
+| Zingo PC portable route | N/A | N/A | N/A | Yes; documents `zcash:` ZIP-321 handling and testnet wallets | N/A | N/A |
 | Zodl/Zashi, YWallet, Unstoppable | Unknown | Unknown | Unknown | Unknown | Unknown | Unknown |
 
-Sources: [Noir adapter/provider behavior](https://github.com/NoirWallet/zcash-wallet-adapter/blob/main/README.md), [Nozy extension status](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/browser-extension/README.md), [ZecAuth v1 draft](https://github.com/ZecHub/zechub/blob/main/Hackathon/2026/ZecAuth/PROTOCOL.md), and [ZIP 321](https://zips.z.cash/zip-0321). See [research notes](research/ZCASH_WALLET_INTEROP_2026.md) for scope and limitations.
+Sources: [Noir SDK and extension installation](https://github.com/NoirWallet/noir-wallet-sdk), [Noir Releases](https://github.com/NoirWallet/noir-wallet-sdk/releases), [Zingo PC](https://github.com/zingolabs/zingo-pc), [Nozy extension status](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/browser-extension/README.md), [ZecAuth v1 draft](https://github.com/ZecHub/zechub/blob/main/Hackathon/2026/ZecAuth/PROTOCOL.md), and [ZIP 321](https://zips.z.cash/zip-0321). See [research notes](research/ZCASH_WALLET_INTEROP_2026.md) for scope and limitations.
