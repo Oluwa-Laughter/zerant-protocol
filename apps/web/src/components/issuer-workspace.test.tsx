@@ -89,5 +89,9 @@ test("issuer must review the recipient and claim before sending", () => {
   );
 
   assert.ok(html.includes("Review credential"));
+  assert.ok(html.includes("From organization setup to a live credential."));
+  assert.ok(html.includes('href="#credential-types"'));
+  assert.ok(html.includes('href="#issue-credential"'));
+  assert.ok(html.includes("1 active type"));
   assert.equal(html.includes("Confirm and issue"), false);
 });

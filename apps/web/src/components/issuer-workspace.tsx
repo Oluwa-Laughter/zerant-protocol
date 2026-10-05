@@ -184,6 +184,9 @@ export function IssuerWorkspace({
   const canIssue =
     currentRole === "owner" || currentRole === "admin" || currentRole === "issuer";
 
+  const revokedIssued = issued.filter((item) => item.revoked).length;
+  const activeIssued = issued.length - revokedIssued;
+
   async function loadMoreActivity() {
     if (!activityCursor || activityLoading) return;
     setActivityLoading(true);
@@ -731,6 +734,35 @@ export function IssuerWorkspace({
         </span>
       </section>
 
+      <section className="issuer-progress" aria-label="Issuer setup and issuance progress">
+        <div className="issuer-progress-heading">
+          <div><p className="eyebrow">Issuance flow</p><h2>From organization setup to a live credential.</h2></div>
+          <span className="small muted">Use Zerant IDs · no wallet address required</span>
+        </div>
+        <div className="issuer-progress-grid">
+          <article className="issuer-progress-step complete">
+            <span className="issuer-progress-number">01</span>
+            <div><strong>Organization</strong><span>{profile.display_name}</span></div>
+            <span className="issuer-progress-state">Complete</span>
+          </article>
+          <a className={activeSchemas.length ? "issuer-progress-step complete" : "issuer-progress-step current"} href="#credential-types">
+            <span className="issuer-progress-number">02</span>
+            <div><strong>Credential type</strong><span>{activeSchemas.length ? `${activeSchemas.length} active type${activeSchemas.length === 1 ? "" : "s"}` : "Define what your organization can prove"}</span></div>
+            <span className="issuer-progress-state">{activeSchemas.length ? "Ready" : "Next"}</span>
+          </a>
+          <a className={issued.length ? "issuer-progress-step complete" : activeSchemas.length ? "issuer-progress-step current" : "issuer-progress-step"} href="#issue-credential">
+            <span className="issuer-progress-number">03</span>
+            <div><strong>Issue privately</strong><span>{issued.length ? `${issued.length} credential${issued.length === 1 ? "" : "s"} delivered` : "Send to a holder Zerant ID"}</span></div>
+            <span className="issuer-progress-state">{issued.length ? "Active" : activeSchemas.length ? "Next" : "Waiting"}</span>
+          </a>
+          <article className={issued.length ? "issuer-progress-step complete" : "issuer-progress-step"}>
+            <span className="issuer-progress-number">04</span>
+            <div><strong>Manage lifecycle</strong><span>{issued.length ? `${activeIssued} active · ${revokedIssued} revoked` : "Revocation and history begin after issuance"}</span></div>
+            <span className="issuer-progress-state">{issued.length ? "Ready" : "Waiting"}</span>
+          </article>
+        </div>
+      </section>
+
       <section className="issuer-team-section">
         <div className="section-heading">
           <p className="eyebrow">Organization team</p>
@@ -905,7 +937,7 @@ export function IssuerWorkspace({
         </article>
       </section>
 
-      <section className="issuer-schema-section">
+      <section className="issuer-schema-section" id="credential-types">
         <article className="issuer-panel">
           <p className="eyebrow">Credential types</p>
           <h2>Define trust once. Reuse it consistently.</h2>
@@ -1101,7 +1133,7 @@ export function IssuerWorkspace({
         ) : null}
       </section>
 
-      <section className="issuer-grid">
+      <section className="issuer-grid" id="issue-credential">
         <article className="issuer-panel">
           <p className="eyebrow">Issue credential</p>
           <h2>Send a trusted credential.</h2>
