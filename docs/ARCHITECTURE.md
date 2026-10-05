@@ -26,6 +26,17 @@ prevention step and never grants authority. It requests no wallet information.
 
 ## Load-bearing decisions
 
+### Resume a prepared Zcash payment (2026-10-05)
+
+An authenticated account may reopen only its own unexpired prepared payment.
+The service derives a ZIP-321 URI from the already stored recipient and exact
+integer zatoshis, then returns it only if its canonical digest equals the digest
+stored at preparation. The URI is omitted after submission or expiry. This adds
+no wallet history, spending authority, or new stored payment data; wallet action
+remains explicit, and a returned transaction ID remains submitted, not settled.
+Reopened transparent destinations retain a visible privacy warning and explicit
+transparent action label.
+
 ### Holder proof preview binding (2026-10-05)
 
 Before an authenticated holder approves a pending verification request, the

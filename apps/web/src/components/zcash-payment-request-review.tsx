@@ -35,6 +35,8 @@ type PaymentRecord = {
   created_at: string;
   expires_at: string;
   submitted_at: string | null;
+  payment_uri: string | null;
+  transparent_only: boolean;
 };
 type PaymentPage = { items: PaymentRecord[]; next_cursor: string | null };
 
@@ -130,6 +132,21 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
       setStatus("Payment link copied. Open it in a compatible Zcash wallet on the same network and check the recipient and amount before approving.");
     } catch {
       setStatus("Copy failed. Select the payment link shown below and copy it manually.");
+    }
+  }
+
+  function reopenSavedPayment(uri: string | null) {
+    if (!uri?.startsWith("zcash:")) return;
+    window.location.assign(uri);
+  }
+
+  async function copySavedPayment(uri: string | null) {
+    if (!uri?.startsWith("zcash:")) return;
+    try {
+      await navigator.clipboard.writeText(uri);
+      setStatus("Payment link copied. Check the recipient and amount in your testnet wallet before approval.");
+    } catch {
+      setStatus("Copy failed. Try opening this payment in your wallet.");
     }
   }
 
@@ -316,6 +333,11 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
         <div><strong>{item.state === "submitted" ? "Submitted · Network verification pending" : item.state === "expired" ? "Expired" : "Prepared"}</strong><span className="mono">{item.recipient}</span></div>
         <p className="small muted">{formatZec(item.amount_zat)} · {new Date(item.created_at).toLocaleString()}</p>
         {item.txid ? <p className="small muted">Transaction <span className="mono">{item.txid}</span></p> : null}
+        {item.state === "prepared" && item.payment_uri && item.transparent_only ? <p className="small muted">Transparent destination: this payment reveals more information on chain. Choose it only if that is acceptable to you.</p> : null}
+        {item.state === "prepared" && item.payment_uri ? <div className="vault-actions wrap">
+          <Button variant="secondary" onClick={() => reopenSavedPayment(item.payment_uri)}>{item.transparent_only ? "Open transparent payment in wallet" : "Open in wallet"}</Button>
+          <Button variant="secondary" onClick={() => void copySavedPayment(item.payment_uri)}>{item.transparent_only ? "Copy transparent payment link" : "Copy payment link"}</Button>
+        </div> : null}
         {item.state === "prepared" ? <div className="vault-actions wrap">
           <label htmlFor={"payment-txid-" + item.id}>Wallet transaction ID</label>
           <input id={"payment-txid-" + item.id} value={txidDrafts[item.id] ?? ""} onChange={(event) => setTxidDrafts((current) => ({ ...current, [item.id]: event.target.value }))} spellCheck={false} autoComplete="off" maxLength={64} placeholder="64-character transaction ID" />

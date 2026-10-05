@@ -4,7 +4,9 @@
 
 use super::*;
 use zerant_zcash::{
-    address::inspect_address, payment::validate_txid, zip321::inspect_payment_request,
+    address::inspect_address,
+    payment::validate_txid,
+    zip321::{create_payment_request, inspect_payment_request},
 };
 
 const MAX_PAYMENT_RECORDS: i64 = 50;
@@ -123,24 +125,67 @@ pub(super) struct PaymentView {
     created_at: OffsetDateTime,
     expires_at: OffsetDateTime,
     submitted_at: Option<OffsetDateTime>,
+    payment_uri: Option<String>,
+    transparent_only: bool,
+}
+
+fn reopen_payment_uri(
+    recipient: &str,
+    amount_zat: i64,
+    network: &str,
+    digest: &[u8],
+) -> Option<String> {
+    if amount_zat <= 0 || network != "zcash:testnet" || digest.len() != 32 {
+        return None;
+    }
+    let whole = amount_zat / 100_000_000;
+    let fraction = amount_zat % 100_000_000;
+    let amount = if fraction == 0 {
+        whole.to_string()
+    } else {
+        format!("{whole}.{fraction:08}")
+            .trim_end_matches('0')
+            .to_owned()
+    };
+    let uri = create_payment_request(recipient, &amount, "testnet")
+        .ok()?
+        .canonical_uri;
+    (Sha256::digest(uri.as_bytes()).as_slice() == digest).then_some(uri)
 }
 
 fn view(row: &Row) -> PaymentView {
+    let state: String = row.get("state");
+    let payment_uri = if state == "prepared"
+        && row.get::<_, OffsetDateTime>("expires_at") > OffsetDateTime::now_utc()
+    {
+        reopen_payment_uri(
+            row.get("recipient"),
+            row.get("amount_zat"),
+            row.get("network"),
+            row.get::<_, Vec<u8>>("request_digest").as_slice(),
+        )
+    } else {
+        None
+    };
     PaymentView {
         id: row.get("id"),
         recipient: row.get("recipient"),
         amount_zat: row.get("amount_zat"),
         network: row.get("network"),
         min_confirmations: row.get("min_confirmations"),
-        state: row.get("state"),
+        state,
         txid: row.get("txid"),
         created_at: row.get("created_at"),
         expires_at: row.get("expires_at"),
         submitted_at: row.get("submitted_at"),
+        payment_uri,
+        transparent_only: inspect_address(row.get("recipient"))
+            .map(|address| address.transparent_only)
+            .unwrap_or(true),
     }
 }
 
-const VIEW_COLUMNS: &str = "id, recipient, amount_zat, network, min_confirmations, state, txid, created_at, expires_at, submitted_at";
+const VIEW_COLUMNS: &str = "id, request_digest, recipient, amount_zat, network, min_confirmations, state, txid, created_at, expires_at, submitted_at";
 
 fn trackable_request(
     uri: &str,
@@ -332,6 +377,13 @@ mod tests {
         let labeled = format!("zcash:{ADDRESS}?amount=1.25&label=private");
         assert!(trackable_request(&labeled, "zcash:testnet").is_err());
         assert!(parse_page_cursor("malformed").is_err());
+        assert_eq!(
+            reopen_payment_uri(ADDRESS, amount, "zcash:testnet", &digest),
+            Some("zcash:tmEZhbWHTpdKMw5it8YDspUXSMGQyFwovpU?amount=1.25".into())
+        );
+        assert!(reopen_payment_uri(ADDRESS, amount + 1, "zcash:testnet", &digest).is_none());
+        assert!(reopen_payment_uri(ADDRESS, amount, "zcash:mainnet", &digest).is_none());
+        assert!(reopen_payment_uri(ADDRESS, amount, "zcash:testnet", &[0; 32]).is_none());
     }
 
     // Run with ZERANT_TEST_DATABASE_URL pointing at a disposable PostgreSQL database.
