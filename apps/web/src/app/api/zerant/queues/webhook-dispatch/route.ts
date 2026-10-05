@@ -8,7 +8,7 @@ import {
 
 const INVALID_MESSAGE = "invalid_webhook_queue_message";
 
-export const POST = zerantQueue.handleCallback<WebhookQueueMessage>(
+const handleWebhookCallback = zerantQueue.handleCallback<WebhookQueueMessage>(
   async (message) => {
     if (!isWebhookQueueMessage(message)) {
       throw new Error(INVALID_MESSAGE);
@@ -35,3 +35,7 @@ export const POST = zerantQueue.handleCallback<WebhookQueueMessage>(
     },
   },
 );
+
+export function POST(request: Request): Promise<Response> {
+  return handleWebhookCallback(request);
+}
