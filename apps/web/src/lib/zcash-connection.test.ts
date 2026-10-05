@@ -26,7 +26,7 @@ test("registry discovers multiple installed providers and portable paths", async
   const removeSecond = registerZcashWalletDetector(() => second);
   try {
     const methods = discoverZcashConnectors("connection", "zcash:testnet", "");
-    assert.deepEqual(methods.map((method) => method.id), ["first:injected", "second:injected", "zip321:portable", "zecauth:portable"]);
+    assert.deepEqual(methods.map((method) => method.id), ["first:injected", "second:injected", "zip321:portable"]);
     await connectConnector(methods[1]);
     assert.equal(getZcashConnectionSnapshot().account?.providerId, "second");
     assert.equal(getZcashConnectionSnapshot().selected?.id, "second:injected");

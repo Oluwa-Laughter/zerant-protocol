@@ -18,9 +18,21 @@ function injected(id: string, identitySigning = true): ZcashConnector {
 const testnet = "zcash:testnet";
 const mainnet = "zcash:mainnet";
 
-test("discovery orders detected wallets before portable auth and deduplicates transports", () => {
+test("discovery orders detected sign-in wallets and deduplicates transports", () => {
   const choices = discoverZcashConnectors("identity", testnet, "", [zecAuthConnector(), injected("noir"), injected("other"), injected("noir"), zip321Connector()]);
   assert.deepEqual(choices.map((choice) => choice.id), ["noir:injected", "other:injected", "zecauth:portable"]);
+});
+
+test("default sign-in discovery does not advertise draft portable ZecAuth", () => {
+  const prior = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: {} });
+  try {
+    const choices = discoverZcashConnectors("identity", testnet, "");
+    assert.equal(choices.some((choice) => choice.id === "zecauth:portable"), false);
+  } finally {
+    if (prior) Object.defineProperty(globalThis, "window", prior);
+    else Reflect.deleteProperty(globalThis, "window");
+  }
 });
 
 test("WalletConnect is connection-only before mainnet pairing", () => {

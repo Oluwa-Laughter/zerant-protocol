@@ -49,7 +49,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       try {
         const challenge = await createChallenge();
         setHandoffUri(connector.openAuthHandoff!(challenge, window.location.origin + "/api/zerant/auth/verify"));
-        setStatus("Open this request in a ZecAuth-compatible wallet, approve sign-in there, then check approval here.");
+        setStatus("Open this request in the supported wallet, approve sign-in there, then check approval here.");
       } catch (error) { setStatus(error instanceof Error ? error.message : "Could not open wallet app."); }
       finally { setBusy(false); }
       return;
@@ -73,7 +73,12 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       await signInWithZcashWallet(connection.selected);
       setStatus("Signed in to Zerant.");
       onConnected?.();
-    } catch (error) { setStatus(error instanceof Error ? error.message : "Wallet sign-in failed."); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setStatus(/rejected/i.test(message)
+        ? "The wallet did not approve the sign-in request. If you did not reject it, unlock Noir Wallet, confirm this site is connected, and try again."
+        : message || "Wallet sign-in failed.");
+    }
     finally { setBusy(false); }
   }
 
@@ -95,7 +100,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
   return <div className="zcash-connect">
     <div className="zcash-connect-intro">
       <h2>{allowSignIn ? "Sign in with a Zcash wallet" : "Use a Zcash wallet"}</h2>
-      <p className="muted">{allowSignIn ? "Choose a wallet that can approve Zerant sign-in. A payment address, balance, or history is never your Zerant identity." : "Wallet access is optional. Use an installed wallet when available, or hand a reviewed payment request to a compatible Zcash wallet. Your credentials and Zerant ID do not depend on a wallet session."}</p>
+      <p className="muted">{allowSignIn ? "On desktop, Zerant signs in through a detected Noir Wallet using a privacy-preserving identity key. A payment address, balance, or history is never your Zerant identity." : "Wallet access is optional. Use an installed wallet when available, or hand a reviewed payment request to a compatible Zcash wallet. Your credentials and Zerant ID do not depend on a wallet session."}</p>
     </div>
     <ZcashWalletSelector purpose={purpose} busy={busy} hideAuthHandoff={!allowSignIn} triggerLabel={allowSignIn ? "Choose sign-in wallet" : "Choose wallet option"} onSelect={(connector) => void choose(connector)} />
     {handoffUri ? <div className="wallet-handoff zcash-connect-handoff">
@@ -109,7 +114,6 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
     </div> : null}
     {!allowSignIn && connection.displayUri ? <div className="wallet-connect-option"><h3>Pair in your wallet</h3><p className="small muted">Only WalletConnect-compatible Zcash wallets can approve this request.</p><textarea readOnly aria-label="WalletConnect pairing URI" value={connection.displayUri} rows={3} /><Button variant="secondary" onClick={() => void navigator.clipboard.writeText(connection.displayUri!).then(() => setStatus("Connection link copied."), () => setStatus("Copy failed. Select the connection link above."))}>Copy connection link</Button></div> : null}
     {connection.account && (!allowSignIn || connection.selected?.capabilities.has("identitySigning")) ? <div className="zcash-connection-state"><p className="small">Connected to <strong>{connection.account.providerName}</strong>{connection.selected?.capabilities.has("shieldedPayment") ? ". Shielded payments available." : "."}</p><div className="vault-actions wrap">{allowSignIn ? <Button onClick={() => void signIn()} disabled={busy}>Sign in with wallet</Button> : null}<Button variant="secondary" onClick={() => void disconnectZcash()} disabled={busy}>Disconnect wallet</Button></div></div> : null}
-    {allowSignIn && !handoffUri ? <div className="zcash-approval-check"><span className="small muted">Already approved in a wallet app?</span><Button variant="secondary" onClick={() => void checkWalletApproval()} disabled={busy}>Check approval</Button></div> : null}
     {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
   </div>;
 }

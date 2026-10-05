@@ -137,7 +137,7 @@ export function discoverZcashConnectors(
     ...getInjectedZcashWallets().map(injectedConnector),
     ...[...registered.values()].map((factory) => factory()).filter((value): value is ZcashConnector => value !== null),
     ...(activeChain === "zcash:mainnet" && walletConnectProjectId.trim() ? [walletConnectConnector(walletConnectProjectId, displayUri)] : []),
-    zecAuthConnector(), zip321Connector(),
+    zip321Connector(),
   ];
   const priority: Record<WalletAvailability, number> = {
     detected: 0, available: 1, unavailable: 2, unsupported: 3,

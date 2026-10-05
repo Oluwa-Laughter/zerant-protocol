@@ -204,3 +204,10 @@
 .zcash-privacy-review.protected { border-color: color-mix(in srgb, currentColor 24%, var(--border)); }
 .zcash-privacy-review.caution { border-style: dashed; }
 .zcash-payment-confirmation { margin-top: 1rem; }
+
+.wallet-selector-empty {
+  padding: 1rem;
+  border: 1px dashed var(--border);
+  border-radius: .9rem;
+}
+.wallet-selector-empty p { margin: .4rem 0 0; }

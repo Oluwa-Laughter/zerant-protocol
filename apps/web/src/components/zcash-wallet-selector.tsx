@@ -93,6 +93,12 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
             <button type="button" className="wallet-selector-close" onClick={close} aria-label="Close wallet choices">Close</button>
           </div>
           <div className="wallet-selector-list">
+            {connectors.length === 0 && purpose === "identity" ? (
+              <div className="wallet-selector-empty">
+                <strong>No supported Zcash sign-in wallet detected.</strong>
+                <p className="small muted">On desktop, unlock Noir Wallet and reload this page. On phones, use a passkey for Zerant access until a supported mobile Zcash sign-in wallet is available.</p>
+              </div>
+            ) : null}
             {connectors.map((connector, index) => (
               <button key={connector.id} ref={index === 0 ? first : undefined} type="button" className="wallet-selector-choice"
                 disabled={busy} onClick={() => { close(); onSelect(connector); }}>
