@@ -131,7 +131,7 @@ fn reencrypt(
     account: Uuid,
     record: &CredentialRow,
 ) -> Result<EncryptedCredential, ApiError> {
-    if record.key_version == cipher.key_version {
+    if record.key_version == cipher.active_key_version() {
         return Err(ApiError::Invalid);
     }
     let mut plaintext = cipher.decrypt(account, record)?;
@@ -164,7 +164,7 @@ async fn migrate_batch(
     old: i32,
     limit: i64,
 ) -> Result<(&'static str, usize), ApiError> {
-    if old == cipher.key_version || !cipher.keks.contains_key(&old) {
+    if old == cipher.active_key_version() || !cipher.has_key_version(old) {
         return Err(ApiError::Unavailable);
     }
     let mut client = db_client(pool).await?;
@@ -296,10 +296,7 @@ mod tests {
         if with_old {
             keks.insert(1, Aes256Gcm::new_from_slice(&[1; 32]).unwrap());
         }
-        VaultCipher {
-            keks,
-            key_version: active,
-        }
+        VaultCipher::from_local_keys(keks, active).unwrap()
     }
 
     async fn insert_test_record(

@@ -58,11 +58,11 @@ The product does not seed demo credentials, identities, payments or verification
 
 ## Security and privacy status
 
-The current server-first product encrypts credential records at rest with per-record data keys wrapped by a versioned service keyring. Key rotation preserves access to records encrypted under retained historical versions. The browser is not the credential or session source of truth.
+The current server-first product encrypts credential records at rest with per-record data keys wrapped through a versioned key-provider boundary. The deployed provider currently loads the versioned AES keyring from server-only Vercel secrets; vault encryption and rotation no longer depend directly on that storage mechanism. Key rotation preserves access to records encrypted under retained historical versions. The browser is not the credential or session source of truth.
 
 This is **not end-to-end holder-only encryption**: an authorized Zerant service runtime can decrypt a holder record in order to serve the holder and construct an approved proof. Production deployment therefore requires strict service isolation, managed KMS/HSM custody, audit controls and careful backup access. Verifiers and other Zerant users do not receive the holder's private credential portfolio.
 
-No zero-knowledge, anonymity or full unlinkability claim is made. Zerant now uses a distinct protected holder key for each verifier relationship so proofs do not expose one stable holder key across verifiers, but service metadata, issuers and surrounding context can still correlate activity. Managed KMS/HSM deployment, stronger unlinkable credentials, production Zcash spending and live FROST signing remain future work.
+No zero-knowledge, anonymity or full unlinkability claim is made. Zerant now uses a distinct protected holder key for each verifier relationship so proofs do not expose one stable holder key across verifiers, but service metadata, issuers and surrounding context can still correlate activity. A concrete managed KMS/HSM provider, stronger unlinkable credentials, production Zcash spending and live FROST signing remain future work.
 
 Read architecture, disclosure profile, privacy limits, public trust discovery, verifier integration API, verifier webhooks, examples, Zcash integration, Zcash resource map and security documentation in docs/.
 

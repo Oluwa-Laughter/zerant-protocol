@@ -64,7 +64,9 @@ For an old version `1` and new version `2`:
 
 The migration decrypts and re-encrypts each payload with a fresh DEK and nonces because v1 data authentication binds the old version. It covers credential envelopes, account credential keys, issuer profiles, issuer signing keys, verifier profiles, verifier signing keys, holder pairwise keys, webhook secrets, and encrypted verification responses. Missing historical keys or tampered records fail closed. There is no partial-row update: each batch is transactional. Counts are an operational retirement check; a stale instance can create new old-version rows after a check.
 
-This keyring is an interim production-hardening mechanism. Managed KMS/HSM custody remains the target for stronger operational isolation.
+The vault now uses a wrapping-key provider boundary. The current Vercel deployment selects the local AES keyring provider backed by the server-only versioned environment secrets above; credential encryption, authenticated AAD, record key versions, and rotation tooling do not read that map directly. This makes custody replaceable without changing stored credential envelopes.
+
+The repository does **not** yet include a concrete cloud KMS/HSM adapter. A future provider must preserve the same version semantics and authenticated wrap/unwrap contract, fail closed when a historical version is unavailable, and never return key material to browser code. The environment keyring remains an interim production-hardening mechanism rather than a KMS claim.
 
 ## Not required yet
 
