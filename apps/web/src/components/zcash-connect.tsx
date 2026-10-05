@@ -171,6 +171,20 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       </ol>
       <p className="small muted">Noir’s generic permission screen may mention balances and activity. Zerant does not request or store your wallet balance or transaction history for identity.</p>
     </div>
+    <div className="zcash-connection-diagnostics" aria-label="Zcash wallet connection diagnostics">
+      <div>
+        <span className="eyebrow">Zerant network</span>
+        <strong>{connection.activeChain === "zcash:testnet" ? "Testnet" : connection.activeChain === "zcash:mainnet" ? "Mainnet" : "Loading…"}</strong>
+      </div>
+      <div>
+        <span className="eyebrow">Wallet authorization</span>
+        <strong>{connection.status === "connected" ? "Authorized" : connection.status === "connecting" ? "Approval in progress" : "Not connected"}</strong>
+      </div>
+      <div>
+        <span className="eyebrow">Zerant sign-in</span>
+        <strong>{allowSignIn && connection.account && connection.selected?.capabilities.has("identitySigning") ? "Ready" : allowSignIn ? "Wallet connection required" : "Not required"}</strong>
+      </div>
+    </div>
     <ZcashWalletSelector purpose={purpose} busy={busy} hideAuthHandoff={!allowSignIn} hidePaymentHandoff={!allowSignIn} triggerLabel={allowSignIn ? "Choose sign-in wallet" : "Connect a direct wallet"} onSelect={(connector) => void choose(connector)} />
     {handoffUri ? <div className="wallet-handoff zcash-connect-handoff">
       <p className="small muted">This sign-in request expires after five minutes. It contains the challenge and callback, not your wallet address or history.</p>
