@@ -18,6 +18,15 @@ export function ZcashWalletSelector({ purpose, busy = false, triggerLabel = "Con
   const trigger = useRef<HTMLButtonElement>(null);
   const first = useRef<HTMLButtonElement>(null);
 
+  function connectorDetail(connector: ZcashConnector): string {
+    if (connector.transport === "zecauth") return "Open a compatible wallet app to approve Zerant sign-in";
+    if (connector.transport === "uri_handoff") return "Open a complete ZIP-321 payment request in a compatible wallet";
+    if (connector.transport === "walletconnect") return "Pair a compatible wallet through WalletConnect";
+    if (connector.capabilities.has("identitySigning")) return "Installed wallet · supports Zerant sign-in";
+    if (connector.capabilities.has("shieldedPayment")) return "Installed wallet · supports shielded payments";
+    return "Installed wallet · available for supported Zcash actions";
+  }
+
   useEffect(() => {
     if (open) first.current?.focus();
   }, [open]);
@@ -37,28 +46,38 @@ export function ZcashWalletSelector({ purpose, busy = false, triggerLabel = "Con
         }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Wallet configuration is unavailable."))
           .finally(() => setLoading(false));
       }} disabled={busy || loading} aria-expanded={open} aria-controls={`zcash-wallet-options-${purpose}`}>
-        {triggerLabel}
+        {loading ? "Finding wallets…" : triggerLabel}
       </Button>
       {error ? <p role="status" className="vault-status neutral">{error}</p> : null}
       {open ? (
         <div id={`zcash-wallet-options-${purpose}`} className="wallet-selector-panel"
           role="group" aria-label={purpose === "identity" ? "Choose a Zcash sign-in wallet" : purpose === "payment" ? "Choose a Zcash payment wallet" : "Choose a Zcash connection"}
           onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); close(); } }}>
-          <div className="vault-actions wrap">
-            <strong>Choose a Zcash wallet</strong>
-            <Button variant="secondary" onClick={close} aria-label="Close wallet choices">Close</Button>
+          <div className="wallet-selector-heading">
+            <div>
+              <h3>Choose a Zcash wallet</h3>
+              <p className="small muted">Select a wallet or a supported handoff.</p>
+            </div>
+            <button type="button" className="wallet-selector-close" onClick={close} aria-label="Close wallet choices">Close</button>
           </div>
-          {connectors.map((connector, index) => (
-            <Button key={connector.id} ref={index === 0 ? first : undefined} variant="secondary"
-              disabled={busy} onClick={() => { close(); onSelect(connector); }}>
-              {connector.name}{connector.availability === "detected" ? " · detected" : ""}
-            </Button>
-          ))}
+          <div className="wallet-selector-list">
+            {connectors.map((connector, index) => (
+              <button key={connector.id} ref={index === 0 ? first : undefined} type="button" className="wallet-selector-choice"
+                disabled={busy} onClick={() => { close(); onSelect(connector); }}>
+                <span className="wallet-selector-choice-copy">
+                  <span className="wallet-selector-choice-title">{connector.name}</span>
+                  <span className="wallet-selector-choice-detail">{connectorDetail(connector)}</span>
+                </span>
+                {connector.availability === "detected" ? <span className="wallet-selector-detected">Detected</span> : null}
+                <span className="wallet-selector-arrow" aria-hidden="true">→</span>
+              </button>
+            ))}
+          </div>
           {purpose === "identity" ? (
             <p className="small muted">Payment-only wallets can still open ZIP-321 requests after you sign in with a passkey. Portable sign-in requires a wallet that implements ZecAuth.</p>
           ) : purpose === "payment" ? (
             <p className="small muted">The portable option opens the complete validated ZIP-321 request in a compatible wallet. Wallet submission is not settlement confirmation.</p>
-          ) : <p className="small muted">Choose an installed wallet, a supported remote wallet, or a portable Zcash action.</p>}
+          ) : null}
         </div>
       ) : null}
     </div>

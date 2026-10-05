@@ -74,13 +74,14 @@ export function ZcashConnect({ onConnected, allowSignIn = true }: { onConnected?
   }
 
   return <div className="zcash-connect">
-    <p className="eyebrow">Zcash wallet</p>
-    <h2>Connect Zcash wallet</h2>
-    <p className="muted">Connect for supported Zcash actions. A payment address, balance, or history is not your Zerant identity.</p>
+    <div className="zcash-connect-intro">
+      <h2>Connect a Zcash wallet</h2>
+      <p className="muted">Choose a wallet for supported Zcash actions. Your payment address, balance, and history are separate from your Zerant identity.</p>
+    </div>
     <ZcashWalletSelector purpose="connection" busy={busy} onSelect={(connector) => void choose(connector)} />
-    {connection.displayUri ? <div className="wallet-connect-option"><h3>Scan or copy in your wallet</h3><p className="small muted">Only WalletConnect-compatible Zcash wallets can approve this request.</p><textarea readOnly aria-label="WalletConnect pairing URI" value={connection.displayUri} rows={3} /><Button variant="secondary" onClick={() => void navigator.clipboard.writeText(connection.displayUri!)}>Copy connection link</Button></div> : null}
-    {connection.account ? <div className="vault-actions wrap"><p className="small">Connected: {connection.account.providerName}. {connection.selected?.capabilities.has("shieldedPayment") ? "Shielded payments available." : ""}</p>{allowSignIn && connection.selected?.capabilities.has("identitySigning") ? <Button onClick={() => void signIn()} disabled={busy}>Sign in with wallet</Button> : null}<Button variant="secondary" onClick={() => void disconnectZcash()} disabled={busy}>Disconnect</Button></div> : null}
-    {allowSignIn ? <Button variant="secondary" onClick={() => void checkWalletApproval()}>Check wallet-app approval</Button> : null}
+    {connection.displayUri ? <div className="wallet-connect-option"><h3>Pair in your wallet</h3><p className="small muted">Only WalletConnect-compatible Zcash wallets can approve this request.</p><textarea readOnly aria-label="WalletConnect pairing URI" value={connection.displayUri} rows={3} /><Button variant="secondary" onClick={() => void navigator.clipboard.writeText(connection.displayUri!)}>Copy connection link</Button></div> : null}
+    {connection.account ? <div className="zcash-connection-state"><p className="small">Connected to <strong>{connection.account.providerName}</strong>{connection.selected?.capabilities.has("shieldedPayment") ? ". Shielded payments available." : "."}</p><div className="vault-actions wrap">{allowSignIn && connection.selected?.capabilities.has("identitySigning") ? <Button onClick={() => void signIn()} disabled={busy}>Sign in with wallet</Button> : null}<Button variant="secondary" onClick={() => void disconnectZcash()} disabled={busy}>Disconnect wallet</Button></div></div> : null}
+    {allowSignIn ? <div className="zcash-approval-check"><span className="small muted">Approved sign-in in a wallet app?</span><Button variant="secondary" onClick={() => void checkWalletApproval()}>Check approval</Button></div> : null}
     {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
   </div>;
 }
