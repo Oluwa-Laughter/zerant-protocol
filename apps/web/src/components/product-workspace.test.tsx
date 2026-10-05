@@ -31,7 +31,7 @@ test("workspace renders server and Zcash boundaries without browser-local persis
   assert.equal(html.includes('id="zcash-wallet-actions"'), false);
 });
 
-test("signed-in workspace offers wallet actions beside payment review", () => {
+test("signed-in workspace links into the dedicated Zcash workspace", () => {
   const html = renderToStaticMarkup(
     <ProductWorkspace
       session={{ authenticated: true, identity: "test-identity", scopes: [] }}
@@ -40,12 +40,10 @@ test("signed-in workspace offers wallet actions beside payment review", () => {
     />,
   );
 
-  assert.ok(html.includes('id="zcash-wallet-actions"'));
-  assert.ok(html.includes("Use a Zcash wallet"));
-  assert.ok(html.includes("Wallet access is optional"));
-  assert.ok(html.includes("Your credentials and Zerant ID do not depend on a wallet session"));
-  assert.ok(html.includes('id="zcash-payment-review"'));
-  assert.ok(html.indexOf('id="zcash-wallet-actions"') < html.indexOf('id="zcash-payment-review"'));
+  assert.ok(html.includes('href="/zcash"'));
+  assert.ok(html.includes("Open Zcash workspace"));
+  assert.equal(html.includes('id="zcash-wallet-actions"'), false);
+  assert.equal(html.includes('id="zcash-payment-review"'), false);
 });
 
 

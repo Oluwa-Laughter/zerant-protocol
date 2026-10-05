@@ -5,13 +5,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
 
-const productRoutes = ["/app", "/vault", "/requests", "/activity", "/issuer", "/verifier", "/account"];
+const productRoutes = ["/app", "/vault", "/requests", "/activity", "/zcash", "/issuer", "/verifier", "/account"];
 
 const primaryItems = [
   { href: "/app", label: "Overview" },
   { href: "/vault", label: "Credentials" },
   { href: "/requests", label: "Requests" },
   { href: "/activity", label: "Activity" },
+  { href: "/zcash", label: "Zcash" },
 ];
 
 const organizationItems = [

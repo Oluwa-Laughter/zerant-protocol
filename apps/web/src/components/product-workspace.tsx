@@ -1,7 +1,4 @@
 import Link from "next/link";
-import { ZcashPaymentRequestReview } from "@/components/zcash-payment-request-review";
-import { ZcashAddressInspector } from "@/components/zcash-address-inspector";
-import { ZcashConnect } from "@/components/zcash-connect";
 
 export type WorkspaceSession = {
   authenticated: boolean;
@@ -151,6 +148,7 @@ export function ProductWorkspace({
                     ? "Zcash ready"
                     : "Not connected"}
           </div>
+          <Link className="text-link" href="/zcash">Open Zcash workspace <span aria-hidden="true">→</span></Link>
         </article>
 
         <article className="workspace-card">
@@ -175,18 +173,6 @@ export function ProductWorkspace({
         </article>
       </section>
 
-      <ZcashAddressInspector enabled={authenticated} />
-      {authenticated ? (
-        <section id="zcash-wallet-actions" className="workspace-wallet" aria-label="Optional Zcash wallet actions">
-          <div className="workspace-wallet-heading">
-            <p className="eyebrow">Optional wallet access</p>
-            <h2>Use Zcash without making the wallet your identity.</h2>
-            <p className="muted">Connect an installed wallet only when you need a supported action. For payments, Zerant can also validate a Zcash payment request and hand it to a compatible wallet.</p>
-          </div>
-          <ZcashConnect purpose="connection" />
-        </section>
-      ) : null}
-      <ZcashPaymentRequestReview enabled={authenticated} />
     </main>
   );
 }
