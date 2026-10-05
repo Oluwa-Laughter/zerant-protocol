@@ -423,8 +423,20 @@ struct StoredCredential {
     id: Uuid,
     credential: Value,
     revoked: bool,
+    expired: bool,
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
+}
+
+fn credential_expired_at(credential: &Value, now: OffsetDateTime) -> bool {
+    credential
+        .get("expires_at")
+        .and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_u64().and_then(|raw| i64::try_from(raw).ok()))
+        })
+        .is_some_and(|expires_at| expires_at <= now.unix_timestamp())
 }
 
 struct CredentialRow {
@@ -4090,10 +4102,12 @@ async fn export_account(
         let mut plaintext = state.cipher.decrypt(account, &row)?;
         let credential = serde_json::from_slice(&plaintext).map_err(|_| ApiError::Unavailable)?;
         plaintext.fill(0);
+        let expired = credential_expired_at(&credential, OffsetDateTime::now_utc());
         credentials.push(StoredCredential {
             id: row.id,
             credential,
             revoked,
+            expired,
             created_at: row.created_at,
             updated_at: row.updated_at,
         });
@@ -4224,10 +4238,12 @@ async fn list_credentials(
         let mut plaintext = state.cipher.decrypt(account, &row)?;
         let credential = serde_json::from_slice(&plaintext).map_err(|_| ApiError::Unavailable)?;
         plaintext.fill(0);
+        let expired = credential_expired_at(&credential, OffsetDateTime::now_utc());
         credentials.push(StoredCredential {
             id: row.id,
             credential,
             revoked,
+            expired,
             created_at: row.created_at,
             updated_at: row.updated_at,
         });
@@ -4282,6 +4298,7 @@ async fn store_credential(
         StatusCode::CREATED,
         Json(StoredCredential {
             id: row.id,
+            expired: credential_expired_at(&credential, OffsetDateTime::now_utc()),
             credential,
             revoked: false,
             created_at: row.created_at,
@@ -10525,6 +10542,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stored_credential_expiry_is_derived_from_private_credential_timestamp() {
+        let now = OffsetDateTime::from_unix_timestamp(1_000).unwrap();
+        assert!(credential_expired_at(
+            &serde_json::json!({"expires_at": 999}),
+            now
+        ));
+        assert!(credential_expired_at(
+            &serde_json::json!({"expires_at": 1_000}),
+            now
+        ));
+        assert!(!credential_expired_at(
+            &serde_json::json!({"expires_at": 1_001}),
+            now
+        ));
+        assert!(!credential_expired_at(
+            &serde_json::json!({"value": "member"}),
+            now
+        ));
+    }
 
     #[test]
     fn approval_requires_the_exact_previewed_issuer_and_claim() {

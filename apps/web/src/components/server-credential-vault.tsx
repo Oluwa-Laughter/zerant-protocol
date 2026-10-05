@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZcashConnect } from "@/components/zcash-connect";
 import { PasskeyAccess } from "@/components/passkey-access";
@@ -16,9 +16,12 @@ export type ServerVaultCredential = {
   id: string;
   credential: unknown;
   revoked: boolean;
+  expired: boolean;
   created_at: string;
   updated_at: string;
 };
+
+type CredentialFilter = "all" | "active" | "expired" | "revoked";
 
 type PrivateCredential = {
   type: "zerant.private-credential";
@@ -51,6 +54,14 @@ function asPrivateCredential(value: unknown): PrivateCredential | null {
   return record as PrivateCredential;
 }
 
+export function credentialLifecycleState(
+  item: Pick<ServerVaultCredential, "revoked" | "expired">,
+): Exclude<CredentialFilter, "all"> {
+  if (item.revoked) return "revoked";
+  if (item.expired) return "expired";
+  return "active";
+}
+
 export function ServerCredentialVault({
   initialSession,
   initialCredentials,
@@ -62,6 +73,8 @@ export function ServerCredentialVault({
 }) {
   const [session, setSession] = useState<ServerVaultSession | null>(initialSession);
   const [credentials, setCredentials] = useState<ServerVaultCredential[]>(initialCredentials);
+  const [filter, setFilter] = useState<CredentialFilter>("all");
+  const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
   const [status, setStatus] = useState(
     backendAvailable
       ? initialSession
@@ -69,6 +82,7 @@ export function ServerCredentialVault({
         : "Use a passkey to open your Zerant account."
       : "Zerant is temporarily unavailable.",
   );
+
 
   async function remove(id: string) {
     const response = await fetch("/api/zerant/credentials/" + encodeURIComponent(id), {
@@ -80,7 +94,8 @@ export function ServerCredentialVault({
       return;
     }
     setCredentials((current) => current.filter((item) => item.id !== id));
-    setStatus("Credential removed.");
+    setPendingRemoval(null);
+    setStatus("Credential removed from your Zerant account.");
   }
 
   async function logout() {
@@ -92,6 +107,22 @@ export function ServerCredentialVault({
     setCredentials([]);
     setStatus("Signed out.");
   }
+
+  const credentialRows = useMemo(() => credentials.map((item) => {
+    const credential = asPrivateCredential(item.credential);
+    const state = credentialLifecycleState(item);
+    return { item, credential, state };
+  }), [credentials]);
+
+  const credentialCounts = useMemo(() => ({
+    active: credentialRows.filter((row) => row.state === "active").length,
+    expired: credentialRows.filter((row) => row.state === "expired").length,
+    revoked: credentialRows.filter((row) => row.state === "revoked").length,
+  }), [credentialRows]);
+
+  const visibleCredentialRows = filter === "all"
+    ? credentialRows
+    : credentialRows.filter((row) => row.state === filter);
 
   if (!backendAvailable) {
     return (
@@ -169,12 +200,19 @@ export function ServerCredentialVault({
             <span className="pill">Private</span>
           </div>
 
+          <div className="credential-vault-summary" aria-label="Credential status summary">
+            <button type="button" className={filter === "active" ? "credential-summary active" : "credential-summary"} onClick={() => setFilter(filter === "active" ? "all" : "active")}><strong>{credentialCounts.active}</strong><span>Active</span></button>
+            <button type="button" className={filter === "expired" ? "credential-summary active" : "credential-summary"} onClick={() => setFilter(filter === "expired" ? "all" : "expired")}><strong>{credentialCounts.expired}</strong><span>Expired</span></button>
+            <button type="button" className={filter === "revoked" ? "credential-summary active" : "credential-summary"} onClick={() => setFilter(filter === "revoked" ? "all" : "revoked")}><strong>{credentialCounts.revoked}</strong><span>Revoked</span></button>
+          </div>
+
+          {filter !== "all" ? <div className="credential-filter-note"><span>Showing {filter} credentials</span><button type="button" onClick={() => setFilter("all")}>Show all</button></div> : null}
+
           <div className="credential-card-list">
-            {credentials.length ? credentials.map((item) => {
-              const credential = asPrivateCredential(item.credential);
+            {visibleCredentialRows.length ? visibleCredentialRows.map(({ item, credential, state }) => {
               if (!credential) {
                 return (
-                  <article className={"credential-card" + (item.revoked ? " revoked" : "")} key={item.id}>
+                  <article className={`credential-card state-${state}`} key={item.id}>
                     <div className="credential-card-top">
                       <div>
                         <span className="eyebrow">Private credential</span>
@@ -184,36 +222,39 @@ export function ServerCredentialVault({
                     <p className="small muted">
                       Added {new Date(item.created_at).toLocaleDateString()}.
                     </p>
-                    <Button variant="secondary" onClick={() => remove(item.id)}>Remove</Button>
+                    {pendingRemoval === item.id ? <div className="credential-remove-confirm"><span className="small muted">Remove this credential from your account?</span><div className="vault-actions wrap"><Button variant="secondary" onClick={() => void remove(item.id)}>Confirm remove</Button><Button variant="secondary" onClick={() => setPendingRemoval(null)}>Cancel</Button></div></div> : <Button variant="secondary" onClick={() => setPendingRemoval(item.id)}>Remove</Button>}
                   </article>
                 );
               }
 
               return (
-                <article className="credential-card" key={item.id}>
+                <article className={`credential-card state-${state}`} key={item.id}>
                   <div className="credential-card-top">
                     <div>
                       <span className="eyebrow">{credential.issuer}</span>
                       <h3>{credential.credential_name ?? credential.claim_type}</h3>
                     </div>
-                    <span className={item.revoked ? "credential-status revoked" : "pill"}>
-                      {item.revoked ? "Revoked" : credential.context}
+                    <span className={state === "revoked" ? "credential-status revoked" : state === "expired" ? "credential-status expired" : "credential-status active"}>
+                      {state === "revoked" ? "Revoked" : state === "expired" ? "Expired" : "Active"}
                     </span>
                   </div>
-                  <p className={item.revoked ? "credential-value revoked-value" : "credential-value"}>{credential.value}</p>
-                  <p className={item.revoked ? "small revoked-note" : "small muted"}>
-                    {item.revoked
+                  <p className={state === "active" ? "credential-value" : "credential-value revoked-value"}>{credential.value}</p>
+                  <div className="credential-detail-row"><span>{credential.context}</span><span>{credential.claim_type}</span></div>
+                  <p className={state === "active" ? "small muted" : "small revoked-note"}>
+                    {state === "revoked"
                       ? "This credential was revoked by its issuer and cannot be used for new proofs."
-                      : "Valid until " + new Date(credential.expires_at * 1000).toLocaleDateString()}
+                      : state === "expired"
+                        ? "This credential expired on " + new Date(credential.expires_at * 1000).toLocaleDateString() + " and cannot be used for new proofs."
+                        : "Valid until " + new Date(credential.expires_at * 1000).toLocaleDateString()}
                   </p>
-                  <Button variant="secondary" onClick={() => remove(item.id)}>Remove</Button>
+                  {pendingRemoval === item.id ? <div className="credential-remove-confirm"><span className="small muted">Remove this credential from your account?</span><div className="vault-actions wrap"><Button variant="secondary" onClick={() => void remove(item.id)}>Confirm remove</Button><Button variant="secondary" onClick={() => setPendingRemoval(null)}>Cancel</Button></div></div> : <Button variant="secondary" onClick={() => setPendingRemoval(item.id)}>Remove</Button>}
                 </article>
               );
             }) : (
               <div className="empty-credentials">
-                <h3>No credentials yet.</h3>
+                <h3>{credentials.length ? `No ${filter} credentials.` : "No credentials yet."}</h3>
                 <p className="muted">
-                  Share your Zerant ID with a trusted organization when you are ready to receive one.
+                  {credentials.length ? "Choose another filter to review the rest of your vault." : "Share your Zerant ID with a trusted organization when you are ready to receive one."}
                 </p>
               </div>
             )}
