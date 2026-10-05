@@ -1,6 +1,8 @@
 use serde::Serialize;
+use zcash_address::ZcashAddress;
+use zcash_protocol::value::Zatoshis;
 use zerant_core::{Error, MAX_SAFE_INTEGER, Result};
-use zip321::TransactionRequest;
+use zip321::{Payment, TransactionRequest};
 
 pub const MAX_PAYMENT_REQUEST_BYTES: usize = 16_384;
 pub const MAX_PAYMENT_REQUEST_PAYMENTS: usize = 16;
@@ -11,6 +13,8 @@ pub struct PaymentRequestPayment {
     pub recipient: String,
     pub amount_zat: Option<u64>,
     pub memo_present: bool,
+    pub transparent_only: bool,
+    pub can_receive_memo: bool,
     pub label: Option<String>,
     pub message: Option<String>,
     pub other_param_names: Vec<String>,
@@ -22,6 +26,67 @@ pub struct PaymentRequestSummary {
     pub payment_count: usize,
     pub total_zat: Option<u64>,
     pub payments: Vec<PaymentRequestPayment>,
+}
+
+pub fn create_payment_request(
+    recipient: &str,
+    amount_zec: &str,
+    expected_network: &str,
+) -> Result<PaymentRequestSummary> {
+    if recipient.is_empty() || recipient.len() > crate::address::MAX_ADDRESS_BYTES {
+        return Err(Error::Encoding);
+    }
+    let address_summary = crate::address::inspect_address(recipient)?;
+    if address_summary.network != expected_network {
+        return Err(Error::Encoding);
+    }
+
+    let amount = parse_zec_amount(amount_zec)?;
+    let address = ZcashAddress::try_from_encoded(recipient).map_err(|_| Error::Encoding)?;
+    let payment = Payment::without_memo(address, amount);
+    let request = TransactionRequest::new(vec![payment]).map_err(|_| Error::Encoding)?;
+    inspect_payment_request(&request.to_uri())
+}
+
+fn parse_zec_amount(value: &str) -> Result<Zatoshis> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.starts_with('-')
+        || value.starts_with('+')
+        || value.contains(['e', 'E'])
+    {
+        return Err(Error::Encoding);
+    }
+    let mut parts = value.split('.');
+    let whole = parts.next().ok_or(Error::Encoding)?;
+    let fraction = parts.next();
+    if parts.next().is_some() || whole.is_empty() || !whole.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(Error::Encoding);
+    }
+    let whole = whole.parse::<u64>().map_err(|_| Error::UnsafeNumber)?;
+    let fraction = fraction.unwrap_or("");
+    if fraction.len() > 8 || !fraction.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(Error::Encoding);
+    }
+    let mut fraction_padded = fraction.to_owned();
+    while fraction_padded.len() < 8 {
+        fraction_padded.push('0');
+    }
+    let fractional = if fraction_padded.is_empty() {
+        0
+    } else {
+        fraction_padded
+            .parse::<u64>()
+            .map_err(|_| Error::UnsafeNumber)?
+    };
+    let zatoshis = whole
+        .checked_mul(100_000_000)
+        .and_then(|v| v.checked_add(fractional))
+        .ok_or(Error::UnsafeNumber)?;
+    if zatoshis == 0 {
+        return Err(Error::Encoding);
+    }
+    Zatoshis::from_u64(zatoshis).map_err(|_| Error::UnsafeNumber)
 }
 
 pub fn inspect_payment_request(uri: &str) -> Result<PaymentRequestSummary> {
@@ -64,6 +129,8 @@ pub fn inspect_payment_request(uri: &str) -> Result<PaymentRequestSummary> {
             recipient: payment.recipient_address().encode(),
             amount_zat,
             memo_present: payment.memo().is_some(),
+            transparent_only: payment.recipient_address().is_transparent_only(),
+            can_receive_memo: payment.recipient_address().can_receive_memo(),
             label: payment.label().cloned(),
             message: payment.message().cloned(),
             other_param_names,
@@ -121,6 +188,30 @@ mod tests {
             "x".repeat(MAX_PAYMENT_REQUEST_BYTES)
         );
         assert_eq!(inspect_payment_request(&huge), Err(Error::Size));
+    }
+
+    #[test]
+    fn creates_exact_testnet_payment_request() {
+        let summary = create_payment_request(TESTNET_TADDR, "1.23456789", "testnet").unwrap();
+        assert_eq!(summary.payment_count, 1);
+        assert_eq!(summary.total_zat, Some(123_456_789));
+        assert_eq!(summary.payments[0].amount_zat, Some(123_456_789));
+        assert_eq!(summary.payments[0].recipient, TESTNET_TADDR);
+        assert_eq!(
+            inspect_payment_request(&summary.canonical_uri).unwrap(),
+            summary
+        );
+    }
+
+    #[test]
+    fn created_payment_rejects_wrong_network_and_inexact_amounts() {
+        assert!(create_payment_request(TESTNET_TADDR, "1", "mainnet").is_err());
+        for invalid in ["", "0", "-1", "+1", "1e2", "1.000000001", "1.2.3"] {
+            assert!(
+                create_payment_request(TESTNET_TADDR, invalid, "testnet").is_err(),
+                "{invalid}"
+            );
+        }
     }
 
     #[test]

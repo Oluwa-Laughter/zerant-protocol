@@ -1083,6 +1083,13 @@ struct InspectPaymentRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct CreatePaymentRequest {
+    recipient: String,
+    amount_zec: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct InspectAddress {
     address: String,
 }
@@ -9102,6 +9109,27 @@ async fn inspect_zcash_payment_request(
     Ok(Json(summary))
 }
 
+async fn create_zcash_payment_request(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<CreatePaymentRequest>,
+) -> Result<Json<zerant_zcash::zip321::PaymentRequestSummary>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "zcash_payment_create", 60).await?;
+    let expected_network = match state.zcash_chain.as_str() {
+        "zcash:mainnet" => "mainnet",
+        "zcash:testnet" => "testnet",
+        _ => return Err(ApiError::Unavailable),
+    };
+    let summary = zerant_zcash::zip321::create_payment_request(
+        &input.recipient,
+        &input.amount_zec,
+        expected_network,
+    )
+    .map_err(|_| ApiError::Invalid)?;
+    Ok(Json(summary))
+}
+
 fn safe_network_height(value: i64) -> Result<u64, ApiError> {
     let value = u64::try_from(value).map_err(|_| ApiError::Unavailable)?;
     if value > MAX_SAFE_INTEGER {
@@ -10107,6 +10135,10 @@ fn app(state: AppState) -> Router {
         .route(
             "/v1/zcash/payment-request/inspect",
             post(inspect_zcash_payment_request),
+        )
+        .route(
+            "/v1/zcash/payment-request/create",
+            post(create_zcash_payment_request),
         )
         .layer(TraceLayer::new_for_http())
         .with_state(state)

@@ -181,3 +181,26 @@
   .product-mobile-header,.product-mobile-nav{padding-left:18px;padding-right:18px}
 }
 .workspace-wallet-heading{max-width:760px;margin-bottom:22px}.workspace-wallet-heading h2{margin:10px 0 12px;font-size:clamp(1.8rem,3vw,2.6rem)}.workspace-wallet-heading>p:last-child{font-size:.9rem}
+
+.zcash-amount-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .75rem;
+}
+.zcash-amount-field > span {
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+.zcash-privacy-review {
+  display: grid;
+  gap: .65rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  margin: 1rem 0;
+}
+.zcash-privacy-review p { margin: 0; }
+.zcash-privacy-review.protected { border-color: color-mix(in srgb, currentColor 24%, var(--border)); }
+.zcash-privacy-review.caution { border-style: dashed; }
+.zcash-payment-confirmation { margin-top: 1rem; }
