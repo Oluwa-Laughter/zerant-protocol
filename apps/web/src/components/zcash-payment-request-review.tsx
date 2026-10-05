@@ -81,7 +81,7 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
   }
 
   const mode = summary && connection.status === "connected" ? directPaymentMode(summary, connection.selected) : null;
-  return <section className="zcash-request-review" aria-labelledby="zcash-request-title">
+  return <section id="zcash-payment-review" className="zcash-request-review" aria-labelledby="zcash-request-title">
     <div className="section-heading"><p className="eyebrow">Zcash payment request</p><h2 id="zcash-request-title">Review before wallet approval.</h2>
       <p className="muted">Zerant validates the request and shows its payment details before you approve anything.</p></div>
     <div className="request-review-panel"><label htmlFor="zcash-payment-uri">Zcash payment request URI</label>

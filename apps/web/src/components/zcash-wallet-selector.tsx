@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { discoverZcashConnectors, type WalletPurpose, type ZcashConnector } from "@/lib/zcash-connectors";
 import { ensureZcashConfig, getZcashConnectionSnapshot, setZcashDisplayUri } from "@/lib/zcash-connection";
 
-export function ZcashWalletSelector({ purpose, busy = false, triggerLabel = "Connect Zcash wallet", onSelect }: {
+export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = false, triggerLabel = "Connect Zcash wallet", onSelect }: {
   purpose: WalletPurpose;
   busy?: boolean;
+  hideAuthHandoff?: boolean;
   triggerLabel?: string;
   onSelect: (connector: ZcashConnector) => void;
 }) {
@@ -20,7 +21,9 @@ export function ZcashWalletSelector({ purpose, busy = false, triggerLabel = "Con
 
   function connectorDetail(connector: ZcashConnector): string {
     if (connector.transport === "zecauth") return "Open a compatible wallet app to approve Zerant sign-in";
-    if (connector.transport === "uri_handoff") return "Open a complete ZIP-321 payment request in a compatible wallet";
+    if (connector.transport === "uri_handoff") return purpose === "connection"
+      ? "Review a ZIP-321 request before opening it in your wallet"
+      : "Open the complete reviewed ZIP-321 request in a compatible wallet";
     if (connector.transport === "walletconnect") return "Pair a compatible wallet through WalletConnect";
     if (connector.capabilities.has("identitySigning")) return "Installed wallet · supports Zerant sign-in";
     if (connector.capabilities.has("shieldedPayment")) return "Installed wallet · supports shielded payments";
@@ -41,7 +44,8 @@ export function ZcashWalletSelector({ purpose, busy = false, triggerLabel = "Con
       <Button ref={trigger} onClick={() => {
         setLoading(true); setError("");
         void ensureZcashConfig().then((chain) => {
-          setConnectors(discoverZcashConnectors(purpose, chain, getZcashConnectionSnapshot().walletConnectProjectId, undefined, setZcashDisplayUri));
+          setConnectors(discoverZcashConnectors(purpose, chain, getZcashConnectionSnapshot().walletConnectProjectId, undefined, setZcashDisplayUri)
+            .filter((connector) => !hideAuthHandoff || !connector.capabilities.has("zecAuth")));
           setOpen(true);
         }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Wallet configuration is unavailable."))
           .finally(() => setLoading(false));
@@ -55,8 +59,8 @@ export function ZcashWalletSelector({ purpose, busy = false, triggerLabel = "Con
           onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); close(); } }}>
           <div className="wallet-selector-heading">
             <div>
-              <h3>Choose a Zcash wallet</h3>
-              <p className="small muted">Select a wallet or a supported handoff.</p>
+              <h3>{purpose === "identity" ? "Choose a sign-in wallet" : purpose === "payment" ? "Choose a payment wallet" : "Choose a Zcash wallet"}</h3>
+              <p className="small muted">{purpose === "identity" ? "Only supported sign-in methods are listed." : "Select a wallet or a supported handoff."}</p>
             </div>
             <button type="button" className="wallet-selector-close" onClick={close} aria-label="Close wallet choices">Close</button>
           </div>
@@ -74,7 +78,7 @@ export function ZcashWalletSelector({ purpose, busy = false, triggerLabel = "Con
             ))}
           </div>
           {purpose === "identity" ? (
-            <p className="small muted">Payment-only wallets can still open ZIP-321 requests after you sign in with a passkey. Portable sign-in requires a wallet that implements ZecAuth.</p>
+            <p className="small muted">Payment-only wallets can open ZIP-321 requests after you sign in. Portable sign-in requires a wallet that implements ZecAuth.</p>
           ) : purpose === "payment" ? (
             <p className="small muted">The portable option opens the complete validated ZIP-321 request in a compatible wallet. Wallet submission is not settlement confirmation.</p>
           ) : null}

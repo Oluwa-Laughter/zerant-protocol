@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ZcashPaymentRequestReview } from "@/components/zcash-payment-request-review";
 import { ZcashAddressInspector } from "@/components/zcash-address-inspector";
+import { ZcashConnect } from "@/components/zcash-connect";
 
 export type WorkspaceSession = {
   authenticated: boolean;
@@ -48,7 +49,7 @@ export function ProductWorkspace({
             Zerant helps you build portable trust, prove what matters, and keep unrelated identity and wallet information private.
           </p>
         </div>
-        <span className="pill">{authenticated ? "Zcash authenticated" : "Server-backed"}</span>
+        <span className="pill">{authenticated ? "Signed in" : "Sign-in required"}</span>
       </section>
 
       <section className="workspace-explainer">
@@ -57,7 +58,7 @@ export function ProductWorkspace({
           <h2>Connect. Receive. Prove.</h2>
         </div>
         <ol>
-          <li><strong>Connect your Zcash identity</strong><span>Create a private Zerant identity without publishing your payment address or wallet history.</span></li>
+          <li><strong>Open your Zerant account</strong><span>Use a passkey or compatible wallet sign-in without publishing your payment address or wallet history.</span></li>
           <li><strong>Receive trusted credentials</strong><span>Collect proof of contributions, roles, memberships, achievements or eligibility from trusted issuers.</span></li>
           <li><strong>Approve narrow verification requests</strong><span>Zerant returns only the bounded result after native trust, revocation, audience and replay checks pass.</span></li>
         </ol>
@@ -72,13 +73,13 @@ export function ProductWorkspace({
           <p>
             {authenticated
               ? "Your private credentials are ready."
-              : "Connect your Zcash identity to start receiving and proving trusted credentials."}
+              : "Sign in to start receiving and proving trusted credentials."}
           </p>
           <p className="small muted">
             Your credentials follow your Zerant account instead of being trapped in one browser.
           </p>
           <Link className="button" href="/vault">
-            {authenticated ? "Open credential vault" : "Connect Zcash identity"} <span aria-hidden="true">→</span>
+            {authenticated ? "Open credential vault" : "Choose a sign-in method"} <span aria-hidden="true">→</span>
           </Link>
         </article>
 
@@ -88,7 +89,7 @@ export function ProductWorkspace({
           <p className="muted">
             {authenticated
               ? "Your Zerant identity is connected without exposing your payment address."
-              : "Connect a private Zcash identity that remains separate from the keys controlling your funds."}
+              : "Sign in with a passkey or compatible wallet. Your Zerant account stays separate from the keys controlling your funds."}
           </p>
           <div className={authenticated ? "workspace-state ready" : "workspace-state"}>
             <span />{authenticated ? "Private identity connected" : "Connection required"}
@@ -164,6 +165,7 @@ export function ProductWorkspace({
       </section>
 
       <ZcashAddressInspector enabled={authenticated} />
+      {authenticated ? <section id="zcash-wallet-actions" className="workspace-wallet" aria-label="Zcash wallet actions"><ZcashConnect purpose="connection" /></section> : null}
       <ZcashPaymentRequestReview enabled={authenticated} />
     </main>
   );

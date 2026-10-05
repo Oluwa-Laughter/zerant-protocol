@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
 import { signInWithZcashWallet, type SignInChallenge } from "@/lib/zcash-auth";
@@ -13,12 +13,18 @@ async function createChallenge(): Promise<SignInChallenge> {
   return response.json() as Promise<SignInChallenge>;
 }
 
-export function ZcashConnect({ onConnected, allowSignIn = true }: { onConnected?: () => void; allowSignIn?: boolean }) {
+export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "connection"; onConnected?: () => void }) {
   const connection = useZcashConnection();
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [handoffUri, setHandoffUri] = useState("");
+  const openHandoff = useRef<HTMLButtonElement>(null);
+  const allowSignIn = purpose === "identity";
+
+  useEffect(() => { if (handoffUri) openHandoff.current?.focus(); }, [handoffUri]);
 
   useEffect(() => {
+    if (purpose !== "connection") return;
     let active = true;
     void ensureZcashConfig().then((chain) => {
       if (!active) return;
@@ -26,25 +32,30 @@ export function ZcashConnect({ onConnected, allowSignIn = true }: { onConnected?
       return restoreConnection(discoverZcashConnectors("connection", chain, walletConnectProjectId));
     }).catch(() => { /* The selector reports configuration errors when opened. */ });
     return () => { active = false; };
-  }, []);
+  }, [purpose]);
 
   async function choose(connector: ZcashConnector) {
     if (busy) return;
+    setHandoffUri("");
     if (connector.capabilities.has("zip321Handoff")) {
-      setStatus("Use the payment request review below to open a complete ZIP-321 request in your wallet.");
+      setStatus("Paste and validate a ZIP-321 request in the payment review below before opening it in your wallet.");
+      requestAnimationFrame(() => document.getElementById("zcash-payment-uri")?.focus());
       return;
     }
     if (connector.capabilities.has("zecAuth")) {
       if (!allowSignIn) { setStatus("Wallet-app sign-in is available from account settings."); return; }
       setBusy(true);
+      setStatus("Preparing wallet-app sign-in request…");
       try {
         const challenge = await createChallenge();
-        window.location.assign(connector.openAuthHandoff!(challenge, window.location.origin + "/api/zerant/auth/verify"));
+        setHandoffUri(connector.openAuthHandoff!(challenge, window.location.origin + "/api/zerant/auth/verify"));
+        setStatus("Open this request in a ZecAuth-compatible wallet, approve sign-in there, then check approval here.");
       } catch (error) { setStatus(error instanceof Error ? error.message : "Could not open wallet app."); }
       finally { setBusy(false); }
       return;
     }
     setBusy(true);
+    setStatus("Connecting to wallet…");
     try {
       await connectConnector(connector);
       setStatus(connector.capabilities.has("identitySigning")
@@ -57,6 +68,7 @@ export function ZcashConnect({ onConnected, allowSignIn = true }: { onConnected?
   async function signIn() {
     if (!connection.selected?.capabilities.has("identitySigning") || busy) return;
     setBusy(true);
+    setStatus("Approve Zerant sign-in in your wallet…");
     try {
       await signInWithZcashWallet(connection.selected);
       setStatus("Signed in to Zerant.");
@@ -66,22 +78,38 @@ export function ZcashConnect({ onConnected, allowSignIn = true }: { onConnected?
   }
 
   async function checkWalletApproval() {
+    if (busy) return;
+    setBusy(true);
+    setStatus("Checking wallet-app approval…");
     try {
       const response = await fetch("/api/zerant/auth/session", { credentials: "same-origin", cache: "no-store" });
-      if (!response.ok) throw new Error("No completed wallet approval is ready yet.");
+      if (!response.ok) {
+        setStatus("No wallet-app approval is ready yet. Approve sign-in in your wallet, then check again.");
+        return;
+      }
       setStatus("Signed in to Zerant."); onConnected?.();
-    } catch (error) { setStatus(error instanceof Error ? error.message : "No approval yet."); }
+    } catch { setStatus("Could not check wallet-app approval. Try again."); }
+    finally { setBusy(false); }
   }
 
   return <div className="zcash-connect">
     <div className="zcash-connect-intro">
-      <h2>Connect a Zcash wallet</h2>
-      <p className="muted">Choose a wallet for supported Zcash actions. Your payment address, balance, and history are separate from your Zerant identity.</p>
+      <h2>{allowSignIn ? "Sign in with a Zcash wallet" : "Connect a Zcash wallet"}</h2>
+      <p className="muted">{allowSignIn ? "Choose a wallet that can approve Zerant sign-in. A payment address, balance, or history is never your Zerant identity." : "Connect for supported Zcash actions. Your payment address, balance, and history remain separate from your Zerant identity."}</p>
     </div>
-    <ZcashWalletSelector purpose="connection" busy={busy} onSelect={(connector) => void choose(connector)} />
-    {connection.displayUri ? <div className="wallet-connect-option"><h3>Pair in your wallet</h3><p className="small muted">Only WalletConnect-compatible Zcash wallets can approve this request.</p><textarea readOnly aria-label="WalletConnect pairing URI" value={connection.displayUri} rows={3} /><Button variant="secondary" onClick={() => void navigator.clipboard.writeText(connection.displayUri!)}>Copy connection link</Button></div> : null}
-    {connection.account ? <div className="zcash-connection-state"><p className="small">Connected to <strong>{connection.account.providerName}</strong>{connection.selected?.capabilities.has("shieldedPayment") ? ". Shielded payments available." : "."}</p><div className="vault-actions wrap">{allowSignIn && connection.selected?.capabilities.has("identitySigning") ? <Button onClick={() => void signIn()} disabled={busy}>Sign in with wallet</Button> : null}<Button variant="secondary" onClick={() => void disconnectZcash()} disabled={busy}>Disconnect wallet</Button></div></div> : null}
-    {allowSignIn ? <div className="zcash-approval-check"><span className="small muted">Approved sign-in in a wallet app?</span><Button variant="secondary" onClick={() => void checkWalletApproval()}>Check approval</Button></div> : null}
+    <ZcashWalletSelector purpose={purpose} busy={busy} hideAuthHandoff={!allowSignIn} triggerLabel={allowSignIn ? "Choose sign-in wallet" : "Connect Zcash wallet"} onSelect={(connector) => void choose(connector)} />
+    {handoffUri ? <div className="wallet-handoff zcash-connect-handoff">
+      <p className="small muted">This sign-in request expires after five minutes. It contains the challenge and callback, not your wallet address or history.</p>
+      <textarea readOnly aria-label="ZecAuth sign-in request URI" value={handoffUri} rows={3} />
+      <div className="vault-actions wrap">
+        <Button ref={openHandoff} onClick={() => window.location.assign(handoffUri)}>Open in wallet app</Button>
+        <Button variant="secondary" onClick={() => void navigator.clipboard.writeText(handoffUri).then(() => setStatus("Sign-in request copied."), () => setStatus("Copy failed. Select the request URI above."))}>Copy sign-in request</Button>
+        <Button variant="secondary" onClick={() => void checkWalletApproval()} disabled={busy}>Check approval</Button>
+      </div>
+    </div> : null}
+    {!allowSignIn && connection.displayUri ? <div className="wallet-connect-option"><h3>Pair in your wallet</h3><p className="small muted">Only WalletConnect-compatible Zcash wallets can approve this request.</p><textarea readOnly aria-label="WalletConnect pairing URI" value={connection.displayUri} rows={3} /><Button variant="secondary" onClick={() => void navigator.clipboard.writeText(connection.displayUri!).then(() => setStatus("Connection link copied."), () => setStatus("Copy failed. Select the connection link above."))}>Copy connection link</Button></div> : null}
+    {connection.account && (!allowSignIn || connection.selected?.capabilities.has("identitySigning")) ? <div className="zcash-connection-state"><p className="small">Connected to <strong>{connection.account.providerName}</strong>{connection.selected?.capabilities.has("shieldedPayment") ? ". Shielded payments available." : "."}</p><div className="vault-actions wrap">{allowSignIn ? <Button onClick={() => void signIn()} disabled={busy}>Sign in with wallet</Button> : null}<Button variant="secondary" onClick={() => void disconnectZcash()} disabled={busy}>Disconnect wallet</Button></div></div> : null}
+    {allowSignIn && !handoffUri ? <div className="zcash-approval-check"><span className="small muted">Already approved in a wallet app?</span><Button variant="secondary" onClick={() => void checkWalletApproval()} disabled={busy}>Check approval</Button></div> : null}
     {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
   </div>;
 }

@@ -119,7 +119,7 @@ export function ServerCredentialVault({
         <section className="account-access-options" aria-label="Choose how to enter Zerant">
           <PasskeyAccess onConnected={() => window.location.reload()} />
           <div className="account-access-divider"><span>or</span></div>
-          <ZcashConnect onConnected={() => window.location.reload()} />
+          <ZcashConnect purpose="identity" onConnected={() => window.location.reload()} />
         </section>
       </main>
     );
