@@ -93,7 +93,7 @@ struct AppState {
     webauthn: Arc<Webauthn>,
     public_origin: String,
     zcash_chain: String,
-    light_client_endpoint: Option<String>,
+    light_client_endpoints: Vec<String>,
     light_client_allow_loopback: bool,
     light_client_cache: Arc<tokio::sync::Mutex<Option<LightClientCacheEntry>>>,
     allowed_scopes: BTreeSet<String>,
@@ -151,8 +151,55 @@ impl PersistedLightClientReadiness {
     }
 }
 
-fn light_client_endpoint_fingerprint(endpoint: &str) -> String {
-    hex::encode(Sha256::digest(endpoint.as_bytes()))
+fn light_client_configuration_fingerprint(endpoints: &[String]) -> String {
+    let mut digest = Sha256::new();
+    for endpoint in endpoints {
+        digest.update(
+            u64::try_from(endpoint.len())
+                .unwrap_or(u64::MAX)
+                .to_be_bytes(),
+        );
+        digest.update(endpoint.as_bytes());
+    }
+    hex::encode(digest.finalize())
+}
+
+fn parse_light_client_endpoints(
+    endpoints: Option<&str>,
+    legacy_endpoint: Option<&str>,
+    allow_loopback_http: bool,
+) -> Result<Vec<String>, ApiError> {
+    if endpoints.is_some() && legacy_endpoint.is_some() {
+        return Err(ApiError::Unavailable);
+    }
+
+    let Some(raw) = endpoints.or(legacy_endpoint) else {
+        return Ok(Vec::new());
+    };
+
+    let values: Vec<&str> = if endpoints.is_some() {
+        raw.split(',').map(str::trim).collect()
+    } else {
+        vec![raw.trim()]
+    };
+
+    if values.is_empty() || values.len() > 4 || values.iter().any(|value| value.is_empty()) {
+        return Err(ApiError::Unavailable);
+    }
+
+    let mut validated = Vec::with_capacity(values.len());
+    for value in values {
+        let endpoint = validate_light_client_endpoint(value, allow_loopback_http)
+            .map_err(|_| ApiError::Unavailable)?;
+        if !validated.contains(&endpoint) {
+            validated.push(endpoint);
+        }
+    }
+
+    if validated.is_empty() || validated.len() > 4 {
+        return Err(ApiError::Unavailable);
+    }
+    Ok(validated)
 }
 
 fn light_client_network_label(network: LightClientNetwork) -> &'static str {
@@ -8702,7 +8749,7 @@ async fn zcash_network_readiness(
     };
     let network = light_client_network_label(expected_network);
 
-    let Some(endpoint) = state.light_client_endpoint.as_deref() else {
+    if state.light_client_endpoints.is_empty() {
         return Ok(Json(ZcashNetworkReadiness {
             configured: false,
             network: network.into(),
@@ -8711,7 +8758,7 @@ async fn zcash_network_readiness(
             estimated_height: None,
             lag: None,
         }));
-    };
+    }
 
     let mut local_cache = state.light_client_cache.lock().await;
     if let Some(entry) = local_cache.as_ref()
@@ -8724,7 +8771,8 @@ async fn zcash_network_readiness(
             .ok_or(ApiError::Unavailable);
     }
 
-    let endpoint_fingerprint = light_client_endpoint_fingerprint(endpoint);
+    let endpoint_fingerprint =
+        light_client_configuration_fingerprint(&state.light_client_endpoints);
     let now = OffsetDateTime::now_utc();
     let client = db_client(&state.db).await?;
     let persisted =
@@ -8775,22 +8823,29 @@ async fn zcash_network_readiness(
             return entry.readiness.clone().ok_or(ApiError::Unavailable);
         }
 
-        match fetch_light_client_readiness(
-            endpoint,
-            expected_network,
-            state.light_client_allow_loopback,
-        )
-        .await
-        {
-            Ok(readiness) => {
-                let readiness = ZcashNetworkReadiness {
+        let mut successful_readiness = None;
+        for endpoint in &state.light_client_endpoints {
+            if let Ok(readiness) = fetch_light_client_readiness(
+                endpoint,
+                expected_network,
+                state.light_client_allow_loopback,
+            )
+            .await
+            {
+                successful_readiness = Some(ZcashNetworkReadiness {
                     configured: true,
                     network: readiness.network,
                     synced: readiness.synced,
                     block_height: Some(readiness.block_height),
                     estimated_height: Some(readiness.estimated_height),
                     lag: Some(readiness.lag),
-                };
+                });
+                break;
+            }
+        }
+
+        match successful_readiness {
+            Some(readiness) => {
                 store_shared_light_client_success(
                     &client,
                     network,
@@ -8800,7 +8855,7 @@ async fn zcash_network_readiness(
                 .await?;
                 Ok(readiness)
             }
-            Err(_) => {
+            None => {
                 store_shared_light_client_failure(&client, network, &endpoint_fingerprint).await?;
                 Err(ApiError::Unavailable)
             }
@@ -9160,13 +9215,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let light_client_allow_loopback = env::var("ZERANT_LIGHT_CLIENT_ALLOW_LOOPBACK")
         .map(|value| value == "true")
         .unwrap_or(false);
-    let light_client_endpoint = env::var("ZERANT_LIGHT_CLIENT_ENDPOINT")
-        .ok()
-        .map(|value| {
-            validate_light_client_endpoint(&value, light_client_allow_loopback)
-                .map_err(|_| ApiError::Unavailable.to_string())
-        })
-        .transpose()?;
+    let light_client_endpoints_value = env::var("ZERANT_LIGHT_CLIENT_ENDPOINTS").ok();
+    let light_client_legacy_endpoint = env::var("ZERANT_LIGHT_CLIENT_ENDPOINT").ok();
+    let light_client_endpoints = parse_light_client_endpoints(
+        light_client_endpoints_value.as_deref(),
+        light_client_legacy_endpoint.as_deref(),
+        light_client_allow_loopback,
+    )
+    .map_err(|error| error.to_string())?;
 
     let allowed_scopes: BTreeSet<String> = env::var("ZERANT_ZECAUTH_SCOPES")
         .unwrap_or_else(|_| "auth,request_payment".into())
@@ -9246,7 +9302,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         webauthn: Arc::new(webauthn),
         public_origin,
         zcash_chain,
-        light_client_endpoint,
+        light_client_endpoints,
         light_client_allow_loopback,
         light_client_cache: Arc::new(tokio::sync::Mutex::new(None)),
         allowed_scopes,
@@ -9359,10 +9415,59 @@ mod tests {
 
     // Run with ZERANT_TEST_DATABASE_URL pointing at a disposable PostgreSQL database.
     #[test]
+    fn light_client_endpoint_list_is_ordered_bounded_and_strict() {
+        let endpoints = parse_light_client_endpoints(
+            Some("https://primary.example, https://backup.example,https://primary.example"),
+            None,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            endpoints,
+            vec![
+                "https://primary.example/".to_owned(),
+                "https://backup.example/".to_owned()
+            ]
+        );
+
+        assert!(
+            parse_light_client_endpoints(
+                Some("https://a.example,https://b.example,https://c.example,https://d.example,https://e.example"),
+                None,
+                false,
+            )
+            .is_err()
+        );
+        assert!(
+            parse_light_client_endpoints(
+                Some("https://a.example"),
+                Some("https://legacy.example"),
+                false,
+            )
+            .is_err()
+        );
+        assert!(parse_light_client_endpoints(Some("http://remote.example"), None, false).is_err());
+        assert!(parse_light_client_endpoints(Some("http://127.0.0.1:9067"), None, true).is_ok());
+    }
+
+    #[test]
+    fn light_client_configuration_fingerprint_binds_failover_order() {
+        let primary_first = light_client_configuration_fingerprint(&[
+            "https://primary.example/".into(),
+            "https://backup.example/".into(),
+        ]);
+        let backup_first = light_client_configuration_fingerprint(&[
+            "https://backup.example/".into(),
+            "https://primary.example/".into(),
+        ]);
+        assert_ne!(primary_first, backup_first);
+    }
+
+    #[test]
     fn light_client_endpoint_fingerprint_is_stable_and_isolated() {
-        let first = light_client_endpoint_fingerprint("https://zaino-a.example");
-        let same = light_client_endpoint_fingerprint("https://zaino-a.example");
-        let second = light_client_endpoint_fingerprint("https://zaino-b.example");
+        let first = light_client_configuration_fingerprint(&["https://zaino-a.example/".into()]);
+        let same = light_client_configuration_fingerprint(&["https://zaino-a.example/".into()]);
+        let second = light_client_configuration_fingerprint(&["https://zaino-b.example/".into()]);
         assert_eq!(first.len(), 64);
         assert_eq!(first, same);
         assert_ne!(first, second);
@@ -9521,7 +9626,7 @@ mod tests {
             webauthn: Arc::new(webauthn),
             public_origin: "https://zerant.example".to_owned(),
             zcash_chain: "zcash:testnet".to_owned(),
-            light_client_endpoint: None,
+            light_client_endpoints: Vec::new(),
             light_client_allow_loopback: false,
             light_client_cache: Arc::new(tokio::sync::Mutex::new(None)),
             allowed_scopes: BTreeSet::from(["auth".to_owned()]),
@@ -9979,7 +10084,7 @@ mod tests {
             webauthn: Arc::new(webauthn),
             public_origin: "https://zerant.example".to_owned(),
             zcash_chain: "zcash:testnet".to_owned(),
-            light_client_endpoint: None,
+            light_client_endpoints: Vec::new(),
             light_client_allow_loopback: false,
             light_client_cache: Arc::new(tokio::sync::Mutex::new(None)),
             allowed_scopes: BTreeSet::from(["auth".to_owned()]),

@@ -196,3 +196,9 @@ Zerant does not read a wallet balance or transaction history before offering eit
 ## Browser wallet connection
 
 The browser now routes independently through explicit injected-wallet adapters, optional WalletConnect-compatible mainnet sessions, ZecAuth authentication handoff, and canonical ZIP-321 payment handoff. The current injected Noir provider is one adapter, not Zerant's wallet protocol. There is no universal Zcash dApp connector, so a wallet without a compatible injected interface, WalletConnect Zcash namespace, or supported URI handoff cannot be live-connected. WalletConnect provides connection and optional transparent transfer for sessions advertising the method; it does not authenticate Zerant accounts. No balance or history lookup is part of connect or sign-in. The native Zcash payment parser remains the authority for canonical ZIP-321 validation; direct wallet submission is separate from settlement verification.
+
+### Production light-client readiness
+
+For hosted network readiness, Zerant uses the maintained `zcash_client_backend` lightwalletd-compatible gRPC client. Operators may configure an ordered primary plus up to three trusted HTTPS endpoints. The service validates the expected Zcash network, bounds requests and responses, caches successful checks briefly, backs off failures, and coordinates refreshes through PostgreSQL so autoscaled instances share one recent observation.
+
+Only network-readiness metadata is persisted: network, a SHA-256 fingerprint of the ordered endpoint configuration, bounded heights/lag, timestamps and failure count. Zerant does not persist the endpoint URL, wallet addresses, balances, transaction history, memos or seed material in the readiness table. Endpoint failover is availability logic only; it is not wallet authority and does not authorize spending.

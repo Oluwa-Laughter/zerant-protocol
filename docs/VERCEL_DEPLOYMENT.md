@@ -32,10 +32,10 @@ Set these in Vercel Project Settings -> Environment Variables.
 
 Optional Zcash network connectivity:
 
-- ZERANT_LIGHT_CLIENT_ENDPOINT: HTTPS endpoint for a trusted Zaino or lightwalletd-compatible service.
-- ZERANT_LIGHT_CLIENT_ALLOW_LOOPBACK: keep false in Vercel; this exists only for deliberate local testing.
+- `ZERANT_LIGHT_CLIENT_ENDPOINTS`: optional comma-separated ordered list of one primary plus up to three trusted Zaino/lightwalletd-compatible HTTPS endpoints.
+- `ZERANT_LIGHT_CLIENT_ALLOW_LOOPBACK`: keep `false` in Vercel; this exists only for deliberate local testing.
 
-Zerant validates the configured endpoint at startup, requires HTTPS for remote services, rejects embedded credentials, query strings, fragments and paths, bounds gRPC response sizes, and checks that the remote chain matches ZERANT_ZCASH_CHAIN.
+Zerant validates every configured endpoint at startup, requires HTTPS for remote services, rejects embedded credentials, query strings, fragments and paths, bounds gRPC response sizes, and checks that the remote chain matches `ZERANT_ZCASH_CHAIN`. It probes the ordered endpoints only when the shared readiness cache needs refresh, stops after the first valid response, and coordinates refreshes through Neon so Vercel instances do not stampede the upstream service. The legacy single `ZERANT_LIGHT_CLIENT_ENDPOINT` variable remains accepted for transition but must not be set together with the list variable.
 
 Production only:
 
