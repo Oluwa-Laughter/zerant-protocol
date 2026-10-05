@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 export type ActivityEvent = {
@@ -17,6 +17,11 @@ export type ActivityPageData = {
   items: ActivityEvent[];
   next_cursor: string | null;
 };
+
+export function mergeActivityEvents(current: ActivityEvent[], fresh: ActivityEvent[]): ActivityEvent[] {
+  const freshIds = new Set(fresh.map((item) => item.id));
+  return [...fresh, ...current.filter((item) => !freshIds.has(item.id))];
+}
 
 type ActivityCategory = "all" | "credentials" | "verification" | "security" | "zcash" | "other";
 
@@ -75,6 +80,8 @@ export function ActivityTimeline({
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [filter, setFilter] = useState<ActivityCategory>("all");
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshInFlight = useRef(false);
 
   const categoryCounts = useMemo(() => {
     const counts: Record<Exclude<ActivityCategory, "all">, number> = { credentials: 0, verification: 0, security: 0, zcash: 0, other: 0 };
@@ -89,6 +96,44 @@ export function ActivityTimeline({
   const availableCategories = useMemo(() =>
     (["credentials", "verification", "security", "zcash", "other"] as const).filter((category) => categoryCounts[category] > 0),
   [categoryCounts]);
+
+  const refreshActivity = useCallback(async (announce = false) => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    setRefreshing(true);
+    try {
+      const response = await fetch("/api/zerant/activity?limit=20", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        if (announce) setStatus("Activity could not be refreshed right now.");
+        return;
+      }
+      const page = (await response.json()) as ActivityPageData;
+      setItems((current) => mergeActivityEvents(current, page.items));
+      if (!cursor) setCursor(page.next_cursor);
+      if (announce) setStatus("Activity refreshed.");
+    } catch {
+      if (announce) setStatus("Activity could not be refreshed right now.");
+    } finally {
+      refreshInFlight.current = false;
+      setRefreshing(false);
+    }
+  }, [cursor]);
+
+  useEffect(() => {
+    const onFocus = () => { void refreshActivity(false); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refreshActivity(false);
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refreshActivity]);
 
   async function loadMore() {
     if (!cursor || loading) return;
@@ -127,6 +172,7 @@ export function ActivityTimeline({
             <strong>{items.length}</strong>
           </div>
           <div className="activity-filter-row" role="group" aria-label="Activity categories">
+            <Button variant="secondary" disabled={refreshing} onClick={() => void refreshActivity(true)}>{refreshing ? "Refreshing…" : "Refresh"}</Button>
             <button type="button" className={filter === "all" ? "activity-filter active" : "activity-filter"} onClick={() => setFilter("all")}>All <span>{items.length}</span></button>
             {availableCategories.map((category) => (
               <button type="button" key={category} className={filter === category ? "activity-filter active" : "activity-filter"} onClick={() => setFilter(category)}>{categoryLabel(category)} <span>{categoryCounts[category]}</span></button>

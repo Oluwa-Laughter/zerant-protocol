@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ActivityTimeline } from "./activity-timeline";
+import { ActivityTimeline, mergeActivityEvents } from "./activity-timeline";
 
 test("activity timeline groups real account events without exposing payloads", () => {
   const html = renderToStaticMarkup(<ActivityTimeline initialPage={{
@@ -14,6 +14,7 @@ test("activity timeline groups real account events without exposing payloads", (
     next_cursor: null,
   }} />);
   assert.ok(html.includes("Recorded events"));
+  assert.ok(html.includes("Refresh"));
   assert.ok(html.includes("Credentials"));
   assert.ok(html.includes("Verification"));
   assert.ok(html.includes("Access &amp; security"));
@@ -23,4 +24,11 @@ test("activity timeline groups real account events without exposing payloads", (
   assert.ok(html.includes("Membership proof"));
   assert.equal(html.includes("wallet balance"), false);
   assert.equal(html.includes("credential.value"), false);
+});
+
+
+test("activity refresh merges newest events without duplicating loaded history", () => {
+  const base = (id: number, type = "credential_issued") => ({ id, event_type: type, object_id: `obj-${id}`, label: `Event ${id}`, context: null, counterparty: null, created_at: `2026-10-05T12:0${id}:00Z` });
+  const merged = mergeActivityEvents([base(3), base(2), base(1)], [base(4, "zcash_payment_submitted"), base(3)]);
+  assert.deepEqual(merged.map((item) => item.id), [4, 3, 2, 1]);
 });
