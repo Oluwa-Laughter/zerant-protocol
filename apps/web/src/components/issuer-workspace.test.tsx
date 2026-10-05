@@ -65,3 +65,29 @@ test("new organization explains who receives a credential and what a wallet does
   assert.ok(html.includes("Ask for their Zerant ID"));
   assert.ok(html.includes("No wallet address is needed"));
 });
+
+test("issuer must review the recipient and claim before sending", () => {
+  const html = renderToStaticMarkup(
+    <IssuerWorkspace
+      authenticated
+      backendAvailable
+      currentZerantId="zr_aaaaaaaaaaaaaaaaaaaaaaaa"
+      initialProfile={profile}
+      initialIssued={[]}
+      initialSchemas={[{
+        id: "schema-1", issuer_id: profile.issuer_id, issuer_name: profile.display_name,
+        display_name: "Membership", description: "Active member", claim_type: "membership",
+        context: "community", default_expiry_days: 90, version: 1, active: true,
+        supersedes_schema_id: null, retired_at: null, created_at: profile.created_at,
+      }]}
+      initialKeys={[]}
+      initialTeam={[{ ...auditor, role: "owner", owner: true }]}
+      initialTeamInvitations={[]}
+      initialMyInvitations={[]}
+      initialActivity={{ items: [], next_cursor: null }}
+    />,
+  );
+
+  assert.ok(html.includes("Review credential"));
+  assert.equal(html.includes("Confirm and issue"), false);
+});

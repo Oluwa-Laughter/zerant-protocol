@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
 import { zip321Connector, type ZcashConnector } from "@/lib/zcash-connectors";
-import { connectConnector, useZcashConnection } from "@/lib/zcash-connection";
+import { connectConnector, ensureZcashConfig, useZcashConnection } from "@/lib/zcash-connection";
 import { directPaymentMode, paymentAction } from "@/lib/zcash-payment-connector";
 
 type Payment = {
@@ -123,6 +123,16 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
     if (action.kind === "handoff") window.location.assign(action.uri);
   }
 
+  async function copyPaymentLink() {
+    if (!summary || record?.state === "submitted") return;
+    try {
+      await navigator.clipboard.writeText(summary.canonical_uri);
+      setStatus("Payment link copied. Open it in a compatible Zcash wallet on the same network and check the recipient and amount before approving.");
+    } catch {
+      setStatus("Copy failed. Select the payment link shown below and copy it manually.");
+    }
+  }
+
   async function payWithConnectedWallet(allowTransparent = false) {
     if (!summary || !record || record.state !== "prepared" || busy) return;
     const wallet = connection.status === "connected" ? connection.selected : null;
@@ -170,7 +180,8 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
       return;
     }
     try {
-      await connectConnector(connector);
+      const chain = await ensureZcashConfig();
+      await connectConnector(connector, chain);
       setStatus("Wallet connected. Review the payment and approve only when you are ready.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Wallet connection failed.");
@@ -288,9 +299,15 @@ export function ZcashPaymentRequestReview({ enabled }: { enabled: boolean }) {
         {mode === "transparent" && record ? <Button disabled={busy} onClick={() => void payWithConnectedWallet(true)}>Approve transparent payment</Button> : null}
         {!mode && record ? <ZcashWalletSelector purpose="payment" triggerLabel="Choose payment wallet" onSelect={(connector) => void selectWallet(connector)} /> : null}
         <Button variant="secondary" disabled={busy} onClick={openInWalletApp}>Open in another wallet</Button>
+        <Button variant="secondary" disabled={busy} onClick={() => void copyPaymentLink()}>Copy payment link</Button>
+      </div> : null}
+      {record?.state !== "submitted" ? <div className="payment-link-copy">
+        <label htmlFor="reviewed-payment-link">Reviewed payment link</label>
+        <textarea id="reviewed-payment-link" readOnly value={summary.canonical_uri} rows={3} />
+        <p className="small muted">Use a wallet on the same Zcash network. Zingo PC documents testnet and payment-link support; other wallets may also support this format. Review the exact details again in your wallet.</p>
       </div> : null}
       {record ? <p className="small muted">Saved payment: {record.state === "submitted" ? "Submitted" : "Prepared"}. If your wallet opens separately, enter its transaction ID in Recent payments after submission.</p> : null}
-      <p className="small muted payment-request-note">Wallet submission is only the first step. Zerant does not treat a submitted transaction as settled until it can be observed and confirmed on the Zcash network.</p>
+      <p className="small muted payment-request-note">A wallet transaction ID records submission here. Zerant cannot verify testnet settlement yet, so this payment will remain pending.</p>
       {flow === "review" && summary.payments.length > 1 ? <div className="request-payment-list">{summary.payments.map((item) => <article key={item.index} className="request-payment"><div><span className="eyebrow">Recipient {item.index + 1}</span><span className="mono">{item.recipient}</span></div><dl><div><dt>Amount</dt><dd>{formatZec(item.amount_zat)}</dd></div><div><dt>Label</dt><dd>{item.label ?? "None"}</dd></div><div><dt>Message</dt><dd>{item.message ?? "None"}</dd></div><div><dt>Memo</dt><dd>{item.memo_present ? "Present" : "None"}</dd></div></dl></article>)}</div> : null}
     </div> : null}
     {enabled ? <div className="request-summary" aria-label="Recent Zcash payments">

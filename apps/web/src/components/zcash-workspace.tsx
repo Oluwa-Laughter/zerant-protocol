@@ -63,19 +63,22 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
           </div>
           <Link className="button" href="/vault">Choose a sign-in method →</Link>
         </section>
-      ) : (
-        <section id="zcash-wallet-actions" className="workspace-wallet" aria-label="Zcash wallet access">
-          <div className="workspace-wallet-heading">
-            <p className="eyebrow">Wallet access</p>
-            <h2>Use your own Zcash wallet to pay.</h2>
-            <p className="muted">Zerant does not contain a wallet or hold your funds. On desktop Chrome with the Testnet Noir extension, choose Noir and approve the site in its popup. Connecting does not approve a payment.</p>
-          </div>
-          <ZcashConnect purpose="connection" />
-          <p className="small muted wallet-compatibility-note">Pasting a wallet address does not connect a wallet. A destination address belongs in the payment request below. If Noir is unavailable, you can review and copy a payment request for a compatible wallet app.</p>
-        </section>
-      )}
+      ) : null}
 
       <ZcashPaymentRequestReview enabled={authenticated} />
+
+      {authenticated ? (
+        <section id="zcash-wallet-actions" className="workspace-wallet" aria-label="Zcash wallet access">
+          <div className="workspace-wallet-heading">
+            <p className="eyebrow">Optional direct connection</p>
+            <h2>Connect a wallet only if it supports this network.</h2>
+            <p className="muted">Zerant uses Zcash testnet. The Noir extension from the Chrome Store is mainnet and cannot pay a testnet request. A separate Testnet Noir build is available from Noir. A compatible wallet can also use the reviewed payment link above without connecting to Zerant.</p>
+          </div>
+          <ZcashConnect purpose="connection" />
+          <p className="small muted wallet-compatibility-note">Pasting a wallet address does not connect a wallet. A destination address belongs in a payment request. Connecting never approves spending.</p>
+        </section>
+      ) : null}
+
       <ZcashAddressInspector enabled={authenticated} />
     </main>
   );

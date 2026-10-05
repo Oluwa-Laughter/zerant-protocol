@@ -29,6 +29,14 @@ identity.
   [ZODL](https://github.com/zodl-inc) demonstrate separate wallet products.
   Their existence does not establish a tested browser connection or ZIP-321
   handoff for Zerant. Do not advertise one without interoperability evidence.
+- [Noir's developer documentation](https://docs.zknoir.com/developers/)
+  identifies separate mainnet and testnet extension builds; the Chrome Web Store
+  build is mainnet. The SDK cannot switch networks at runtime. Detection alone
+  therefore cannot make a mainnet Noir extension usable on Zerant testnet.
+- [Zingo PC's own feature list](https://github.com/zingolabs/zingo-pc)
+  documents testnet wallets and ZIP-321 `zcash:` URI handling. It is a plausible
+  portable testnet payment route, without claiming a Zerant browser connection
+  or a completed interoperability test.
 - [NEAR Intents](https://docs.near-intents.org/) documents a cross-chain swap
   system. It does not solve Zerant's credential consent or exact Zcash shielded
   settlement verification. It is outside the first complete Zerant flow.

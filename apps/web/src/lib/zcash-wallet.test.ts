@@ -3,11 +3,20 @@ import test from "node:test";
 import type { NoirWalletProvider } from "@noir-wallet/sdk";
 import {
   buildZecAuthWalletUri,
+  connectedWalletNetwork,
   NoirWalletAdapter,
   normalizeDerivedSignature,
   normalizeWalletConnection,
   zatoshiToZec,
 } from "./zcash-wallet";
+
+test("wallet network check rejects mixed and unrecognized addresses", () => {
+  const base = { providerId: "wallet", providerName: "Wallet", accountCount: 1 };
+  assert.equal(connectedWalletNetwork({ ...base, shieldedAddress: "utest1account", transparentAddress: "tmaccount" }), "zcash:testnet");
+  assert.equal(connectedWalletNetwork({ ...base, shieldedAddress: "u1account", transparentAddress: "t1account" }), "zcash:mainnet");
+  assert.equal(connectedWalletNetwork({ ...base, shieldedAddress: "utest1account", transparentAddress: "t1account" }), null);
+  assert.equal(connectedWalletNetwork({ ...base, shieldedAddress: "unknown", transparentAddress: "" }), null);
+});
 
 test("normalizes wallet metadata without hard-coding a provider brand", () => {
   const result = normalizeWalletConnection(

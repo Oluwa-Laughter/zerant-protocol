@@ -18,6 +18,12 @@ The browser is a product and consent surface, not the protocol authority. Durabl
 
 Issuer governance actions are written to an append-only `issuer_events` ledger in the same PostgreSQL transaction as the protected change. Owners, admins and auditors can review the paginated organization history from the issuer workspace.
 
+The issuer UI snapshots the recipient Zerant ID, active credential type, claim,
+context, and validity for a separate review step before issuance. Editing returns
+to the draft. The service still rechecks issuer role, recipient existence, type,
+claim bounds, and signing authority at issuance; the UI review is an error
+prevention step and never grants authority. It requests no wallet information.
+
 ## Load-bearing decisions
 
 ### Explicit Noir connection gesture (2026-10-05)
@@ -29,6 +35,18 @@ Connection grants only the wallet capabilities the user approves and never grant
 Zerant sign-in or spending consent. No wallet address, balance, history, or key is
 persisted by this change. Testnet settlement remains unsupported without an
 authorized named-transaction observer.
+
+Direct browser wallet sessions are admitted only after the returned account
+addresses identify the configured Zcash network locally. A mainnet Noir extension
+may be detectable on a testnet site because the injected SDK has no safe preapproval
+network query; detection is not compatibility. An unrecognized or mixed-network
+account fails closed before Zerant offers wallet payment actions. This check reads
+only the wallet's connection result in browser memory and never sends the addresses
+to the service or persists them. It does not validate spending capability or prove
+settlement. Other wallets may use the complete canonical ZIP-321 request without a
+live connection; URI handoff is available only after server validation and exact
+network matching. Adding arbitrary wallet providers requires reviewed adapters,
+not broad discovery of browser globals.
 
 ### Discoverable passkey sign-in (2026-10-05)
 

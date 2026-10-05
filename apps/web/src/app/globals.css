@@ -260,6 +260,16 @@
 .issuer-start-steps li { padding: 4px 0; }
 .issuer-start-steps li strong { font-weight: 650; }
 .issuer-panel #holder-id-help { margin-top: -7px; }
+.credential-issue-review { display: grid; gap: 14px; margin-top: 8px; padding: 18px; border: 1px solid var(--accent); border-radius: 10px; background: var(--soft); }
+.credential-issue-review h3 { font-size: 1.15rem; }
+.credential-issue-review dl { display: grid; gap: 10px; margin: 0; }
+.credential-issue-review dl > div { display: grid; gap: 2px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.credential-issue-review dt { font-size: .8rem; color: var(--muted); }
+.credential-issue-review dd { font-size: .95rem; overflow-wrap: anywhere; }
+.credential-issue-review .vault-actions { margin-top: 2px; }
+.payment-link-copy { display: grid; gap: 8px; padding: 18px 22px; border-bottom: 1px solid var(--border); }
+.payment-link-copy label { font-size: .875rem; font-weight: 650; }
+.payment-link-copy textarea { width: 100%; min-height: 74px; resize: vertical; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--soft); color: var(--foreground); font: .82rem/1.5 "SFMono-Regular",Consolas,monospace; overflow-wrap: anywhere; }
 @media (max-width: 620px) {
   .product-shell .app-heading h1,
   .product-shell .vault-hero h1,

@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { discoverZcashConnectors, type WalletPurpose, type ZcashConnector } from "@/lib/zcash-connectors";
 import { ensureZcashConfig, getZcashConnectionSnapshot, setZcashDisplayUri } from "@/lib/zcash-connection";
 
-export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = false, triggerLabel = "Connect Zcash wallet", onSelect }: {
+export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = false, hidePaymentHandoff = false, triggerLabel = "Connect Zcash wallet", onSelect }: {
   purpose: WalletPurpose;
   busy?: boolean;
   hideAuthHandoff?: boolean;
+  hidePaymentHandoff?: boolean;
   triggerLabel?: string;
   onSelect: (connector: ZcashConnector) => void;
 }) {
@@ -23,7 +24,7 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
   function connectorDetail(connector: ZcashConnector): string {
     if (connector.transport === "zecauth") return "Open a compatible wallet app to approve Zerant sign-in";
     if (connector.transport === "uri_handoff") return purpose === "connection"
-      ? "Review a Zcash payment request before opening it in your wallet"
+      ? "Review a payment request first; this option does not connect a wallet"
       : "Open the complete reviewed Zcash payment request in a compatible wallet";
     if (connector.transport === "walletconnect") return "Pair a compatible remote wallet";
     if (connector.capabilities.has("identitySigning")) return activeChain === "zcash:testnet"
@@ -49,7 +50,9 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
           walletConnectProjectId,
           undefined,
           setZcashDisplayUri,
-        ).filter((connector) => !hideAuthHandoff || !connector.capabilities.has("zecAuth")),
+        ).filter((connector) =>
+          (!hideAuthHandoff || !connector.capabilities.has("zecAuth")) &&
+          (!hidePaymentHandoff || !connector.capabilities.has("zip321Handoff"))),
       );
     };
 
@@ -61,7 +64,7 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
       window.removeEventListener("noirwallet#initialized", refresh);
       window.clearTimeout(retry);
     };
-  }, [activeChain, hideAuthHandoff, open, purpose]);
+  }, [activeChain, hideAuthHandoff, hidePaymentHandoff, open, purpose]);
 
   function close() {
     setOpen(false);
@@ -75,7 +78,9 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
         void ensureZcashConfig().then((chain) => {
           setActiveChain(chain);
           setConnectors(discoverZcashConnectors(purpose, chain, getZcashConnectionSnapshot().walletConnectProjectId, undefined, setZcashDisplayUri)
-            .filter((connector) => !hideAuthHandoff || !connector.capabilities.has("zecAuth")));
+            .filter((connector) =>
+              (!hideAuthHandoff || !connector.capabilities.has("zecAuth")) &&
+              (!hidePaymentHandoff || !connector.capabilities.has("zip321Handoff"))));
           setOpen(true);
         }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Wallet configuration is unavailable."))
           .finally(() => setLoading(false));
@@ -90,7 +95,7 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
           <div className="wallet-selector-heading">
             <div>
               <h3>{purpose === "identity" ? "Choose a sign-in wallet" : purpose === "payment" ? "Choose a payment wallet" : "Choose a Zcash wallet"}</h3>
-              <p className="small muted">{purpose === "identity" ? "Only supported sign-in methods are listed." : "Select a wallet or a supported handoff."}</p>
+              <p className="small muted">{purpose === "identity" ? "Only supported sign-in methods are listed." : hidePaymentHandoff ? "Only direct wallet connections are listed." : "Select a wallet or a supported payment handoff."}</p>
             </div>
             <button type="button" className="wallet-selector-close" onClick={close} aria-label="Close wallet choices">Close</button>
           </div>
@@ -99,6 +104,12 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
               <div className="wallet-selector-empty">
                 <strong>No supported Zcash sign-in wallet detected.</strong>
                 <p className="small muted">On desktop Chrome, enable and unlock the Testnet Noir Wallet extension, allow it on this site, then reopen this menu. You can still use your passkey to access Zerant.</p>
+              </div>
+            ) : null}
+            {connectors.length === 0 && purpose === "connection" ? (
+              <div className="wallet-selector-empty">
+                <strong>No direct wallet connection found.</strong>
+                <p className="small muted">You can still prepare a payment and copy its reviewed link for a compatible Zcash wallet. Your Zerant account and credentials remain available.</p>
               </div>
             ) : null}
             {connectors.map((connector, index) => (
@@ -120,9 +131,9 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
           ) : purpose === "payment" ? (
             <p className="small muted">The portable option opens the complete validated Zcash payment request in a compatible wallet. Wallet submission is not settlement confirmation.</p>
           ) : activeChain === "zcash:testnet" ? (
-            <p className="small muted">Testnet uses the Testnet Noir extension for direct actions. A payment handoff opens a reviewed request in a compatible wallet app; it does not create a live connection.</p>
+            <p className="small muted">The Chrome Store Noir extension is mainnet and cannot pay testnet requests. Direct actions require the separate Testnet Noir build. A payment link works with a compatible testnet wallet without a live connection.</p>
           ) : (
-            <p className="small muted">Choose an installed wallet, a portable payment handoff, or remote wallet pairing when available.</p>
+            <p className="small muted">Choose an installed wallet or remote pairing when available. Review a payment request above to use a portable wallet link.</p>
           )}
         </div>
       ) : null}

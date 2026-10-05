@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
 import { type ZcashConnector } from "@/lib/zcash-connectors";
+import { connectConnector, ensureZcashConfig } from "@/lib/zcash-connection";
 import { completeWalletAppLink, removeWalletMessageMethod, removeZecAuthMethod, startWalletAppLink, submitZcashLink } from "@/lib/zcash-link";
 
 export type LinkedZcashMethod = {
@@ -97,7 +98,8 @@ export function ZcashSignInManager({ initialMethods }: { initialMethods: LinkedZ
     try {
       if (!wallet.capabilities.has("identitySigning") || !wallet.signIdentityChallenge || !wallet.connect) throw new Error("Wallet cannot sign this request.");
       setStatus("Approve the Zcash sign-in request in your wallet.");
-      await wallet.connect();
+      const chain = await ensureZcashConfig();
+      await connectConnector(wallet, chain);
       const result = await submitZcashLink(wallet);
       if (result.stage === "challenge") {
         setStatus(result.response.status === 403 ? "Sign in again to link a Zcash wallet." : "Could not start Zcash sign-in linking.");
@@ -114,8 +116,8 @@ export function ZcashSignInManager({ initialMethods }: { initialMethods: LinkedZ
       }
       await refreshMethods();
       setStatus("Zcash sign-in linked to this Zerant account.");
-    } catch {
-      setStatus("Wallet approval was not completed.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Wallet approval was not completed.");
     } finally {
       setBusy(false);
     }

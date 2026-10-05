@@ -13,6 +13,17 @@ export type ConnectedZcashWallet = {
   accountCount: number;
 };
 
+/** A conservative local network check for addresses returned by a wallet. */
+export function connectedWalletNetwork(account: ConnectedZcashWallet): "zcash:mainnet" | "zcash:testnet" | null {
+  const addresses = [account.shieldedAddress, account.transparentAddress].filter(Boolean);
+  const networks = addresses.map((address) => {
+    if (/^(utest1|ztestsapling1|tm|t2)/.test(address)) return "zcash:testnet";
+    if (/^(u1|zs1|t1|t3)/.test(address)) return "zcash:mainnet";
+    return null;
+  });
+  return networks.length > 0 && networks.every((network) => network === networks[0]) ? networks[0] : null;
+}
+
 export type WalletMessageSignature = {
   pubkey: string;
   signature: string;

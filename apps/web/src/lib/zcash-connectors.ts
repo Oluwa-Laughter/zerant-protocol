@@ -80,7 +80,7 @@ export function zecAuthConnector(): ZcashConnector {
 
 export function zip321Connector(): ZcashConnector {
   return {
-    id: "zip321:portable", walletId: "portable-payment", name: "Zcash payment wallet",
+    id: "zip321:portable", walletId: "portable-payment", name: "Use another Zcash wallet",
     transport: "uri_handoff", availability: "available",
     capabilities: new Set(["zip321Handoff"]),
     openPaymentHandoff: (uri) => {

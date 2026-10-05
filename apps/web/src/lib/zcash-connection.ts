@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import type { ConnectedZcashWallet, ZcashWalletAdapter } from "./zcash-wallet";
+import { connectedWalletNetwork, type ConnectedZcashWallet, type ZcashWalletAdapter } from "./zcash-wallet";
 import type { ZcashChain, ZcashConnector } from "./zcash-connectors";
 
 export type ConnectionSnapshot = {
@@ -46,11 +46,24 @@ export async function ensureZcashConfig(request: typeof fetch = fetch): Promise<
 
 export function setZcashDisplayUri(uri: string): void { update({ displayUri: uri }); }
 
-export async function connectConnector(connector: ZcashConnector): Promise<ConnectedZcashWallet> {
+function requireWalletNetwork(account: ConnectedZcashWallet, chain: ZcashChain): void {
+  if (connectedWalletNetwork(account) !== chain) {
+    const expected = chain === "zcash:testnet" ? "testnet" : "mainnet";
+    throw new Error(`This wallet account does not match Zerant’s ${expected} network. Choose a wallet on ${expected}, or open the reviewed payment request in another wallet.`);
+  }
+}
+
+export async function connectConnector(connector: ZcashConnector, chain: ZcashChain): Promise<ConnectedZcashWallet> {
   if (!connector.adapter || !connector.connect) throw new Error("This choice does not support a live wallet connection.");
   update({ selected: connector, adapter: connector.adapter, account: null, status: "connecting", displayUri: null });
   try {
     const account = await connector.connect();
+    try {
+      requireWalletNetwork(account, chain);
+    } catch (error) {
+      await connector.disconnect?.().catch(() => undefined);
+      throw error;
+    }
     update({ account, status: "connected" });
     return account;
   } catch (error) {
@@ -59,12 +72,12 @@ export async function connectConnector(connector: ZcashConnector): Promise<Conne
   }
 }
 
-export async function restoreConnection(connectors: ZcashConnector[]): Promise<ConnectedZcashWallet | null> {
+export async function restoreConnection(connectors: ZcashConnector[], chain: ZcashChain): Promise<ConnectedZcashWallet | null> {
   for (const connector of connectors) {
     if (!connector.adapter || !connector.capabilities.has("connectionRestore") || !connector.existingConnection) continue;
     try {
       const account = await connector.existingConnection();
-      if (account) { update({ selected: connector, adapter: connector.adapter, account, status: "connected" }); return account; }
+      if (account) { requireWalletNetwork(account, chain); update({ selected: connector, adapter: connector.adapter, account, status: "connected" }); return account; }
     } catch { /* A stale session must not prevent another adapter restoring. */ }
   }
   return null;

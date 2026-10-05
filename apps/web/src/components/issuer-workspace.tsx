@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -80,6 +80,15 @@ export type IssuerActivityPage = {
   next_cursor: string | null;
 };
 
+type CredentialIssueReview = {
+  holderId: string;
+  schemaId: string;
+  schemaName: string;
+  context: string;
+  expiryDays: number;
+  value: string;
+};
+
 function activityTitle(type: string): string {
   const labels: Record<string, string> = {
     team_invited: "Team invitation sent",
@@ -144,6 +153,9 @@ export function IssuerWorkspace({
     useState<"admin" | "issuer" | "auditor">("issuer");
   const [displayName, setDisplayName] = useState("");
   const [holderId, setHolderId] = useState("");
+  const [issueReview, setIssueReview] = useState<CredentialIssueReview | null>(null);
+  const [issuing, setIssuing] = useState(false);
+  const issuingRef = useRef(false);
   const [schemaId, setSchemaId] = useState(initialSchemas.find((item) => item.active)?.id ?? "");
   const [value, setValue] = useState("");
   const [schemaName, setSchemaName] = useState("");
@@ -526,41 +538,71 @@ export function IssuerWorkspace({
     setStatus("Credential revoked. It can no longer be used for new proofs.");
   }
 
-  async function issueCredential() {
-    if (!schemaId) {
-      setStatus("Create or choose a credential type first.");
+  function reviewCredentialIssue() {
+    const recipient = holderId.trim();
+    const claim = value.trim();
+    const schema = activeSchemas.find((item) => item.id === schemaId);
+    if (!/^zr_[0-9a-f]{24}$/.test(recipient)) {
+      setStatus("Enter the recipient’s complete Zerant ID from their vault.");
       return;
     }
-
-    const response = await fetch("/api/zerant/issuer/credentials", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        holder_zerant_id: holderId,
-        credential_schema_id: schemaId,
-        value,
-      }),
+    if (!schema || !claim || claim.length > 512) {
+      setStatus("Choose an active credential type and enter a claim of up to 512 characters.");
+      return;
+    }
+    setIssueReview({
+      holderId: recipient,
+      schemaId: schema.id,
+      schemaName: schema.display_name,
+      context: schema.context,
+      expiryDays: schema.default_expiry_days,
+      value: claim,
     });
+    setStatus("");
+  }
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        setStatus("You’re doing that too quickly. Try again in a minute.");
+  async function issueCredential() {
+    if (!issueReview || !canIssue || issuingRef.current) return;
+    issuingRef.current = true;
+    setIssuing(true);
+
+    try {
+      const response = await fetch("/api/zerant/issuer/credentials", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          holder_zerant_id: issueReview.holderId,
+          credential_schema_id: issueReview.schemaId,
+          value: issueReview.value,
+        }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          setStatus("You’re doing that too quickly. Try again in a minute.");
+          return;
+        }
+        setStatus(
+          response.status === 404
+            ? "That Zerant ID or credential type could not be found."
+            : "Credential could not be issued. Check the details and try again.",
+        );
         return;
       }
-      setStatus(
-        response.status === 404
-          ? "That Zerant ID or credential type could not be found."
-          : "Credential could not be issued. Check the details and try again.",
-      );
-      return;
-    }
 
-    const created = (await response.json()) as IssuedCredential;
-    setIssued((current) => [created, ...current]);
-    setHolderId("");
-    setValue("");
-    setStatus("Credential issued and delivered to the recipient.");
+      const created = (await response.json()) as IssuedCredential;
+      setIssued((current) => [created, ...current]);
+      setHolderId("");
+      setValue("");
+      setIssueReview(null);
+      setStatus("Credential issued and delivered to the recipient.");
+    } catch {
+      setStatus("Could not confirm the result. Check issued credentials before trying again.");
+    } finally {
+      issuingRef.current = false;
+      setIssuing(false);
+    }
   }
 
   if (!backendAvailable) {
@@ -1071,7 +1113,7 @@ export function IssuerWorkspace({
             value={holderId}
             onChange={(event) => setHolderId(event.target.value)}
             placeholder="zr_..."
-            disabled={!canIssue}
+            disabled={!canIssue || Boolean(issueReview)}
             aria-describedby="holder-id-help"
           />
           <p id="holder-id-help" className="small muted">This delivers to a Zerant account. It does not connect or identify a Zcash wallet.</p>
@@ -1081,7 +1123,7 @@ export function IssuerWorkspace({
             id="credential-type"
             value={schemaId}
             onChange={(event) => setSchemaId(event.target.value)}
-            disabled={!canIssue}
+            disabled={!canIssue || Boolean(issueReview)}
           >
             {activeSchemas.length ? (
               activeSchemas.map((schema) => (
@@ -1100,15 +1142,33 @@ export function IssuerWorkspace({
             value={value}
             onChange={(event) => setValue(event.target.value)}
             placeholder="Active member, completed, maintainer..."
-            disabled={!canIssue}
+            disabled={!canIssue || Boolean(issueReview)}
           />
 
-          <Button
-            disabled={!canIssue || !holderId.trim() || !schemaId || !value.trim()}
-            onClick={issueCredential}
-          >
-            Issue credential
-          </Button>
+          {issueReview ? (
+            <div className="credential-issue-review" aria-label="Review credential before issuing">
+              <h3>Review before sending</h3>
+              <dl>
+                <div><dt>Recipient Zerant ID</dt><dd className="mono">{issueReview.holderId}</dd></div>
+                <div><dt>Credential</dt><dd>{issueReview.schemaName}</dd></div>
+                <div><dt>Claim</dt><dd>{issueReview.value}</dd></div>
+                <div><dt>Context</dt><dd>{issueReview.context}</dd></div>
+                <div><dt>Valid for</dt><dd>{issueReview.expiryDays} days from issuance</dd></div>
+              </dl>
+              <p className="small muted">Check the person and claim against your own records. Sending adds this credential to that Zerant account.</p>
+              <div className="vault-actions wrap">
+                <Button disabled={issuing} onClick={issueCredential}>{issuing ? "Issuing…" : "Confirm and issue"}</Button>
+                <Button variant="secondary" disabled={issuing} onClick={() => setIssueReview(null)}>Edit details</Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              disabled={!canIssue || !holderId.trim() || !schemaId || !value.trim()}
+              onClick={reviewCredentialIssue}
+            >
+              Review credential
+            </Button>
+          )}
           {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
         </article>
 

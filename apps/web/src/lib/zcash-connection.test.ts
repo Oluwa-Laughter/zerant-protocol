@@ -11,7 +11,7 @@ function fakeAdapter(id: string, identitySigning = false): ZcashWalletAdapter {
   return { id, name: id, capabilities: { identitySigning, shieldedPayment: false,
     transparentPayment: false, paymentRequestHandoff: false, walletConnect: false,
     zecAuthHandoff: false, connectionRestore: true },
-  connect: async () => ({ providerId: id, providerName: id, shieldedAddress: "", transparentAddress: "t1", accountCount: 1 }),
+  connect: async () => ({ providerId: id, providerName: id, shieldedAddress: "", transparentAddress: "tm", accountCount: 1 }),
   existingConnection: async () => null,
   ensureConnection: async function () { return this.connect(); },
   disconnect: async () => {},
@@ -27,16 +27,28 @@ test("registry discovers multiple installed providers and portable paths", async
   try {
     const methods = discoverZcashConnectors("connection", "zcash:testnet", "");
     assert.deepEqual(methods.map((method) => method.id), ["first:injected", "second:injected", "zip321:portable"]);
-    await connectConnector(methods[1]);
+    await connectConnector(methods[1], "zcash:testnet");
     assert.equal(getZcashConnectionSnapshot().account?.providerId, "second");
     assert.equal(getZcashConnectionSnapshot().selected?.id, "second:injected");
     await disconnectZcash();
     assert.equal(getZcashConnectionSnapshot().account, null);
-    const restorable = injectedConnector({ ...first, existingConnection: async () => ({ providerId: "first", providerName: "first", shieldedAddress: "", transparentAddress: "t1", accountCount: 1 }) });
-    await restoreConnection([restorable]);
+    const restorable = injectedConnector({ ...first, existingConnection: async () => ({ providerId: "first", providerName: "first", shieldedAddress: "", transparentAddress: "tm", accountCount: 1 }) });
+    await restoreConnection([restorable], "zcash:testnet");
     assert.equal(getZcashConnectionSnapshot().selected?.id, "first:injected");
     await disconnectZcash();
   } finally { removeFirst(); removeSecond(); if (prior) Object.defineProperty(globalThis, "window", prior); else Reflect.deleteProperty(globalThis, "window"); }
+});
+
+test("testnet refuses a detected mainnet wallet before exposing payment actions", async () => {
+  let disconnected = false;
+  const mainnet = injectedConnector({ ...fakeAdapter("mainnet"), disconnect: async () => { disconnected = true; }, connect: async () => ({
+    providerId: "mainnet", providerName: "Mainnet wallet", shieldedAddress: "u1mainnet",
+    transparentAddress: "t1mainnet", accountCount: 1,
+  }) });
+  await assert.rejects(connectConnector(mainnet, "zcash:testnet"), /does not match Zerant’s testnet network/);
+  assert.equal(getZcashConnectionSnapshot().account, null);
+  assert.equal(getZcashConnectionSnapshot().selected, null);
+  assert.equal(disconnected, true);
 });
 
 test("payment-only connection cannot authenticate and creates no network request", async () => {

@@ -29,7 +29,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
     void ensureZcashConfig().then((chain) => {
       if (!active) return;
       const { walletConnectProjectId } = getZcashConnectionSnapshot();
-      return restoreConnection(discoverZcashConnectors("connection", chain, walletConnectProjectId));
+      return restoreConnection(discoverZcashConnectors("connection", chain, walletConnectProjectId), chain);
     }).catch(() => { /* The selector reports configuration errors when opened. */ });
     return () => { active = false; };
   }, [purpose]);
@@ -67,7 +67,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
             : "Still waiting for Noir. Open and unlock the Noir extension in Chrome, then check for its site approval prompt. Your Zerant account remains usable without this connection.");
         }, 8000);
       }
-      await connectConnector(connector);
+      await connectConnector(connector, chain);
       setStatus(connector.capabilities.has("identitySigning")
         ? "Wallet connected. Continue with the separate Zerant sign-in approval."
         : "Wallet available for supported Zcash actions. Your Zerant account remains independent of this wallet session.");
@@ -121,7 +121,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       <h2>{allowSignIn ? "Sign in with a Zcash wallet" : "Use a Zcash wallet"}</h2>
       <p className="muted">{allowSignIn ? "On desktop, Zerant signs in through a detected Noir Wallet using a privacy-preserving identity key. A payment address, balance, or history is never your Zerant identity." : "Choose Noir to approve this site for wallet actions. You can also hand a reviewed payment request to a compatible wallet app. Your Zerant account and credentials work without a wallet connection."}</p>
     </div>
-    <ZcashWalletSelector purpose={purpose} busy={busy} hideAuthHandoff={!allowSignIn} triggerLabel={allowSignIn ? "Choose sign-in wallet" : "Choose wallet option"} onSelect={(connector) => void choose(connector)} />
+    <ZcashWalletSelector purpose={purpose} busy={busy} hideAuthHandoff={!allowSignIn} hidePaymentHandoff={!allowSignIn} triggerLabel={allowSignIn ? "Choose sign-in wallet" : "Connect a direct wallet"} onSelect={(connector) => void choose(connector)} />
     {handoffUri ? <div className="wallet-handoff zcash-connect-handoff">
       <p className="small muted">This sign-in request expires after five minutes. It contains the challenge and callback, not your wallet address or history.</p>
       <textarea readOnly aria-label="ZecAuth sign-in request URI" value={handoffUri} rows={3} />
