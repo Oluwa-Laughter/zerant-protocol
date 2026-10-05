@@ -64,3 +64,12 @@ test("signed-out Zcash workspace directs users to account access", () => {
   assert.equal(html.includes('id="zcash-wallet-actions"'), false);
   assert.equal(html.includes('href="#zcash-wallet-actions"'), false);
 });
+
+
+test("degraded Zcash workspace never renders the network state as ready", () => {
+  const degraded = { ...network, state: "degraded" as const, network_actions_enabled: false, synced: false };
+  const html = renderToStaticMarkup(<ZcashWorkspace session={session} zcash={zcash} network={degraded} />);
+  assert.ok(html.includes("Zcash network temporarily unavailable."));
+  assert.ok(html.includes("Protected mode"));
+  assert.equal(html.includes('workspace-state ready'), false);
+});

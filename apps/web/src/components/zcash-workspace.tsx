@@ -20,6 +20,9 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
   const authenticated = Boolean(session?.authenticated);
   const [liveNetwork, setLiveNetwork] = useState<WorkspaceZcashNetwork>(network);
   const readiness = readinessCopy(liveNetwork, zcash);
+  const networkActionsReady = liveNetwork
+    ? liveNetwork.network_actions_enabled
+    : Boolean(zcash);
 
   return (
     <main id="main" className="product-app zcash-workspace-page">
@@ -70,7 +73,7 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
             <span className="status-dot" aria-hidden="true" />
           </div>
           <p>{readiness.body}</p>
-          <div className={liveNetwork?.network_actions_enabled || zcash ? "workspace-state ready" : "workspace-state"}><span />{readiness.label}</div>
+          <div className={networkActionsReady ? "workspace-state ready" : "workspace-state"}><span />{readiness.label}</div>
         </article>
 
         <article className="workspace-card">
