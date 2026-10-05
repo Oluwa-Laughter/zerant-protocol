@@ -8,3 +8,4 @@ out/
 
 # Rust workspace build output
 /target/
+.vercel
