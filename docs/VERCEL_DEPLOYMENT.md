@@ -35,7 +35,7 @@ Optional Zcash network connectivity:
 - `ZERANT_LIGHT_CLIENT_ENDPOINTS`: optional comma-separated ordered list of one primary plus up to three trusted Zaino/lightwalletd-compatible HTTPS endpoints.
 - `ZERANT_LIGHT_CLIENT_ALLOW_LOOPBACK`: keep `false` in Vercel; this exists only for deliberate local testing.
 
-Zerant validates every configured endpoint at startup, requires HTTPS for remote services, rejects embedded credentials, query strings, fragments and paths, bounds gRPC response sizes, and checks that the remote chain matches `ZERANT_ZCASH_CHAIN`. It probes the ordered endpoints only when the shared readiness cache needs refresh, stops after the first valid response, and coordinates refreshes through Neon so Vercel instances do not stampede the upstream service. The legacy single `ZERANT_LIGHT_CLIENT_ENDPOINT` variable remains accepted for transition but must not be set together with the list variable.
+Zerant validates every configured endpoint at startup, requires HTTPS for remote services, rejects embedded credentials, query strings, fragments and paths, bounds gRPC response sizes, and checks that the remote chain matches `ZERANT_ZCASH_CHAIN`. It probes the ordered endpoints only when the shared readiness cache needs refresh, stops after the first valid response, and coordinates refreshes through Neon so Vercel instances do not stampede the upstream service. The legacy single `ZERANT_LIGHT_CLIENT_ENDPOINT` variable remains accepted for transition but must not be set together with the list variable. A persistent high-water block height is shared through Neon; an endpoint more than 20 blocks behind the highest confirmed height is skipped, so a stale backup cannot silently replace a current primary.
 
 Production only:
 

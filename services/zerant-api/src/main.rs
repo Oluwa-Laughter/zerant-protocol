@@ -110,6 +110,7 @@ const LIGHT_CLIENT_FAILURE_TTL: StdDuration = StdDuration::from_secs(60);
 const LIGHT_CLIENT_STALE_GRACE: Duration = Duration::seconds(90);
 const LIGHT_CLIENT_REFRESH_LOCK_MAINNET: i64 = 9_248_177_401;
 const LIGHT_CLIENT_REFRESH_LOCK_TESTNET: i64 = 9_248_177_402;
+const LIGHT_CLIENT_MAX_ROLLBACK_BLOCKS: u64 = 20;
 
 impl LightClientCacheEntry {
     fn ttl(&self) -> StdDuration {
@@ -213,6 +214,15 @@ fn light_client_refresh_lock(network: LightClientNetwork) -> i64 {
     match network {
         LightClientNetwork::Mainnet => LIGHT_CLIENT_REFRESH_LOCK_MAINNET,
         LightClientNetwork::Testnet => LIGHT_CLIENT_REFRESH_LOCK_TESTNET,
+    }
+}
+
+fn light_client_height_is_acceptable(candidate: u64, high_water: Option<u64>) -> bool {
+    match high_water {
+        None => true,
+        Some(high_water) => candidate
+            .checked_add(LIGHT_CLIENT_MAX_ROLLBACK_BLOCKS)
+            .is_some_and(|bounded| bounded >= high_water),
     }
 }
 
@@ -8659,6 +8669,27 @@ async fn load_shared_light_client_readiness(
     }))
 }
 
+async fn load_light_client_high_water(
+    client: &deadpool_postgres::Client,
+    network: &str,
+) -> Result<Option<u64>, ApiError> {
+    let row = client
+        .query_opt(
+            "SELECT high_water_block_height
+             FROM zcash_network_readiness
+             WHERE network = $1",
+            &[&network],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let value: Option<i64> = row.get(0);
+    value.map(safe_network_height).transpose()
+}
+
 async fn store_shared_light_client_success(
     client: &deadpool_postgres::Client,
     network: &str,
@@ -8676,8 +8707,9 @@ async fn store_shared_light_client_success(
         .execute(
             "INSERT INTO zcash_network_readiness
              (network, endpoint_fingerprint, available, synced, block_height,
-              estimated_height, lag, checked_at, failure_count, last_error_at)
-             VALUES ($1, $2, true, $3, $4, $5, $6, NOW(), 0, NULL)
+              estimated_height, lag, checked_at, failure_count, last_error_at,
+              high_water_block_height, last_success_at)
+             VALUES ($1, $2, true, $3, $4, $5, $6, NOW(), 0, NULL, $4, NOW())
              ON CONFLICT (network)
              DO UPDATE SET endpoint_fingerprint = EXCLUDED.endpoint_fingerprint,
                            available = true,
@@ -8687,7 +8719,12 @@ async fn store_shared_light_client_success(
                            lag = EXCLUDED.lag,
                            checked_at = NOW(),
                            failure_count = 0,
-                           last_error_at = NULL",
+                           last_error_at = NULL,
+                           high_water_block_height = GREATEST(
+                               COALESCE(zcash_network_readiness.high_water_block_height, 0),
+                               EXCLUDED.block_height
+                           ),
+                           last_success_at = NOW()",
             &[
                 &network,
                 &endpoint_fingerprint,
@@ -8823,6 +8860,7 @@ async fn zcash_network_readiness(
             return entry.readiness.clone().ok_or(ApiError::Unavailable);
         }
 
+        let high_water = load_light_client_high_water(&client, network).await?;
         let mut successful_readiness = None;
         for endpoint in &state.light_client_endpoints {
             if let Ok(readiness) = fetch_light_client_readiness(
@@ -8832,6 +8870,9 @@ async fn zcash_network_readiness(
             )
             .await
             {
+                if !light_client_height_is_acceptable(readiness.block_height, high_water) {
+                    continue;
+                }
                 successful_readiness = Some(ZcashNetworkReadiness {
                     configured: true,
                     network: readiness.network,
@@ -9165,6 +9206,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0024_zcash_identity_link.sql"),
             include_str!("../migrations/0025_zecauth_link_handoff.sql"),
             include_str!("../migrations/0026_zcash_network_readiness.sql"),
+            include_str!("../migrations/0027_zcash_network_high_water.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -9448,6 +9490,25 @@ mod tests {
         );
         assert!(parse_light_client_endpoints(Some("http://remote.example"), None, false).is_err());
         assert!(parse_light_client_endpoints(Some("http://127.0.0.1:9067"), None, true).is_ok());
+    }
+
+    #[test]
+    fn light_client_high_water_rejects_material_rollback() {
+        assert!(light_client_height_is_acceptable(1_000, None));
+        assert!(light_client_height_is_acceptable(1_000, Some(1_000)));
+        assert!(light_client_height_is_acceptable(980, Some(1_000)));
+        assert!(!light_client_height_is_acceptable(979, Some(1_000)));
+        assert!(light_client_height_is_acceptable(1_001, Some(1_000)));
+    }
+
+    #[test]
+    fn zcash_high_water_migration_preserves_only_bounded_network_state() {
+        let schema = include_str!("../migrations/0027_zcash_network_high_water.sql");
+        assert!(schema.contains("high_water_block_height"));
+        assert!(schema.contains("last_success_at"));
+        for forbidden in ["wallet_address", "balance", "memo", "seed", "txid"] {
+            assert!(!schema.contains(forbidden), "{forbidden}");
+        }
     }
 
     #[test]
