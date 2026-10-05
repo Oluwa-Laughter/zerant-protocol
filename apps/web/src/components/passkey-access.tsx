@@ -85,7 +85,47 @@ export function PasskeyAccess({ onConnected }: { onConnected?: () => void }) {
     }
   }
 
-  async function signIn() {
+  async function signInWithPasskey() {
+    if (busy) return;
+    if (!browserSupportsWebAuthn()) {
+      setStatus("This browser or device does not support passkeys.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      setStatus("Choose your Zerant passkey…");
+      const startResponse = await fetch("/api/zerant/auth/passkey/discoverable/start", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!startResponse.ok) {
+        setStatus("Zerant could not start passkey sign-in.");
+        return;
+      }
+      const started = (await startResponse.json()) as AuthenticationStart;
+      const credential = await startAuthentication({ optionsJSON: started.public_key.publicKey });
+      const finishResponse = await fetch("/api/zerant/auth/passkey/discoverable/finish", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(credential),
+      });
+      if (!finishResponse.ok) {
+        setStatus("This passkey could not sign in. Try your Zerant ID below if your device does not offer an account passkey.");
+        return;
+      }
+      setStatus("Signed in.");
+      onConnected?.();
+    } catch (error) {
+      setStatus(passkeyError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signInWithId() {
     if (busy) return;
     const normalized = zerantId.trim();
     if (!/^zr_[0-9a-f]{24}$/i.test(normalized)) {
@@ -152,8 +192,12 @@ export function PasskeyAccess({ onConnected }: { onConnected?: () => void }) {
         <Button onClick={createAccount} disabled={busy}>
           {busy ? "Working…" : "Create Zerant account"}
         </Button>
-
-        <div className="passkey-signin">
+        <Button variant="secondary" onClick={signInWithPasskey} disabled={busy}>
+          Sign in with passkey
+        </Button>
+        <details className="passkey-id-fallback">
+          <summary>Use your Zerant ID to sign in</summary>
+          <div className="passkey-signin">
           <label htmlFor="passkey-zerant-id">Already have an account? Enter your Zerant ID</label>
           <input
             id="passkey-zerant-id"
@@ -166,13 +210,14 @@ export function PasskeyAccess({ onConnected }: { onConnected?: () => void }) {
           />
           <Button
             variant="secondary"
-            onClick={signIn}
+            onClick={signInWithId}
             disabled={busy || !zerantId.trim()}
           >
-            Sign in with passkey
+            Continue with Zerant ID
           </Button>
           <p id="passkey-id-help" className="small muted passkey-id-help">Your ID appears in your Vault after account creation. Save it to sign in on another device. It is separate from your Zcash address.</p>
-        </div>
+          </div>
+        </details>
       </div>
 
       {status ? (

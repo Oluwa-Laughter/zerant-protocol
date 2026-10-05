@@ -39,8 +39,9 @@ use tower_http::trace::TraceLayer;
 use tracing::info;
 use uuid::Uuid;
 use webauthn_rs::prelude::{
-    Passkey, PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential,
-    RegisterPublicKeyCredential, Webauthn, WebauthnBuilder,
+    DiscoverableAuthentication, DiscoverableKey, Passkey, PasskeyAuthentication,
+    PasskeyRegistration, PublicKeyCredential, RegisterPublicKeyCredential, Webauthn,
+    WebauthnBuilder,
 };
 use zerant_core::{MAX_SAFE_INTEGER, validate_origin};
 use zerant_credential::{
@@ -60,6 +61,7 @@ use zerant_zcash::{
     },
 };
 
+mod passkey_discoverable;
 mod payments;
 mod vault_rotation;
 
@@ -2268,7 +2270,10 @@ async fn persist_passkey_challenge(
     kind: &str,
     state_value: Value,
 ) -> Result<(String, OffsetDateTime), ApiError> {
-    if !matches!(kind, "register" | "authenticate" | "attach") {
+    if !matches!(
+        kind,
+        "register" | "authenticate" | "attach" | "discoverable"
+    ) {
         return Err(ApiError::Unavailable);
     }
 
@@ -10008,6 +10013,14 @@ fn app(state: AppState) -> Router {
             "/v1/auth/passkey/authenticate/finish",
             post(passkey_authentication_finish),
         )
+        .route(
+            "/v1/auth/passkey/discoverable/start",
+            post(passkey_discoverable::start),
+        )
+        .route(
+            "/v1/auth/passkey/discoverable/finish",
+            post(passkey_discoverable::finish),
+        )
         .route("/v1/auth/zecauth/challenge", get(zecauth_challenge))
         .route("/v1/auth/zecauth/verify", post(zecauth_verify))
         .route("/v1/auth/wallet/verify", post(wallet_message_verify))
@@ -10247,6 +10260,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0029_verifier_proof_packages.sql"),
             include_str!("../migrations/0030_operational_health.sql"),
             include_str!("../migrations/0031_zcash_payments.sql"),
+            include_str!("../migrations/0032_discoverable_passkeys.sql"),
         ] {
             client
                 .batch_execute(migration)

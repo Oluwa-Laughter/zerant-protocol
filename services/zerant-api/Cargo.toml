@@ -33,4 +33,4 @@ zerant-core = { path = "../../crates/zerant-core" }
 secp256k1 = { version = "0.31", features = ["recovery"] }
 hmac = "0.12"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
-webauthn-rs = { version = "=0.5.5", default-features = false, features = ["danger-allow-state-serialisation"] }
+webauthn-rs = { version = "=0.5.5", default-features = false, features = ["danger-allow-state-serialisation", "conditional-ui"] }
