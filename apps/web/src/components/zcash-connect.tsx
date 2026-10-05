@@ -33,13 +33,15 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
   useEffect(() => { if (handoffUri) openHandoff.current?.focus(); }, [handoffUri]);
 
   useEffect(() => {
-    if (purpose !== "connection") return;
     let active = true;
     void ensureZcashConfig().then((chain) => {
       if (!active) return;
       const { walletConnectProjectId } = getZcashConnectionSnapshot();
-      return restoreConnection(discoverZcashConnectors("connection", chain, walletConnectProjectId), chain);
-    }).catch(() => { /* The selector reports configuration errors when opened. */ });
+      return restoreConnection(
+        discoverZcashConnectors(purpose, chain, walletConnectProjectId),
+        chain,
+      );
+    }).catch(() => { /* Silent restore must never block manual wallet selection. */ });
     return () => { active = false; };
   }, [purpose]);
 

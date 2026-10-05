@@ -39,6 +39,28 @@ test("registry discovers multiple installed providers and portable paths", async
   } finally { removeFirst(); removeSecond(); if (prior) Object.defineProperty(globalThis, "window", prior); else Reflect.deleteProperty(globalThis, "window"); }
 });
 
+test("identity restore reuses existing wallet authorization without prompting", async () => {
+  let connectCalls = 0;
+  let existingCalls = 0;
+  const adapter = {
+    ...fakeAdapter("identity-restore", true),
+    connect: async () => {
+      connectCalls += 1;
+      return { providerId: "identity-restore", providerName: "Identity wallet", shieldedAddress: "utest1restored", transparentAddress: "tmrestored", accountCount: 1 };
+    },
+    existingConnection: async () => {
+      existingCalls += 1;
+      return { providerId: "identity-restore", providerName: "Identity wallet", shieldedAddress: "utest1restored", transparentAddress: "tmrestored", accountCount: 1 };
+    },
+  };
+  const restored = await restoreConnection([injectedConnector(adapter)], "zcash:testnet");
+  assert.equal(restored?.providerId, "identity-restore");
+  assert.equal(existingCalls, 1);
+  assert.equal(connectCalls, 0);
+  assert.equal(getZcashConnectionSnapshot().selected?.capabilities.has("identitySigning"), true);
+  await disconnectZcash();
+});
+
 test("testnet refuses a detected mainnet wallet before exposing payment actions", async () => {
   let disconnected = false;
   const mainnet = injectedConnector({ ...fakeAdapter("mainnet"), disconnect: async () => { disconnected = true; }, connect: async () => ({
