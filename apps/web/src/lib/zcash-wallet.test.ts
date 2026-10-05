@@ -70,6 +70,38 @@ test("requires derived signing mode for injected Zerant identity", () => {
   );
 });
 
+test("rejects malformed derived signature encodings before server verification", () => {
+  const validPubkey = "02".padEnd(66, "1");
+  const validSignature = "1f".padEnd(130, "2");
+
+  assert.throws(() => normalizeDerivedSignature({
+    pubkey: "not-hex",
+    signature: validSignature,
+    signingMode: "derived",
+  }), /public key format/);
+
+  assert.throws(() => normalizeDerivedSignature({
+    pubkey: validPubkey,
+    signature: "abcd",
+    signingMode: "derived",
+  }), /signature format/);
+
+  assert.throws(() => normalizeDerivedSignature({
+    pubkey: validPubkey,
+    signature: "1a" + "2".repeat(128),
+    signingMode: "derived",
+  }), /signature header/);
+
+  assert.equal(
+    normalizeDerivedSignature({
+      pubkey: "0x" + validPubkey,
+      signature: "0x" + validSignature,
+      signingMode: "derived",
+    }).signingMode,
+    "derived",
+  );
+});
+
 test("builds a portable ZecAuth wallet-app handoff", () => {
   const uri = buildZecAuthWalletUri(
     {

@@ -135,6 +135,20 @@ export function normalizeDerivedSignature(
     throw new Error("Wallet returned an incomplete identity signature.");
   }
 
+  const cleanPubkey = pubkey.replace(/^0x/i, "");
+  if (!/^[0-9a-f]+$/i.test(cleanPubkey) || ![66, 130].includes(cleanPubkey.length)) {
+    throw new Error("Wallet returned an unsupported Zcash identity public key format.");
+  }
+
+  const cleanSignature = signature.replace(/^0x/i, "");
+  if (!/^[0-9a-f]{130}$/i.test(cleanSignature)) {
+    throw new Error("Wallet returned an unsupported Zcash identity signature format.");
+  }
+  const header = Number.parseInt(cleanSignature.slice(0, 2), 16);
+  if (header < 27 || header > 34) {
+    throw new Error("Wallet returned an unsupported Zcash identity signature header.");
+  }
+
   return { pubkey, signature, signingMode: "derived" };
 }
 
