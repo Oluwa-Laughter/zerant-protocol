@@ -87,6 +87,16 @@ export type VerificationRequestItem = {
   expires_at: string;
 };
 
+type VerificationRequestReview = {
+  holderId: string;
+  purpose: string;
+  schemaId: string;
+  schemaName: string;
+  issuerId: string;
+  issuerName: string;
+  context: string;
+};
+
 export function VerifierWorkspace({
   authenticated,
   backendAvailable,
@@ -140,6 +150,7 @@ export function VerifierWorkspace({
   const [holderId, setHolderId] = useState("");
   const [purpose, setPurpose] = useState("");
   const [schemaId, setSchemaId] = useState(availableSchemas[0]?.id ?? "");
+  const [requestReview, setRequestReview] = useState<VerificationRequestReview | null>(null);
   const [status, setStatus] = useState("");
 
   const selectedSchema = availableSchemas.find((schema) => schema.id === schemaId);
@@ -336,9 +347,26 @@ export function VerifierWorkspace({
     setStatus("Webhook disabled. Pending deliveries for it will not be sent.");
   }
 
+  function reviewRequest() {
+    if (!selectedSchema || !holderId.trim() || !purpose.trim()) {
+      setStatus("Choose a recipient, purpose, and trusted credential type first.");
+      return;
+    }
+    setRequestReview({
+      holderId: holderId.trim(),
+      purpose: purpose.trim(),
+      schemaId: selectedSchema.id,
+      schemaName: selectedSchema.display_name,
+      issuerId: selectedSchema.issuer_id,
+      issuerName: selectedSchema.issuer_name,
+      context: selectedSchema.context,
+    });
+    setStatus("Review the exact verification request before sending it.");
+  }
+
   async function createRequest() {
-    if (!selectedSchema) {
-      setStatus("Choose a trusted credential type first.");
+    if (!requestReview) {
+      setStatus("Review the request before sending it.");
       return;
     }
 
@@ -347,10 +375,10 @@ export function VerifierWorkspace({
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        holder_zerant_id: holderId,
-        purpose,
-        credential_schema_id: selectedSchema.id,
-        accepted_issuer_ids: [selectedSchema.issuer_id],
+        holder_zerant_id: requestReview.holderId,
+        purpose: requestReview.purpose,
+        credential_schema_id: requestReview.schemaId,
+        accepted_issuer_ids: [requestReview.issuerId],
       }),
     });
     if (!response.ok) {
@@ -370,6 +398,7 @@ export function VerifierWorkspace({
     setRequests((current) => [created, ...current]);
     setHolderId("");
     setPurpose("");
+    setRequestReview(null);
     setStatus("Request sent. The recipient has five minutes to approve or deny it.");
   }
 
@@ -720,7 +749,7 @@ export function VerifierWorkspace({
           <input
             id="verify-holder"
             value={holderId}
-            onChange={(event) => setHolderId(event.target.value)}
+            onChange={(event) => { setHolderId(event.target.value); setRequestReview(null); }}
             placeholder="zr_..."
           />
 
@@ -728,7 +757,7 @@ export function VerifierWorkspace({
           <textarea
             id="verify-purpose"
             value={purpose}
-            onChange={(event) => setPurpose(event.target.value)}
+            onChange={(event) => { setPurpose(event.target.value); setRequestReview(null); }}
             rows={4}
             placeholder="Explain the decision this proof will be used for."
           />
@@ -737,7 +766,7 @@ export function VerifierWorkspace({
           <select
             id="verify-schema"
             value={schemaId}
-            onChange={(event) => setSchemaId(event.target.value)}
+            onChange={(event) => { setSchemaId(event.target.value); setRequestReview(null); }}
           >
             {availableSchemas.length ? (
               availableSchemas.map((schema) => (
@@ -761,14 +790,36 @@ export function VerifierWorkspace({
           ) : null}
 
           <p className="small muted">
-            Requests are short-lived. The recipient has five minutes to review and respond.
+            Requests are short-lived. The recipient has five minutes to review the exact claim and respond.
           </p>
-          <Button
-            disabled={!holderId.trim() || !purpose.trim() || !selectedSchema}
-            onClick={createRequest}
-          >
-            Send verification request
-          </Button>
+
+          {requestReview ? (
+            <div className="verifier-request-review" aria-label="Review verification request before sending">
+              <div className="verifier-request-review-heading">
+                <div><span className="eyebrow">Final review</span><h3>Send only what you actually need.</h3></div>
+                <span className="request-status">5 min</span>
+              </div>
+              <dl>
+                <div><dt>Recipient</dt><dd className="mono">{requestReview.holderId}</dd></div>
+                <div><dt>Credential</dt><dd>{requestReview.schemaName}</dd></div>
+                <div><dt>Trusted issuer</dt><dd>{requestReview.issuerName}</dd></div>
+                <div><dt>Context</dt><dd>{requestReview.context}</dd></div>
+                <div className="verifier-review-purpose"><dt>Purpose shown to holder</dt><dd>{requestReview.purpose}</dd></div>
+              </dl>
+              <p className="small muted">The holder will see who is asking, this purpose, and the exact claim Zerant proposes to share before they can approve.</p>
+              <div className="vault-actions wrap">
+                <Button onClick={() => void createRequest()}>Send verification request</Button>
+                <Button variant="secondary" onClick={() => { setRequestReview(null); setStatus("Edit the request details, then review again."); }}>Edit details</Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              disabled={!holderId.trim() || !purpose.trim() || !selectedSchema}
+              onClick={reviewRequest}
+            >
+              Review request
+            </Button>
+          )}
           {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
         </article>
 
@@ -789,6 +840,7 @@ export function VerifierWorkspace({
                   <p className="small muted">
                     {request.context} · {request.holder_zerant_id}
                   </p>
+                  <p className="small muted">Created {new Date(request.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · expires {new Date(request.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
                 </article>
               ))
             ) : (
