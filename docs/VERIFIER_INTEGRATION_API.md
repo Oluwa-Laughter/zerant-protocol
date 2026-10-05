@@ -90,6 +90,52 @@ Status is one of:
 
 The status API does not return the holder's original credential or unrelated account data.
 
+## Retrieve the signed proof package
+
+Status polling deliberately does not return proof material. Create an integration key with the
+separate `proofs:read` permission when your backend needs the signed verification result.
+
+```http
+GET /api/zerant/integrations/verifier/requests/<request-id>/proof
+Authorization: Bearer <secret with proofs:read>
+```
+
+The endpoint succeeds only for an approved request that was completed after proof-package
+evidence storage was introduced. Pending, denied, expired, or older incomplete requests fail
+closed instead of returning a synthetic package.
+
+The response uses `zerant.verifier-proof-package.v0.1` and contains:
+
+- the database request UUID and protocol request ID;
+- the original verifier-signed `request_jws`;
+- the holder-signed verifier-specific `response_jws`;
+- the issuer-signed revocation snapshot used when Zerant approved the proof;
+- the exact issuer and verifier public signing keys used, including their lifecycle timestamps
+  and compromise state;
+- immutable managed credential-definition identity when the request used one;
+- verifier origin, decision time, and the proof expiry.
+
+It does **not** contain the holder Zerant ID, source credential, credential portfolio, account UUID,
+wallet address, balance, transaction history, memo, seed, or private signing material.
+
+A verifier that wants to validate the package independently should perform the same profile checks
+as Zerant's native disclosure verifier:
+
+1. verify `request_jws` with the packaged verifier key and confirm the expected verifier origin;
+2. verify the packaged revocation snapshot with the packaged issuer key;
+3. read the untrusted response payload only to locate its embedded `attestation_jws`;
+4. verify that attestation against the issuer key, revocation snapshot, expected audience,
+   credential definition, claim type/context, and validity interval;
+5. verify `response_jws` with the pairwise holder public key carried by the now-verified
+   attestation;
+6. confirm request ID, challenge, nonce, request digest, origin, and response time bindings;
+7. reject compromised signing keys and expired proof material.
+
+The approval-time revocation snapshot proves what Zerant validated when the holder responded.
+While a proof is still within its short validity window, a verifier that requires the freshest
+issuer status can also fetch the issuer's current public revocation snapshot from the public trust
+directory. The package never substitutes for the verifier's own replay/idempotency tracking.
+
 ## Limits and lifecycle
 
 - Verification-request creation shares the verifier account's durable database-backed request quota.
@@ -117,4 +163,6 @@ Verifiers can register public HTTPS webhook endpoints from the signed-in verifie
 
 See [Verifier result webhooks](VERIFIER_WEBHOOKS.md) for payload shape, HMAC verification, SSRF protections, idempotency and retry behavior.
 
-Polling remains supported and is useful as a reconciliation path. A future independently verifiable response-package API may expose the signed verifier-specific proof without exposing source credentials.
+Polling remains supported as a reconciliation path. The signed proof-package endpoint is the
+cryptographic integration surface for approved requests; webhooks remain notification-only and
+intentionally contain no holder proof material.

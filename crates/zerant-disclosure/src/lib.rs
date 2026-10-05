@@ -390,6 +390,67 @@ pub fn respond(
     Ok(Some(signed))
 }
 
+pub fn verify_response(
+    request_jws: &str,
+    response_jws: &str,
+    context: &Context<'_>,
+    revocation_jws: &str,
+    issuer_id: &str,
+    minimum_revocation_version: u64,
+) -> Result<CredentialPayload> {
+    let request = verify_request(
+        request_jws,
+        context.pin,
+        context.origin,
+        context.now,
+        context.allowed_loopback,
+    )?;
+    let expected_digest = request_digest(request_jws);
+
+    // Read only enough untrusted response data to locate the signed attestation.
+    // No acceptance decision is made until the attestation and response signatures verify.
+    let untrusted = untrusted_response(response_jws)?;
+    let attestation = verify_credential(
+        &untrusted.attestation_jws,
+        revocation_jws,
+        context.trust,
+        issuer_id,
+        context.origin,
+        context.allowed_loopback,
+        context.now,
+        minimum_revocation_version,
+    )?
+    .payload;
+    request.matches_attestation(&attestation)?;
+
+    let response: Response = verify_jws(
+        response_jws,
+        RESPONSE_TYP,
+        &attestation.subject_key.x,
+        &attestation.subject_key,
+    )?;
+
+    if response.schema != RESPONSE_SCHEMA
+        || response.request_id != request.request_id
+        || response.verifier_origin != request.verifier_origin
+        || response.challenge != request.challenge
+        || response.nonce != request.nonce
+        || response.request_digest != expected_digest
+        || response.attestation_jws != untrusted.attestation_jws
+        || response.responded_at < request.issued_at
+        || response.responded_at > context.now
+    {
+        return Err(Error::Credential);
+    }
+
+    attestation.validate(
+        response.responded_at,
+        context.origin,
+        context.allowed_loopback,
+    )?;
+    Ok(attestation)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplayStatus {
     Pending,
@@ -627,51 +688,20 @@ pub fn accept(
         return Err(Error::Trust);
     }
 
-    // Read only enough untrusted response data to locate the signed attestation;
-    // no acceptance decision is made until every signature and binding is verified.
     let untrusted = untrusted_response(response_jws)?;
     if untrusted.attestation_jws != evidence.attestation_jws {
         return Err(Error::Credential);
     }
 
-    let attestation = verify_credential(
-        &untrusted.attestation_jws,
-        evidence.revocation_jws,
-        context.trust,
-        evidence.issuer_id,
-        context.origin,
-        context.allowed_loopback,
-        context.now,
-        evidence.minimum_revocation_version,
-    )?
-    .payload;
-    request.matches_attestation(&attestation)?;
-
-    let response: Response = verify_jws(
+    let attestation = verify_response(
+        request_jws,
         response_jws,
-        RESPONSE_TYP,
-        &attestation.subject_key.x,
-        &attestation.subject_key,
+        context,
+        evidence.revocation_jws,
+        evidence.issuer_id,
+        evidence.minimum_revocation_version,
     )?;
 
-    if response.schema != RESPONSE_SCHEMA
-        || response.request_id != request.request_id
-        || response.verifier_origin != request.verifier_origin
-        || response.challenge != request.challenge
-        || response.nonce != request.nonce
-        || response.request_digest != expected_digest
-        || response.attestation_jws != evidence.attestation_jws
-        || response.responded_at < request.issued_at
-        || response.responded_at > context.now
-    {
-        return Err(Error::Credential);
-    }
-
-    attestation.validate(
-        response.responded_at,
-        context.origin,
-        context.allowed_loopback,
-    )?;
     store.consume_if_pending(
         &request.request_id,
         &expected_digest,
@@ -982,6 +1012,23 @@ mod tests {
         )
         .unwrap()
         .unwrap();
+
+        let independently_verified = verify_response(
+            &request_jws,
+            &response,
+            &ctx,
+            &fixture.revocation_jws,
+            ISSUER,
+            1,
+        )
+        .unwrap();
+        match independently_verified.claim {
+            Claim::Ordinary(claim) => {
+                assert_eq!(claim.claim_type, "membership");
+                assert_eq!(claim.context.as_deref(), Some("community"));
+            }
+            _ => panic!("expected ordinary attestation"),
+        }
 
         let store = MemoryReplay::default();
         register_request(&request_jws, &ctx, &store).unwrap();

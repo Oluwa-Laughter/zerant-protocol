@@ -51,7 +51,7 @@ use zerant_credential::{
 };
 use zerant_disclosure::{
     Context as DisclosureContext, Decision, Evidence, REQUEST_SCHEMA, Request, VerifierPin,
-    respond, sign_request,
+    respond, sign_request, verify_request, verify_response,
 };
 use zerant_zcash::{
     Adapter, HttpRegtestTransport,
@@ -84,6 +84,7 @@ const MAX_ACTIVE_VERIFIER_WEBHOOKS: i64 = 5;
 const MAX_ACTIVE_VERIFICATION_POLICIES: i64 = 100;
 const MAX_WEBHOOK_ATTEMPTS: i32 = 8;
 const VERIFIER_API_KEY_PREFIX: &str = "zrt_vk_";
+const VERIFIER_PROOF_PACKAGE_SCHEMA: &str = "zerant.verifier-proof-package.v0.1";
 const VERIFIER_WEBHOOK_SECRET_PREFIX: &str = "zrt_whsec_";
 
 #[derive(Clone)]
@@ -880,6 +881,42 @@ struct VerifierRequestView {
     expires_at: OffsetDateTime,
 }
 
+#[derive(Serialize)]
+struct ProofCredentialSchemaView {
+    id: Uuid,
+    display_name: String,
+    version: i32,
+    claim_type: String,
+    context: String,
+}
+
+#[derive(Serialize)]
+struct ProofSigningKeyView {
+    key_id: String,
+    public_jwk: PublicJwk,
+    valid_from: OffsetDateTime,
+    retired_at: Option<OffsetDateTime>,
+    compromised_at: Option<OffsetDateTime>,
+}
+
+#[derive(Serialize)]
+struct VerifierProofPackage {
+    schema: &'static str,
+    request_id: Uuid,
+    protocol_request_id: String,
+    verifier_origin: String,
+    credential_schema: Option<ProofCredentialSchemaView>,
+    issuer_id: String,
+    issuer_key: ProofSigningKeyView,
+    verifier_id: String,
+    verifier_key: ProofSigningKeyView,
+    request_jws: String,
+    response_jws: String,
+    revocation_jws: String,
+    decided_at: OffsetDateTime,
+    proof_expires_at: OffsetDateTime,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DecideRequest {
@@ -1221,15 +1258,18 @@ fn clear_cookie_header(name: &str) -> String {
 }
 
 fn normalize_verifier_api_scopes(mut scopes: Vec<String>) -> Result<Vec<String>, ApiError> {
-    if scopes.is_empty() || scopes.len() > 2 {
+    if scopes.is_empty() || scopes.len() > 3 {
         return Err(ApiError::Invalid);
     }
     scopes.sort();
     scopes.dedup();
     if scopes.is_empty()
-        || scopes
-            .iter()
-            .any(|scope| !matches!(scope.as_str(), "requests:create" | "requests:read"))
+        || scopes.iter().any(|scope| {
+            !matches!(
+                scope.as_str(),
+                "requests:create" | "requests:read" | "proofs:read"
+            )
+        })
     {
         return Err(ApiError::Invalid);
     }
@@ -1362,7 +1402,10 @@ async fn verifier_api_account_id(
     db: &Pool,
     required_scope: &str,
 ) -> Result<Uuid, ApiError> {
-    if !matches!(required_scope, "requests:create" | "requests:read") {
+    if !matches!(
+        required_scope,
+        "requests:create" | "requests:read" | "proofs:read"
+    ) {
         return Err(ApiError::Unavailable);
     }
     let token = bearer_token(headers)?;
@@ -6275,6 +6318,289 @@ async fn get_integration_verification_request(
     }))
 }
 
+async fn get_integration_verifier_proof(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+) -> Result<Json<VerifierProofPackage>, ApiError> {
+    let account = verifier_api_account_id(&headers, &state.db, "proofs:read").await?;
+    let client = db_client(&state.db).await?;
+
+    let row = client
+        .query_opt(
+            "SELECT r.status, r.request_id, r.request_jws,
+                    r.response_ciphertext, r.response_data_nonce,
+                    r.response_wrapped_dek, r.response_wrap_nonce, r.response_key_version,
+                    r.proof_issuer_id, r.proof_issuer_key_id, r.proof_revocation_jws,
+                    r.credential_schema_id, s.display_name, s.version, s.claim_type, s.context,
+                    r.expires_at, r.decided_at,
+                    v.verifier_id, v.origin, r.verifier_key_id, vk.public_jwk,
+                    vk.valid_from, vk.retired_at, vk.compromised_at,
+                    r.claim_type, r.context, sp.issuer_id
+             FROM verification_requests r
+             JOIN verifier_profiles v ON v.id = r.verifier_profile_id
+             JOIN verifier_signing_keys vk
+               ON vk.verifier_profile_id = v.id
+              AND vk.verifier_key_id = r.verifier_key_id
+             LEFT JOIN credential_schemas s ON s.id = r.credential_schema_id
+             LEFT JOIN issuer_profiles sp ON sp.id = s.issuer_profile_id
+             WHERE r.id = $1 AND v.account_id = $2",
+            &[&id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+
+    let status: String = row.get(0);
+    if status != "approved" {
+        return Err(ApiError::Conflict);
+    }
+
+    let response_ciphertext: Option<Vec<u8>> = row.get(3);
+    let response_data_nonce: Option<Vec<u8>> = row.get(4);
+    let response_wrapped_dek: Option<Vec<u8>> = row.get(5);
+    let response_wrap_nonce: Option<Vec<u8>> = row.get(6);
+    let response_key_version: Option<i32> = row.get(7);
+    let issuer_id: Option<String> = row.get(8);
+    let issuer_key_id: Option<String> = row.get(9);
+    let revocation_jws: Option<String> = row.get(10);
+    let decided_at: Option<OffsetDateTime> = row.get(17);
+
+    let (
+        response_ciphertext,
+        response_data_nonce,
+        response_wrapped_dek,
+        response_wrap_nonce,
+        response_key_version,
+        issuer_id,
+        issuer_key_id,
+        revocation_jws,
+        decided_at,
+    ) = match (
+        response_ciphertext,
+        response_data_nonce,
+        response_wrapped_dek,
+        response_wrap_nonce,
+        response_key_version,
+        issuer_id,
+        issuer_key_id,
+        revocation_jws,
+        decided_at,
+    ) {
+        (
+            Some(ciphertext),
+            Some(data_nonce),
+            Some(wrapped_dek),
+            Some(wrap_nonce),
+            Some(key_version),
+            Some(issuer_id),
+            Some(issuer_key_id),
+            Some(revocation_jws),
+            Some(decided_at),
+        ) => (
+            ciphertext,
+            data_nonce,
+            wrapped_dek,
+            wrap_nonce,
+            key_version,
+            issuer_id,
+            issuer_key_id,
+            revocation_jws,
+            decided_at,
+        ),
+        _ => return Err(ApiError::Conflict),
+    };
+
+    let issuer_key_row = client
+        .query_opt(
+            "SELECT k.public_jwk, k.valid_from, k.retired_at, k.compromised_at
+             FROM issuer_profiles p
+             JOIN issuer_signing_keys k ON k.issuer_profile_id = p.id
+             WHERE p.issuer_id = $1 AND k.issuer_key_id = $2",
+            &[&issuer_id, &issuer_key_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Unavailable)?;
+
+    let issuer_public_value: Value = issuer_key_row.get(0);
+    let issuer_public_jwk: PublicJwk =
+        serde_json::from_value(issuer_public_value).map_err(|_| ApiError::Unavailable)?;
+    let issuer_key = ProofSigningKeyView {
+        key_id: issuer_key_id.clone(),
+        public_jwk: issuer_public_jwk,
+        valid_from: issuer_key_row.get(1),
+        retired_at: issuer_key_row.get(2),
+        compromised_at: issuer_key_row.get(3),
+    };
+
+    let verifier_public_value: Value = row.get(21);
+    let verifier_public_jwk: PublicJwk =
+        serde_json::from_value(verifier_public_value).map_err(|_| ApiError::Unavailable)?;
+    let verifier_key = ProofSigningKeyView {
+        key_id: row.get(20),
+        public_jwk: verifier_public_jwk,
+        valid_from: row.get(22),
+        retired_at: row.get(23),
+        compromised_at: row.get(24),
+    };
+
+    let secret = CredentialRow {
+        id,
+        ciphertext: response_ciphertext,
+        data_nonce: response_data_nonce,
+        wrapped_dek: response_wrapped_dek,
+        wrap_nonce: response_wrap_nonce,
+        key_version: response_key_version,
+        created_at: decided_at,
+        updated_at: decided_at,
+    };
+    let mut response_bytes = state.cipher.decrypt(account, &secret)?;
+    if response_bytes.len() > MAX_CREDENTIAL_BYTES {
+        response_bytes.fill(0);
+        return Err(ApiError::Unavailable);
+    }
+    let response_jws = std::str::from_utf8(&response_bytes)
+        .map_err(|_| ApiError::Unavailable)?
+        .to_owned();
+    response_bytes.fill(0);
+
+    let claim_type: String = row.get(25);
+    let context_value: String = row.get(26);
+    let credential_schema_id: Option<Uuid> = row.get(11);
+    let credential_schema = match credential_schema_id {
+        Some(schema_id) => {
+            let schema_issuer_id = row
+                .get::<_, Option<String>>(27)
+                .ok_or(ApiError::Unavailable)?;
+            let schema_claim_type = row
+                .get::<_, Option<String>>(14)
+                .ok_or(ApiError::Unavailable)?;
+            let schema_context = row
+                .get::<_, Option<String>>(15)
+                .ok_or(ApiError::Unavailable)?;
+            if schema_issuer_id != issuer_id
+                || schema_claim_type != claim_type
+                || schema_context != context_value
+            {
+                return Err(ApiError::Unavailable);
+            }
+            Some(ProofCredentialSchemaView {
+                id: schema_id,
+                display_name: row
+                    .get::<_, Option<String>>(12)
+                    .ok_or(ApiError::Unavailable)?,
+                version: row.get::<_, Option<i32>>(13).ok_or(ApiError::Unavailable)?,
+                claim_type: schema_claim_type,
+                context: schema_context,
+            })
+        }
+        None => None,
+    };
+
+    issuer_key
+        .public_jwk
+        .validate()
+        .map_err(|_| ApiError::Unavailable)?;
+    verifier_key
+        .public_jwk
+        .validate()
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let decided_seconds = decided_at.unix_timestamp();
+    let proof_expires_at: OffsetDateTime = row.get(16);
+    let proof_expiry_seconds = proof_expires_at.unix_timestamp();
+    if decided_seconds < 0 || proof_expiry_seconds <= decided_seconds {
+        return Err(ApiError::Unavailable);
+    }
+    let decided_u64 = u64::try_from(decided_seconds).map_err(|_| ApiError::Unavailable)?;
+    let proof_expiry_u64 =
+        u64::try_from(proof_expiry_seconds).map_err(|_| ApiError::Unavailable)?;
+
+    let issuer_valid_from = issuer_key.valid_from.unix_timestamp();
+    let verifier_valid_from = verifier_key.valid_from.unix_timestamp();
+    if issuer_valid_from < 0 || verifier_valid_from < 0 {
+        return Err(ApiError::Unavailable);
+    }
+    let issuer_compromised_at_decision =
+        issuer_key.compromised_at.is_some_and(|at| at <= decided_at);
+    let verifier_compromised_at_decision = verifier_key
+        .compromised_at
+        .is_some_and(|at| at <= decided_at);
+
+    let trust = IssuerTrustManifest {
+        issuers: vec![TrustedIssuer {
+            issuer_id: issuer_id.clone(),
+            keys: vec![TrustedIssuerKey {
+                issuer_key_id: issuer_key.key_id.clone(),
+                public_key: issuer_key.public_jwk.clone(),
+                valid_from: u64::try_from(issuer_valid_from).map_err(|_| ApiError::Unavailable)?,
+                valid_until: proof_expiry_u64,
+                compromised: issuer_compromised_at_decision,
+            }],
+            allowed_claim_types: vec![claim_type],
+            allowed_contexts: vec![context_value],
+            source_schemas: vec![],
+            policies: vec![],
+        }],
+    };
+
+    let verifier_origin: String = row.get(19);
+    let pin = VerifierPin {
+        verifier_id: row.get(18),
+        key_id: verifier_key.key_id.clone(),
+        key: verifier_key.public_jwk.clone(),
+        allowed_origins: vec![verifier_origin.clone()],
+        valid_from: u64::try_from(verifier_valid_from).map_err(|_| ApiError::Unavailable)?,
+        valid_until: proof_expiry_u64,
+        compromised: verifier_compromised_at_decision,
+    };
+    let disclosure_context = DisclosureContext {
+        pin: &pin,
+        origin: &verifier_origin,
+        trust: &trust,
+        now: decided_u64,
+        allowed_loopback: &[],
+    };
+
+    let request_jws: String = row.get(2);
+    let protocol_request_id: String = row.get(1);
+    let verified_request = verify_request(&request_jws, &pin, &verifier_origin, decided_u64, &[])
+        .map_err(|_| ApiError::Unavailable)?;
+    if verified_request.request_id != protocol_request_id
+        || verified_request.expires_at != proof_expiry_u64
+    {
+        return Err(ApiError::Unavailable);
+    }
+
+    verify_response(
+        &request_jws,
+        &response_jws,
+        &disclosure_context,
+        &revocation_jws,
+        &issuer_id,
+        0,
+    )
+    .map_err(|_| ApiError::Unavailable)?;
+
+    Ok(Json(VerifierProofPackage {
+        schema: VERIFIER_PROOF_PACKAGE_SCHEMA,
+        request_id: id,
+        protocol_request_id,
+        verifier_origin,
+        credential_schema,
+        issuer_id,
+        issuer_key,
+        verifier_id: pin.verifier_id.clone(),
+        verifier_key,
+        request_jws,
+        response_jws,
+        revocation_jws,
+        decided_at,
+        proof_expires_at,
+    }))
+}
+
 async fn list_verifier_requests(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -6701,6 +7027,9 @@ async fn decide_holder_request(
                  response_wrapped_dek = $5,
                  response_wrap_nonce = $6,
                  response_key_version = $7,
+                 proof_issuer_id = $8,
+                 proof_issuer_key_id = $9,
+                 proof_revocation_jws = $10,
                  decided_at = NOW()
              WHERE id = $1 AND subject_account_id = $2
                AND status = 'pending' AND expires_at > NOW()
@@ -6713,6 +7042,9 @@ async fn decide_holder_request(
                 &encrypted_response.wrapped_dek,
                 &encrypted_response.wrap_nonce,
                 &encrypted_response.key_version,
+                &issuer_id,
+                &issuer_key_id,
+                &revocation_jws,
             ],
         )
         .await
@@ -9288,6 +9620,10 @@ fn app(state: AppState) -> Router {
             "/v1/integrations/verifier/requests/{id}",
             get(get_integration_verification_request),
         )
+        .route(
+            "/v1/integrations/verifier/requests/{id}/proof",
+            get(get_integration_verifier_proof),
+        )
         .route("/v1/holder/requests", get(list_holder_requests))
         .route(
             "/v1/holder/requests/{id}/decision",
@@ -9359,6 +9695,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0026_zcash_network_readiness.sql"),
             include_str!("../migrations/0027_zcash_network_high_water.sql"),
             include_str!("../migrations/0028_zcash_network_last_good.sql"),
+            include_str!("../migrations/0029_verifier_proof_packages.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -11708,14 +12045,26 @@ mod tests {
     #[test]
     fn verifier_api_scopes_are_strict_and_canonical() {
         assert_eq!(
-            normalize_verifier_api_scopes(vec!["requests:read".into(), "requests:create".into(),])
-                .unwrap(),
-            vec!["requests:create".to_string(), "requests:read".to_string()]
+            normalize_verifier_api_scopes(vec![
+                "requests:read".into(),
+                "proofs:read".into(),
+                "requests:create".into(),
+            ])
+            .unwrap(),
+            vec![
+                "proofs:read".to_string(),
+                "requests:create".to_string(),
+                "requests:read".to_string(),
+            ]
         );
         assert_eq!(
-            normalize_verifier_api_scopes(vec!["requests:read".into(), "requests:read".into(),])
-                .unwrap(),
-            vec!["requests:read".to_string()]
+            normalize_verifier_api_scopes(vec![
+                "requests:read".into(),
+                "requests:read".into(),
+                "proofs:read".into(),
+            ])
+            .unwrap(),
+            vec!["proofs:read".to_string(), "requests:read".to_string()]
         );
         assert!(normalize_verifier_api_scopes(vec![]).is_err());
         assert!(normalize_verifier_api_scopes(vec!["admin".into()]).is_err());
@@ -11723,10 +12072,34 @@ mod tests {
             normalize_verifier_api_scopes(vec![
                 "requests:create".into(),
                 "requests:read".into(),
+                "proofs:read".into(),
                 "requests:create".into(),
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn proof_package_migration_stores_only_bounded_verification_evidence() {
+        let schema = include_str!("../migrations/0029_verifier_proof_packages.sql");
+        for required in [
+            "proof_issuer_id",
+            "proof_issuer_key_id",
+            "proof_revocation_jws",
+            "status = 'approved'",
+        ] {
+            assert!(schema.contains(required), "{required}");
+        }
+        for forbidden in [
+            "holder_zerant_id",
+            "source_credential",
+            "wallet_address",
+            "balance",
+            "transaction_history",
+            "seed",
+        ] {
+            assert!(!schema.contains(forbidden), "{forbidden}");
+        }
     }
 
     #[test]

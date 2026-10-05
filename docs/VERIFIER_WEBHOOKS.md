@@ -108,3 +108,11 @@ Because delivery is at-least-once, receivers must be idempotent even when Zerant
 - a delivery that reaches the maximum attempt count becomes `dead`.
 
 Creating, disabling and delivery state are isolated per verifier. One failing webhook cannot block another verifier's request lifecycle.
+
+## Proof retrieval
+
+Webhook deliveries remain notification-only. They intentionally do not carry holder proof material.
+After an approved event, a verifier backend that has a separate `proofs:read` integration key can
+retrieve the signed verifier-specific proof package from the request proof endpoint documented in
+`VERIFIER_INTEGRATION_API.md`. This keeps webhook receivers and proof readers independently
+scoped.

@@ -40,3 +40,11 @@ Compound v0.3 signs 2–8 atomic requirements and exact ordinary expected values
 verifies every selected attestation before one durable replay consumption, and binds
 invoice-paid assertions to immutable payment-intent digests. It preserves v0.2. See
 [compound disclosure](specs/disclosure-v0.3.md) and [payment intents/receipts](specs/payment-v0.1.md).
+
+## Portable response verification
+
+The disclosure crate exposes replay-independent signed-response verification for consumers that
+already track request lifecycle themselves. It verifies the signed verifier request, issuer
+attestation, revocation snapshot, pairwise holder response signature, audience, challenge, nonce,
+request digest, and response timing. Replay consumption remains a separate verifier responsibility.
+The hosted proof-package endpoint uses the same native verification path before exporting evidence.

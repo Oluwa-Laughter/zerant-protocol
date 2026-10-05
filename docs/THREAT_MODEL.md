@@ -62,6 +62,8 @@ memos must never be logged or included in generic attestations.
 
 No generic Zerant verifier is entitled to whole-wallet RPC output. Reorg detection, downstream attestation revocation, invoice retention/deletion, and operational monitoring remain responsibilities of the payment issuer/application.
 
+| Proof-package overexposure | dedicated `proofs:read` scope, verifier ownership check, encrypted stored response, approval-only export, and cryptographic revalidation before export | the approved proof intentionally reveals the requested verifier-specific claim and must be handled as sensitive application data |
+
 ## Server credential-vault threats
 
 | Threat | Mitigation | Residual risk |

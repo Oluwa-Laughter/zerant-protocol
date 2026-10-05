@@ -132,6 +132,7 @@ export function VerifierWorkspace({
   const [apiKeyName, setApiKeyName] = useState("");
   const [apiKeyCreateScope, setApiKeyCreateScope] = useState(true);
   const [apiKeyReadScope, setApiKeyReadScope] = useState(true);
+  const [apiKeyProofScope, setApiKeyProofScope] = useState(false);
   const [apiKeyExpiry, setApiKeyExpiry] = useState("90");
   const [newApiSecret, setNewApiSecret] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -220,6 +221,7 @@ export function VerifierWorkspace({
     const scopes = [
       apiKeyCreateScope ? "requests:create" : null,
       apiKeyReadScope ? "requests:read" : null,
+      apiKeyProofScope ? "proofs:read" : null,
     ].filter((scope): scope is string => Boolean(scope));
 
     if (!apiKeyName.trim() || !scopes.length) {
@@ -535,6 +537,14 @@ export function VerifierWorkspace({
               />
               Read request status
             </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={apiKeyProofScope}
+                onChange={(event) => setApiKeyProofScope(event.target.checked)}
+              />
+              Read signed proof packages
+            </label>
           </fieldset>
 
           <label htmlFor="integration-key-expiry">Expires in</label>
@@ -571,6 +581,7 @@ export function VerifierWorkspace({
             <span className="eyebrow">Server endpoints</span>
             <code>POST /api/zerant/integrations/verifier/requests</code>
             <code>GET /api/zerant/integrations/verifier/requests/&lt;request-id&gt;</code>
+            <code>GET /api/zerant/integrations/verifier/requests/&lt;request-id&gt;/proof</code>
           </div>
         </article>
 
