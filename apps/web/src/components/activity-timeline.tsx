@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 export type ActivityEvent = {
@@ -18,28 +18,52 @@ export type ActivityPageData = {
   next_cursor: string | null;
 };
 
+type ActivityCategory = "all" | "credentials" | "verification" | "security" | "zcash" | "other";
+
+function eventCategory(type: string): Exclude<ActivityCategory, "all"> {
+  if (type.startsWith("credential_")) return "credentials";
+  if (type.startsWith("verification_")) return "verification";
+  if (type.startsWith("zcash_")) return "zcash";
+  if (type.includes("key") || type.includes("passkey") || type.includes("session") || type.includes("webhook")) return "security";
+  return "other";
+}
+
 function eventTitle(type: string): string {
   switch (type) {
-    case "credential_issued":
-      return "Credential issued";
-    case "credential_revoked":
-      return "Credential revoked";
-    case "verification_requested":
-      return "Verification requested";
-    case "verification_approved":
-      return "Verification approved";
-    case "verification_denied":
-      return "Verification denied";
-    case "verification_expired":
-      return "Verification expired";
-    case "verifier_api_key_created":
-      return "Integration key created";
-    case "verifier_api_key_revoked":
-      return "Integration key revoked";
-    default:
-      return "Trust activity";
+    case "credential_issued": return "Credential issued";
+    case "credential_revoked": return "Credential revoked";
+    case "credential_schema_created": return "Credential type created";
+    case "credential_schema_versioned": return "Credential type updated";
+    case "credential_schema_retired": return "Credential type retired";
+    case "verification_requested": return "Verification requested";
+    case "verification_approved": return "Verification approved";
+    case "verification_denied": return "Verification denied";
+    case "verification_expired": return "Verification expired";
+    case "verifier_api_key_created": return "Integration key created";
+    case "verifier_api_key_revoked": return "Integration key revoked";
+    case "verifier_key_rotated": return "Verifier key rotated";
+    case "issuer_key_rotated": return "Issuer key rotated";
+    case "issuer_key_compromised": return "Issuer key replaced";
+    case "passkey_attached": return "Passkey added";
+    case "passkey_removed": return "Passkey removed";
+    case "session_revoked": return "Session revoked";
+    case "zcash_payment_prepared": return "Zcash payment prepared";
+    case "zcash_payment_submitted": return "Zcash payment submitted";
+    default: return "Trust activity";
   }
 }
+
+function categoryLabel(category: ActivityCategory): string {
+  switch (category) {
+    case "all": return "All";
+    case "credentials": return "Credentials";
+    case "verification": return "Verification";
+    case "security": return "Access & security";
+    case "zcash": return "Zcash";
+    case "other": return "Other";
+  }
+}
+
 
 export function ActivityTimeline({
   initialPage,
@@ -50,6 +74,21 @@ export function ActivityTimeline({
   const [cursor, setCursor] = useState(initialPage.next_cursor);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+  const [filter, setFilter] = useState<ActivityCategory>("all");
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<Exclude<ActivityCategory, "all">, number> = { credentials: 0, verification: 0, security: 0, zcash: 0, other: 0 };
+    for (const item of items) counts[eventCategory(item.event_type)] += 1;
+    return counts;
+  }, [items]);
+
+  const visibleItems = useMemo(() =>
+    filter === "all" ? items : items.filter((item) => eventCategory(item.event_type) === filter),
+  [filter, items]);
+
+  const availableCategories = useMemo(() =>
+    (["credentials", "verification", "security", "zcash", "other"] as const).filter((category) => categoryCounts[category] > 0),
+  [categoryCounts]);
 
   async function loadMore() {
     if (!cursor || loading) return;
@@ -81,10 +120,26 @@ export function ActivityTimeline({
         </p>
       </section>
 
+      {items.length ? (
+        <section className="activity-toolbar" aria-label="Filter activity">
+          <div>
+            <span className="eyebrow">Recorded events</span>
+            <strong>{items.length}</strong>
+          </div>
+          <div className="activity-filter-row" role="group" aria-label="Activity categories">
+            <button type="button" className={filter === "all" ? "activity-filter active" : "activity-filter"} onClick={() => setFilter("all")}>All <span>{items.length}</span></button>
+            {availableCategories.map((category) => (
+              <button type="button" key={category} className={filter === category ? "activity-filter active" : "activity-filter"} onClick={() => setFilter(category)}>{categoryLabel(category)} <span>{categoryCounts[category]}</span></button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="activity-list" aria-label="Zerant activity history">
-        {items.length ? (
-          items.map((item) => (
-            <article className="activity-card" key={item.id}>
+        {visibleItems.length ? (
+          visibleItems.map((item) => (
+            <article className={`activity-card category-${eventCategory(item.event_type)}`} key={item.id}>
+              <span className="activity-rail-dot" aria-hidden="true" />
               <div className="activity-card-top">
                 <div>
                   <span className="eyebrow">{eventTitle(item.event_type)}</span>
@@ -95,6 +150,7 @@ export function ActivityTimeline({
                 </time>
               </div>
               <div className="activity-meta">
+                <span>{categoryLabel(eventCategory(item.event_type))}</span>
                 {item.context ? <span>{item.context}</span> : null}
                 {item.counterparty ? <span>{item.counterparty}</span> : null}
               </div>
@@ -102,9 +158,9 @@ export function ActivityTimeline({
           ))
         ) : (
           <div className="activity-empty">
-            <h2>No activity yet.</h2>
+            <h2>{items.length ? "No events in this category." : "No activity yet."}</h2>
             <p className="muted">
-              Issuance, verification decisions and integration access changes will appear here.
+              {items.length ? "Choose another filter to review the rest of your Zerant activity." : "Issuance, verification decisions and integration access changes will appear here."}
             </p>
           </div>
         )}
