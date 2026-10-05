@@ -9,14 +9,8 @@ export function SiteHeader() {
       </Link>
       <nav aria-label="Main navigation">
         <Link href="/#how-it-works">How it works</Link>
-        <Link href="/issuer">Issue</Link>
-        <Link href="/issuers">Issuers</Link>
-        <Link href="/verifier">Verify</Link>
-        <Link href="/requests">Requests</Link>
-        <Link href="/activity">Activity</Link>
-        <Link href="/vault">Credentials</Link>
-        <Link href="/account">Account</Link>
-        <Link href="/app" className="nav-app">Open Zerant <span aria-hidden="true">↗</span></Link>
+        <Link href="/issuers">Trusted issuers</Link>
+        <Link href="/app" className="nav-app">Open Zerant <span aria-hidden="true">→</span></Link>
       </nav>
     </header>
   );

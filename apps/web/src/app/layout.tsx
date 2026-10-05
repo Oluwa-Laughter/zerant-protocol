@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { SiteHeader } from "@/components/site-header";
+import { ProductShell } from "@/components/product-shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,14 +20,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en">
       <body>
         <a className="skip-link" href="#main">Skip to content</a>
-        <div className="site-wrap">
-          <SiteHeader />
-          {children}
-          <footer className="footer">
-            <span>zerant. <span className="muted">Trust, with boundaries.</span></span>
-            <span>Privacy-preserving trust infrastructure</span>
-          </footer>
-        </div>
+        <ProductShell>{children}</ProductShell>
       </body>
     </html>
   );

@@ -176,7 +176,16 @@ export function ProductWorkspace({
       </section>
 
       <ZcashAddressInspector enabled={authenticated} />
-      {authenticated ? <section id="zcash-wallet-actions" className="workspace-wallet" aria-label="Zcash wallet actions"><ZcashConnect purpose="connection" /></section> : null}
+      {authenticated ? (
+        <section id="zcash-wallet-actions" className="workspace-wallet" aria-label="Optional Zcash wallet actions">
+          <div className="workspace-wallet-heading">
+            <p className="eyebrow">Optional wallet access</p>
+            <h2>Use Zcash without making the wallet your identity.</h2>
+            <p className="muted">Connect an installed wallet only when you need a supported action. For payments, Zerant can also validate a Zcash payment request and hand it to a compatible wallet.</p>
+          </div>
+          <ZcashConnect purpose="connection" />
+        </section>
+      ) : null}
       <ZcashPaymentRequestReview enabled={authenticated} />
     </main>
   );
