@@ -36,6 +36,7 @@ test("verifier requires review before a request can be sent", () => {
   />);
   assert.ok(html.includes("What do you need to verify?"));
   assert.ok(html.includes("Review request"));
+  assert.ok(html.includes("Refresh requests"));
   assert.ok(html.includes("recipient has five minutes to review the exact claim"));
   assert.equal(html.includes("Send verification request</button>"), false);
 });

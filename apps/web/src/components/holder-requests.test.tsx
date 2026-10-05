@@ -24,6 +24,7 @@ test("holder must review the claim before approval, while denial stays available
 
   assert.ok(html.includes("Review exact claim"));
   assert.ok(html.includes("Deny request"));
+  assert.ok(html.includes("Refresh requests"));
   assert.ok(html.includes("If you approve:"));
   assert.ok(html.includes("It will not share:"));
   assert.ok(html.includes("verifier.example"));

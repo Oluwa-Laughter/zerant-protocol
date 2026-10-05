@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -36,6 +36,49 @@ export function HolderRequests({
   const [status, setStatus] = useState("");
   const [preview, setPreview] = useState<ProofPreview | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshInFlight = useRef(false);
+
+  const refreshRequests = useCallback(async (announce = false) => {
+    if (!authenticated || !backendAvailable || refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    setRefreshing(true);
+    try {
+      const response = await fetch("/api/zerant/holder/requests", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        if (announce) setStatus("Requests could not be refreshed right now.");
+        return;
+      }
+      const nextRequests = await response.json() as HolderVerificationRequest[];
+      setRequests(nextRequests);
+      setPreview((current) =>
+        current && nextRequests.some((item) => item.id === current.request.id) ? current : null,
+      );
+      if (announce) setStatus("Requests refreshed.");
+    } catch {
+      if (announce) setStatus("Requests could not be refreshed right now.");
+    } finally {
+      refreshInFlight.current = false;
+      setRefreshing(false);
+    }
+  }, [authenticated, backendAvailable]);
+
+  useEffect(() => {
+    if (!authenticated || !backendAvailable) return;
+    const onFocus = () => { void refreshRequests(false); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refreshRequests(false);
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [authenticated, backendAvailable, refreshRequests]);
 
   async function review(id: string) {
     if (busyId) return;
@@ -142,7 +185,12 @@ export function HolderRequests({
             the result will be used.
           </p>
         </div>
-        <span className="pill">{requests.length} waiting</span>
+        <div className="holder-requests-actions">
+          <span className="pill">{requests.length} waiting</span>
+          <Button variant="secondary" disabled={refreshing || busyId !== null} onClick={() => void refreshRequests(true)}>
+            {refreshing ? "Refreshing…" : "Refresh requests"}
+          </Button>
+        </div>
       </section>
 
       <section className="holder-request-list">

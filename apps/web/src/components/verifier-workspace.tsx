@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -152,8 +152,47 @@ export function VerifierWorkspace({
   const [schemaId, setSchemaId] = useState(availableSchemas[0]?.id ?? "");
   const [requestReview, setRequestReview] = useState<VerificationRequestReview | null>(null);
   const [status, setStatus] = useState("");
+  const [refreshingRequests, setRefreshingRequests] = useState(false);
+  const requestsRefreshInFlight = useRef(false);
 
   const selectedSchema = availableSchemas.find((schema) => schema.id === schemaId);
+
+  const refreshRequests = useCallback(async (announce = false) => {
+    if (!authenticated || !profile || requestsRefreshInFlight.current) return;
+    requestsRefreshInFlight.current = true;
+    setRefreshingRequests(true);
+    try {
+      const response = await fetch("/api/zerant/verifier/requests", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        if (announce) setStatus("Verification requests could not be refreshed right now.");
+        return;
+      }
+      setRequests((await response.json()) as VerificationRequestItem[]);
+      if (announce) setStatus("Verification requests refreshed.");
+    } catch {
+      if (announce) setStatus("Verification requests could not be refreshed right now.");
+    } finally {
+      requestsRefreshInFlight.current = false;
+      setRefreshingRequests(false);
+    }
+  }, [authenticated, profile]);
+
+  useEffect(() => {
+    if (!authenticated || !profile) return;
+    const onFocus = () => { void refreshRequests(false); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refreshRequests(false);
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [authenticated, profile, refreshRequests]);
 
   async function activate() {
     const response = await fetch("/api/zerant/verifier", {
@@ -824,8 +863,10 @@ export function VerifierWorkspace({
         </article>
 
         <article className="verifier-panel">
-          <p className="eyebrow">Requests</p>
-          <h2>{requests.length} request{requests.length === 1 ? "" : "s"}</h2>
+          <div className="verifier-request-list-heading">
+            <div><p className="eyebrow">Requests</p><h2>{requests.length} request{requests.length === 1 ? "" : "s"}</h2></div>
+            <Button variant="secondary" disabled={refreshingRequests} onClick={() => void refreshRequests(true)}>{refreshingRequests ? "Refreshing…" : "Refresh requests"}</Button>
+          </div>
           <div className="verification-list">
             {requests.length ? (
               requests.map((request) => (
