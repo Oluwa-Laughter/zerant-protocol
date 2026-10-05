@@ -38,11 +38,15 @@ test("signed-in workspace links into the dedicated Zcash workspace", () => {
       session={{ authenticated: true, identity: "test-identity", scopes: [] }}
       zcash={null}
       zcashNetwork={null}
+      attention={{ activeCredentials: 3, pendingRequests: 2, preparedPayments: 1, submittedPayments: 1 }}
     />,
   );
 
   assert.ok(html.includes('href="/zcash"'));
   assert.ok(html.includes("Prepare a Zcash payment"));
+  assert.ok(html.includes("Your Zerant activity at a glance."));
+  assert.ok(html.includes("Waiting for your decision"));
+  assert.ok(html.includes("Settlement verification pending"));
   assert.equal(html.includes('id="zcash-wallet-actions"'), false);
   assert.equal(html.includes('id="zcash-payment-review"'), false);
 });

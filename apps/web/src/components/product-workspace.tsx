@@ -28,14 +28,23 @@ export type WorkspaceZcashNetwork = {
   last_confirmed_at: string | null;
 } | null;
 
+export type WorkspaceAttention = {
+  activeCredentials: number;
+  pendingRequests: number;
+  preparedPayments: number;
+  submittedPayments: number;
+};
+
 export function ProductWorkspace({
   session,
   zcash,
   zcashNetwork,
+  attention = null,
 }: {
   session: WorkspaceSession;
   zcash: WorkspaceZcash;
   zcashNetwork: WorkspaceZcashNetwork;
+  attention?: WorkspaceAttention | null;
 }) {
   const authenticated = Boolean(session?.authenticated);
 
@@ -64,6 +73,32 @@ export function ProductWorkspace({
           <li><strong>Use Zcash testnet for payments</strong><span>Prepare a payment in Zerant, then approve it in a compatible wallet. Submission stays pending until Zerant can verify settlement.</span></li>
         </ol>
       </section>
+
+      {authenticated ? (
+        <section className="workspace-attention" aria-label="What needs your attention">
+          <div className="workspace-attention-heading">
+            <div><p className="eyebrow">Right now</p><h2>Your Zerant activity at a glance.</h2></div>
+            <span className="small muted">Account-scoped · private by default</span>
+          </div>
+          <div className="workspace-attention-grid">
+            <Link className={attention?.pendingRequests ? "workspace-attention-card needs-action" : "workspace-attention-card"} href="/requests">
+              <span className="workspace-attention-value">{attention?.pendingRequests ?? 0}</span>
+              <strong>verification request{attention?.pendingRequests === 1 ? "" : "s"}</strong>
+              <span>{attention?.pendingRequests ? "Waiting for your decision" : "Nothing waiting for approval"}</span>
+            </Link>
+            <Link className="workspace-attention-card" href="/vault">
+              <span className="workspace-attention-value">{attention?.activeCredentials ?? 0}</span>
+              <strong>active credential{attention?.activeCredentials === 1 ? "" : "s"}</strong>
+              <span>Available for narrow proofs</span>
+            </Link>
+            <Link className={attention?.submittedPayments ? "workspace-attention-card pending-state" : "workspace-attention-card"} href="/zcash">
+              <span className="workspace-attention-value">{attention?.submittedPayments ?? 0}</span>
+              <strong>submitted payment{attention?.submittedPayments === 1 ? "" : "s"}</strong>
+              <span>{attention?.submittedPayments ? "Settlement verification pending" : `${attention?.preparedPayments ?? 0} prepared payment${attention?.preparedPayments === 1 ? "" : "s"}`}</span>
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       <section className="workspace-grid" aria-label="Zerant product workspace">
         <article className="workspace-card workspace-card-primary">
