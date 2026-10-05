@@ -116,7 +116,7 @@ export function ActivityTimeline({
         <p className="eyebrow">Activity</p>
         <h1>Your trust history.</h1>
         <p>
-          See credential, verification and developer-access changes associated with your Zerant account.
+          See credential, verification, Zcash payment and developer-access changes associated with your Zerant account.
         </p>
       </section>
 
@@ -160,7 +160,7 @@ export function ActivityTimeline({
           <div className="activity-empty">
             <h2>{items.length ? "No events in this category." : "No activity yet."}</h2>
             <p className="muted">
-              {items.length ? "Choose another filter to review the rest of your Zerant activity." : "Issuance, verification decisions and integration access changes will appear here."}
+              {items.length ? "Choose another filter to review the rest of your Zerant activity." : "Issuance, verification decisions, Zcash payment lifecycle and integration access changes will appear here."}
             </p>
           </div>
         )}

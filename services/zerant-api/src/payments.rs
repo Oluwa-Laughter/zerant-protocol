@@ -570,7 +570,7 @@ mod tests {
             light_client_cache: Arc::new(tokio::sync::Mutex::new(None)),
             allowed_scopes: BTreeSet::from(["auth".into()]),
         };
-        let client = db_client(&db).await.unwrap();
+        let mut client = db_client(&db).await.unwrap();
         let mut accounts = Vec::new();
         let mut headers = Vec::new();
         for _ in 0..2 {
@@ -613,6 +613,27 @@ mod tests {
         .0;
         assert_eq!(first.state, "prepared");
         assert_eq!(first.amount_zat, 125_000_000);
+        let prepared_events = client
+            .query(
+                "SELECT event_type, object_id, label, context, counterparty
+                 FROM trust_events WHERE account_id = $1 AND object_id = $2
+                 ORDER BY id",
+                &[&accounts[0], &first.id.to_string()],
+            )
+            .await
+            .unwrap();
+        assert_eq!(prepared_events.len(), 1);
+        assert_eq!(
+            prepared_events[0].get::<_, String>(0),
+            "zcash_payment_prepared"
+        );
+        assert_eq!(prepared_events[0].get::<_, String>(1), first.id.to_string());
+        assert_eq!(prepared_events[0].get::<_, String>(2), "Zcash payment");
+        assert_eq!(
+            prepared_events[0].get::<_, Option<String>>(3).as_deref(),
+            Some("zcash:testnet")
+        );
+        assert!(prepared_events[0].get::<_, Option<String>>(4).is_none());
         assert!(
             client
                 .execute(
@@ -673,6 +694,30 @@ mod tests {
         assert_eq!(submitted.state, "submitted");
         assert_eq!(submitted.txid.as_deref(), Some(txid.as_str()));
         assert!(submitted.network_state.is_none());
+        let submitted_events = client
+            .query(
+                "SELECT event_type, object_id, label, context, counterparty
+                 FROM trust_events WHERE account_id = $1 AND object_id = $2
+                 ORDER BY id",
+                &[&accounts[0], &first.id.to_string()],
+            )
+            .await
+            .unwrap();
+        assert_eq!(submitted_events.len(), 2);
+        assert_eq!(
+            submitted_events[1].get::<_, String>(0),
+            "zcash_payment_submitted"
+        );
+        assert_eq!(
+            submitted_events[1].get::<_, String>(1),
+            first.id.to_string()
+        );
+        assert_eq!(submitted_events[1].get::<_, String>(2), "Zcash payment");
+        assert_eq!(
+            submitted_events[1].get::<_, Option<String>>(3).as_deref(),
+            Some("zcash:testnet")
+        );
+        assert!(submitted_events[1].get::<_, Option<String>>(4).is_none());
         client
             .execute(
                 "UPDATE zcash_payments
@@ -870,11 +915,20 @@ mod tests {
             32
         );
         assert_eq!(export(&db, accounts[1]).await.unwrap().0.len(), 2);
+        let cleanup = client.transaction().await.unwrap();
+        cleanup
+            .query_one(
+                "SELECT set_config('zerant.allow_account_delete', 'on', true)",
+                &[],
+            )
+            .await
+            .unwrap();
         for account in accounts {
-            client
+            cleanup
                 .execute("DELETE FROM accounts WHERE id = $1", &[&account])
                 .await
                 .unwrap();
         }
+        cleanup.commit().await.unwrap();
     }
 }

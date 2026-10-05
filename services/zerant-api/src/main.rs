@@ -10382,6 +10382,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0031_zcash_payments.sql"),
             include_str!("../migrations/0032_discoverable_passkeys.sql"),
             include_str!("../migrations/0033_zcash_payment_observation.sql"),
+            include_str!("../migrations/0034_zcash_payment_activity.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -10803,6 +10804,29 @@ mod tests {
         );
         assert!(safe_network_height(-1).is_err());
         assert!(safe_network_height(i64::try_from(MAX_SAFE_INTEGER + 1).unwrap()).is_err());
+    }
+
+    #[test]
+    fn zcash_payment_activity_migration_is_metadata_only() {
+        let schema = include_str!("../migrations/0034_zcash_payment_activity.sql");
+        for required in [
+            "zcash_payment_prepared",
+            "zcash_payment_submitted",
+            "NEW.id::text",
+            "NEW.network",
+        ] {
+            assert!(schema.contains(required), "{required}");
+        }
+        for forbidden in [
+            "recipient",
+            "amount_zat",
+            "txid",
+            "wallet_address",
+            "balance",
+            "transaction_history",
+        ] {
+            assert!(!schema.contains(forbidden), "{forbidden}");
+        }
     }
 
     #[test]
