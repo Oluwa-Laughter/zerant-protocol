@@ -27,6 +27,9 @@ test("holder must review the claim before approval, while denial stays available
   assert.ok(html.includes("Refresh requests"));
   assert.ok(html.includes("If you approve:"));
   assert.ok(html.includes("It will not share:"));
+  assert.ok(html.includes("Nothing is shared until you decide."));
+  assert.ok(html.includes('href="#holder-request-list"'));
+  assert.ok(html.includes("Approval stays locked until review"));
   assert.ok(html.includes("verifier.example"));
   assert.equal(html.includes("Approve this claim"), false);
 });

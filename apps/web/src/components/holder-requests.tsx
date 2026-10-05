@@ -36,6 +36,7 @@ export function HolderRequests({
   const [status, setStatus] = useState("");
   const [preview, setPreview] = useState<ProofPreview | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [lastDecision, setLastDecision] = useState<"approve" | "deny" | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const refreshInFlight = useRef(false);
 
@@ -96,6 +97,7 @@ export function HolderRequests({
         return;
       }
       setPreview(await response.json() as ProofPreview);
+      setLastDecision(null);
       setStatus("Proof reviewed. Nothing is shared until you approve the exact claim below.");
     } catch {
       setStatus("The proof could not be reviewed right now.");
@@ -138,6 +140,7 @@ export function HolderRequests({
 
       setRequests((current) => current.filter((item) => item.id !== id));
       setPreview(null);
+      setLastDecision(decision);
       setStatus(
         decision === "approve"
           ? "Approved. The claim you reviewed is now available to this verifier."
@@ -193,7 +196,36 @@ export function HolderRequests({
         </div>
       </section>
 
-      <section className="holder-request-list">
+      <section className="holder-consent-progress" aria-label="Holder verification decision flow">
+        <div className="holder-consent-progress-heading">
+          <div><p className="eyebrow">Consent flow</p><h2>Nothing is shared until you decide.</h2></div>
+          <span className="small muted">Your wallet history stays outside this flow</span>
+        </div>
+        <div className="holder-consent-progress-grid">
+          <a className={requests.length ? "holder-consent-step complete" : "holder-consent-step"} href="#holder-request-list">
+            <span className="holder-consent-number">01</span>
+            <div><strong>Request received</strong><span>{requests.length ? `${requests.length} waiting request${requests.length === 1 ? "" : "s"}` : "No request waiting"}</span></div>
+            <span className="holder-consent-state">{requests.length ? "Ready" : "Waiting"}</span>
+          </a>
+          <article className={preview ? "holder-consent-step complete" : requests.length ? "holder-consent-step current" : "holder-consent-step"}>
+            <span className="holder-consent-number">02</span>
+            <div><strong>Review exact claim</strong><span>{preview ? "Issuer, requester, purpose and claim reviewed" : "Open a request to see exactly what would be shared"}</span></div>
+            <span className="holder-consent-state">{preview ? "Reviewed" : requests.length ? "Next" : "Waiting"}</span>
+          </article>
+          <article className={preview ? "holder-consent-step current" : lastDecision ? "holder-consent-step complete" : "holder-consent-step"}>
+            <span className="holder-consent-number">03</span>
+            <div><strong>Approve or deny</strong><span>{preview ? "Choose only after reviewing the exact disclosure" : lastDecision ? "Decision recorded" : "Approval stays locked until review"}</span></div>
+            <span className="holder-consent-state">{preview ? "Decide" : lastDecision ? "Complete" : "Waiting"}</span>
+          </article>
+          <article className={lastDecision ? "holder-consent-step complete" : "holder-consent-step"}>
+            <span className="holder-consent-number">04</span>
+            <div><strong>Bounded result</strong><span>{lastDecision === "approve" ? "Only the reviewed claim is available to the verifier" : lastDecision === "deny" ? "Denied · no credential information shared" : "No result leaves Zerant before your decision"}</span></div>
+            <span className="holder-consent-state">{lastDecision === "approve" ? "Shared" : lastDecision === "deny" ? "Private" : "Waiting"}</span>
+          </article>
+        </div>
+      </section>
+
+      <section className="holder-request-list" id="holder-request-list">
         {requests.length ? requests.map((request) => (
           <article className={preview?.request.id === request.id ? "holder-request-card is-reviewing" : "holder-request-card"} key={request.id}>
             <div className="holder-request-heading">
