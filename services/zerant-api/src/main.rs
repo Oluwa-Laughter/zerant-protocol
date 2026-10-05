@@ -4880,6 +4880,72 @@ async fn get_verifier_profile(
     }))
 }
 
+fn verifier_retirement_blocked(active_requests: bool, active_deliveries: bool) -> bool {
+    active_requests || active_deliveries
+}
+
+async fn retire_verifier_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let account = recent_account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "verifier_retire", 3).await?;
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let verifier = tx
+        .query_opt(
+            "SELECT id FROM verifier_profiles WHERE account_id = $1 FOR UPDATE",
+            &[&account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let verifier_profile_id: Uuid = verifier.get(0);
+
+    let blockers = tx
+        .query_one(
+            "SELECT
+                 EXISTS(
+                     SELECT 1 FROM verification_requests
+                     WHERE verifier_profile_id = $1
+                       AND status = 'pending'
+                       AND expires_at > NOW()
+                 ),
+                 EXISTS(
+                     SELECT 1
+                     FROM webhook_deliveries d
+                     JOIN verifier_webhooks w ON w.id = d.webhook_id
+                     WHERE w.verifier_profile_id = $1
+                       AND d.status IN ('pending', 'delivering')
+                 )",
+            &[&verifier_profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let active_requests: bool = blockers.get(0);
+    let active_deliveries: bool = blockers.get(1);
+    if verifier_retirement_blocked(active_requests, active_deliveries) {
+        return Err(ApiError::Conflict);
+    }
+
+    let affected = tx
+        .execute(
+            "DELETE FROM verifier_profiles WHERE id = $1 AND account_id = $2",
+            &[&verifier_profile_id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    if affected != 1 {
+        return Err(ApiError::NotFound);
+    }
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
 async fn list_verifier_keys(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -10316,7 +10382,9 @@ fn app(state: AppState) -> Router {
         .route("/v1/issuers", get(issuer_directory))
         .route(
             "/v1/verifier",
-            get(get_verifier_profile).post(register_verifier),
+            get(get_verifier_profile)
+                .post(register_verifier)
+                .delete(retire_verifier_profile),
         )
         .route("/v1/verifier/keys", get(list_verifier_keys))
         .route("/v1/verifier/keys/rotate", post(rotate_verifier_key))
@@ -10894,6 +10962,14 @@ mod tests {
         );
         assert!(safe_network_height(-1).is_err());
         assert!(safe_network_height(i64::try_from(MAX_SAFE_INTEGER + 1).unwrap()).is_err());
+    }
+
+    #[test]
+    fn verifier_retirement_blocks_inflight_work() {
+        assert!(!verifier_retirement_blocked(false, false));
+        assert!(verifier_retirement_blocked(true, false));
+        assert!(verifier_retirement_blocked(false, true));
+        assert!(verifier_retirement_blocked(true, true));
     }
 
     #[test]

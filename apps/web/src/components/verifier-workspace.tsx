@@ -169,6 +169,9 @@ export function VerifierWorkspace({
   const requestsRefreshInFlight = useRef(false);
   const [proofResult, setProofResult] = useState<VerifierHumanProof | null>(null);
   const [proofLoadingId, setProofLoadingId] = useState<string | null>(null);
+  const [retireConfirm, setRetireConfirm] = useState("");
+  const [retiring, setRetiring] = useState(false);
+  const [retired, setRetired] = useState(false);
 
   const selectedSchema = availableSchemas.find((schema) => schema.id === schemaId);
   const pendingRequestCount = requests.filter((request) => request.status === "pending").length;
@@ -217,6 +220,40 @@ export function VerifierWorkspace({
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [authenticated, profile, refreshRequests]);
+
+  async function retireVerifier() {
+    if (retiring) return;
+    if (retireConfirm !== "RETIRE") {
+      setStatus("Type RETIRE exactly before retiring this verifier profile.");
+      return;
+    }
+    setRetiring(true);
+    try {
+      const response = await fetch("/api/zerant/verifier", {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        setStatus(
+          response.status === 403
+            ? "Sign in again before retiring this verifier profile."
+            : response.status === 409
+              ? "Finish or wait for pending verification requests and webhook deliveries before retiring this verifier profile."
+              : response.status === 404
+                ? "This verifier profile is already retired."
+                : "Verifier retirement could not be completed.",
+        );
+        return;
+      }
+      setProfile(null);
+      setRetired(true);
+      setStatus("Verifier profile retired. Your account can now refresh its deletion eligibility.");
+    } catch {
+      setStatus("Verifier retirement could not be completed.");
+    } finally {
+      setRetiring(false);
+    }
+  }
 
   async function activate() {
     const response = await fetch("/api/zerant/verifier", {
@@ -530,6 +567,20 @@ export function VerifierWorkspace({
           <Link href="/vault" className="button">
             Connect to Zerant <span aria-hidden="true">→</span>
           </Link>
+        </section>
+      </main>
+    );
+  }
+
+  if (retired) {
+    return (
+      <main id="main" className="verifier-page">
+        <section className="verifier-hero">
+          <p className="eyebrow">Verifier retired</p>
+          <h1>This verifier profile has been removed.</h1>
+          <p>Verifier keys, integrations, policies and verifier-side request records were removed. Holder-side Zerant activity remains as historical metadata.</p>
+          <Link href="/account" className="button">Review account settings <span aria-hidden="true">→</span></Link>
+          {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
         </section>
       </main>
     );
@@ -1008,6 +1059,19 @@ export function VerifierWorkspace({
             )}
           </div>
         </article>
+      </section>
+
+      <section className="verifier-retirement" aria-labelledby="verifier-retirement-title">
+        <div>
+          <p className="eyebrow">Verifier lifecycle</p>
+          <h2 id="verifier-retirement-title">Retire this verifier profile.</h2>
+          <p className="muted">Retirement permanently removes this verifier’s signing keys, integration keys, webhooks, policies and verifier-side request records. Holder-side Zerant activity remains as historical metadata. Pending requests or webhook deliveries must finish first.</p>
+        </div>
+        <label htmlFor="verifier-retire-confirm">Type RETIRE to confirm</label>
+        <input id="verifier-retire-confirm" value={retireConfirm} onChange={(event) => setRetireConfirm(event.target.value)} autoComplete="off" />
+        <Button variant="secondary" disabled={retireConfirm !== "RETIRE" || retiring} onClick={() => void retireVerifier()}>
+          {retiring ? "Retiring…" : "Retire verifier profile"}
+        </Button>
       </section>
     </main>
   );

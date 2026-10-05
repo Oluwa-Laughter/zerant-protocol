@@ -6,3 +6,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return proxyToZerant(request, "/v1/verifier", { method: "POST" });
 }
+
+export async function DELETE(request: Request) {
+  return proxyToZerant(request, "/v1/verifier", { method: "DELETE" });
+}

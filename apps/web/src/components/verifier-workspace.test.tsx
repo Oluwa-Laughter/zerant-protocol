@@ -37,6 +37,8 @@ test("verifier requires review before a request can be sent", () => {
   assert.ok(html.includes("What do you need to verify?"));
   assert.ok(html.includes("Review request"));
   assert.ok(html.includes("Refresh requests"));
+  assert.ok(html.includes("Retire verifier profile"));
+  assert.ok(html.includes("Holder-side Zerant activity remains as historical metadata."));
   assert.ok(html.includes("Ask for one fact. Receive one bounded result."));
   assert.ok(html.includes('href="#new-verification-request"'));
   assert.ok(html.includes('href="#verification-results"'));
