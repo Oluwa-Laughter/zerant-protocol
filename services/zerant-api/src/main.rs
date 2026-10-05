@@ -42,7 +42,7 @@ use webauthn_rs::prelude::{
     Passkey, PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential,
     RegisterPublicKeyCredential, Webauthn, WebauthnBuilder,
 };
-use zerant_core::validate_origin;
+use zerant_core::{MAX_SAFE_INTEGER, validate_origin};
 use zerant_credential::{
     CREDENTIAL_SCHEMA, Claim, ClaimValue, CredentialKind, CredentialPayload, HOLDER_LOCAL_AUDIENCE,
     IssuerTrustManifest, OrdinaryClaim, PublicJwk, REVOCATION_SCHEMA, RevocationSnapshot,
@@ -107,6 +107,9 @@ struct LightClientCacheEntry {
 
 const LIGHT_CLIENT_SUCCESS_TTL: StdDuration = StdDuration::from_secs(20);
 const LIGHT_CLIENT_FAILURE_TTL: StdDuration = StdDuration::from_secs(60);
+const LIGHT_CLIENT_STALE_GRACE: Duration = Duration::seconds(90);
+const LIGHT_CLIENT_REFRESH_LOCK_MAINNET: i64 = 9_248_177_401;
+const LIGHT_CLIENT_REFRESH_LOCK_TESTNET: i64 = 9_248_177_402;
 
 impl LightClientCacheEntry {
     fn ttl(&self) -> StdDuration {
@@ -119,6 +122,50 @@ impl LightClientCacheEntry {
 
     fn is_fresh(&self) -> bool {
         self.checked_at.elapsed() < self.ttl()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct PersistedLightClientReadiness {
+    checked_at: OffsetDateTime,
+    readiness: Option<ZcashNetworkReadiness>,
+}
+
+impl PersistedLightClientReadiness {
+    fn ttl(&self) -> Duration {
+        if self.readiness.is_some() {
+            Duration::seconds(i64::try_from(LIGHT_CLIENT_SUCCESS_TTL.as_secs()).unwrap_or(20))
+        } else {
+            Duration::seconds(i64::try_from(LIGHT_CLIENT_FAILURE_TTL.as_secs()).unwrap_or(60))
+        }
+    }
+
+    fn is_fresh(&self, now: OffsetDateTime) -> bool {
+        now >= self.checked_at && now - self.checked_at < self.ttl()
+    }
+
+    fn within_stale_grace(&self, now: OffsetDateTime) -> bool {
+        self.readiness.is_some()
+            && now >= self.checked_at
+            && now - self.checked_at < LIGHT_CLIENT_STALE_GRACE
+    }
+}
+
+fn light_client_endpoint_fingerprint(endpoint: &str) -> String {
+    hex::encode(Sha256::digest(endpoint.as_bytes()))
+}
+
+fn light_client_network_label(network: LightClientNetwork) -> &'static str {
+    match network {
+        LightClientNetwork::Mainnet => "mainnet",
+        LightClientNetwork::Testnet => "testnet",
+    }
+}
+
+fn light_client_refresh_lock(network: LightClientNetwork) -> i64 {
+    match network {
+        LightClientNetwork::Mainnet => LIGHT_CLIENT_REFRESH_LOCK_MAINNET,
+        LightClientNetwork::Testnet => LIGHT_CLIENT_REFRESH_LOCK_TESTNET,
     }
 }
 
@@ -8506,6 +8553,141 @@ async fn inspect_zcash_payment_request(
     Ok(Json(summary))
 }
 
+fn safe_network_height(value: i64) -> Result<u64, ApiError> {
+    let value = u64::try_from(value).map_err(|_| ApiError::Unavailable)?;
+    if value > MAX_SAFE_INTEGER {
+        return Err(ApiError::Unavailable);
+    }
+    Ok(value)
+}
+
+async fn load_shared_light_client_readiness(
+    client: &deadpool_postgres::Client,
+    network: &str,
+    endpoint_fingerprint: &str,
+) -> Result<Option<PersistedLightClientReadiness>, ApiError> {
+    let Some(row) = client
+        .query_opt(
+            "SELECT available, synced, block_height, estimated_height, lag, checked_at
+             FROM zcash_network_readiness
+             WHERE network = $1 AND endpoint_fingerprint = $2",
+            &[&network, &endpoint_fingerprint],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+    else {
+        return Ok(None);
+    };
+
+    let available: bool = row.get("available");
+    let checked_at: OffsetDateTime = row.get("checked_at");
+    if !available {
+        return Ok(Some(PersistedLightClientReadiness {
+            checked_at,
+            readiness: None,
+        }));
+    }
+
+    let synced: Option<bool> = row.get("synced");
+    let block_height: Option<i64> = row.get("block_height");
+    let estimated_height: Option<i64> = row.get("estimated_height");
+    let lag: Option<i64> = row.get("lag");
+
+    let readiness = ZcashNetworkReadiness {
+        configured: true,
+        network: network.to_owned(),
+        synced: synced.ok_or(ApiError::Unavailable)?,
+        block_height: Some(safe_network_height(
+            block_height.ok_or(ApiError::Unavailable)?,
+        )?),
+        estimated_height: Some(safe_network_height(
+            estimated_height.ok_or(ApiError::Unavailable)?,
+        )?),
+        lag: Some(safe_network_height(lag.ok_or(ApiError::Unavailable)?)?),
+    };
+
+    Ok(Some(PersistedLightClientReadiness {
+        checked_at,
+        readiness: Some(readiness),
+    }))
+}
+
+async fn store_shared_light_client_success(
+    client: &deadpool_postgres::Client,
+    network: &str,
+    endpoint_fingerprint: &str,
+    readiness: &ZcashNetworkReadiness,
+) -> Result<(), ApiError> {
+    let block_height = i64::try_from(readiness.block_height.ok_or(ApiError::Unavailable)?)
+        .map_err(|_| ApiError::Unavailable)?;
+    let estimated_height = i64::try_from(readiness.estimated_height.ok_or(ApiError::Unavailable)?)
+        .map_err(|_| ApiError::Unavailable)?;
+    let lag = i64::try_from(readiness.lag.ok_or(ApiError::Unavailable)?)
+        .map_err(|_| ApiError::Unavailable)?;
+
+    client
+        .execute(
+            "INSERT INTO zcash_network_readiness
+             (network, endpoint_fingerprint, available, synced, block_height,
+              estimated_height, lag, checked_at, failure_count, last_error_at)
+             VALUES ($1, $2, true, $3, $4, $5, $6, NOW(), 0, NULL)
+             ON CONFLICT (network)
+             DO UPDATE SET endpoint_fingerprint = EXCLUDED.endpoint_fingerprint,
+                           available = true,
+                           synced = EXCLUDED.synced,
+                           block_height = EXCLUDED.block_height,
+                           estimated_height = EXCLUDED.estimated_height,
+                           lag = EXCLUDED.lag,
+                           checked_at = NOW(),
+                           failure_count = 0,
+                           last_error_at = NULL",
+            &[
+                &network,
+                &endpoint_fingerprint,
+                &readiness.synced,
+                &block_height,
+                &estimated_height,
+                &lag,
+            ],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    Ok(())
+}
+
+async fn store_shared_light_client_failure(
+    client: &deadpool_postgres::Client,
+    network: &str,
+    endpoint_fingerprint: &str,
+) -> Result<(), ApiError> {
+    client
+        .execute(
+            "INSERT INTO zcash_network_readiness
+             (network, endpoint_fingerprint, available, synced, block_height,
+              estimated_height, lag, checked_at, failure_count, last_error_at)
+             VALUES ($1, $2, false, NULL, NULL, NULL, NULL, NOW(), 1, NOW())
+             ON CONFLICT (network)
+             DO UPDATE SET endpoint_fingerprint = EXCLUDED.endpoint_fingerprint,
+                           available = false,
+                           synced = NULL,
+                           block_height = NULL,
+                           estimated_height = NULL,
+                           lag = NULL,
+                           checked_at = NOW(),
+                           failure_count = CASE
+                               WHEN zcash_network_readiness.endpoint_fingerprint =
+                                    EXCLUDED.endpoint_fingerprint
+                               THEN LEAST(zcash_network_readiness.failure_count + 1, 1000000)
+                               ELSE 1
+                           END,
+                           last_error_at = NOW()",
+            &[&network, &endpoint_fingerprint],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    Ok(())
+}
+
 async fn zcash_network_readiness(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -8518,15 +8700,12 @@ async fn zcash_network_readiness(
         "zcash:testnet" => LightClientNetwork::Testnet,
         _ => return Err(ApiError::Unavailable),
     };
+    let network = light_client_network_label(expected_network);
 
     let Some(endpoint) = state.light_client_endpoint.as_deref() else {
         return Ok(Json(ZcashNetworkReadiness {
             configured: false,
-            network: match expected_network {
-                LightClientNetwork::Mainnet => "mainnet",
-                LightClientNetwork::Testnet => "testnet",
-            }
-            .into(),
+            network: network.into(),
             synced: false,
             block_height: None,
             estimated_height: None,
@@ -8534,8 +8713,8 @@ async fn zcash_network_readiness(
         }));
     };
 
-    let mut cache = state.light_client_cache.lock().await;
-    if let Some(entry) = cache.as_ref()
+    let mut local_cache = state.light_client_cache.lock().await;
+    if let Some(entry) = local_cache.as_ref()
         && entry.is_fresh()
     {
         return entry
@@ -8545,39 +8724,110 @@ async fn zcash_network_readiness(
             .ok_or(ApiError::Unavailable);
     }
 
-    let fetched = fetch_light_client_readiness(
-        endpoint,
-        expected_network,
-        state.light_client_allow_loopback,
-    )
-    .await
-    .map(|readiness| ZcashNetworkReadiness {
-        configured: true,
-        network: readiness.network,
-        synced: readiness.synced,
-        block_height: Some(readiness.block_height),
-        estimated_height: Some(readiness.estimated_height),
-        lag: Some(readiness.lag),
-    });
+    let endpoint_fingerprint = light_client_endpoint_fingerprint(endpoint);
+    let now = OffsetDateTime::now_utc();
+    let client = db_client(&state.db).await?;
+    let persisted =
+        load_shared_light_client_readiness(&client, network, &endpoint_fingerprint).await?;
 
-    let readiness = match fetched {
-        Ok(readiness) => {
-            *cache = Some(LightClientCacheEntry {
+    if let Some(entry) = persisted.as_ref()
+        && entry.is_fresh(now)
+    {
+        *local_cache = Some(LightClientCacheEntry {
+            checked_at: Instant::now(),
+            readiness: entry.readiness.clone(),
+        });
+        return entry
+            .readiness
+            .clone()
+            .map(Json)
+            .ok_or(ApiError::Unavailable);
+    }
+
+    let lock_id = light_client_refresh_lock(expected_network);
+    let acquired: bool = client
+        .query_one("SELECT pg_try_advisory_lock($1)", &[&lock_id])
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+
+    if !acquired {
+        if let Some(entry) = persisted
+            && entry.within_stale_grace(now)
+        {
+            let readiness = entry.readiness.ok_or(ApiError::Unavailable)?;
+            *local_cache = Some(LightClientCacheEntry {
                 checked_at: Instant::now(),
                 readiness: Some(readiness.clone()),
             });
-            readiness
+            return Ok(Json(readiness));
         }
-        Err(_) => {
-            *cache = Some(LightClientCacheEntry {
+        return Err(ApiError::Unavailable);
+    }
+
+    let refresh_result = async {
+        let refreshed =
+            load_shared_light_client_readiness(&client, network, &endpoint_fingerprint).await?;
+        let refreshed_now = OffsetDateTime::now_utc();
+        if let Some(entry) = refreshed.as_ref()
+            && entry.is_fresh(refreshed_now)
+        {
+            return entry.readiness.clone().ok_or(ApiError::Unavailable);
+        }
+
+        match fetch_light_client_readiness(
+            endpoint,
+            expected_network,
+            state.light_client_allow_loopback,
+        )
+        .await
+        {
+            Ok(readiness) => {
+                let readiness = ZcashNetworkReadiness {
+                    configured: true,
+                    network: readiness.network,
+                    synced: readiness.synced,
+                    block_height: Some(readiness.block_height),
+                    estimated_height: Some(readiness.estimated_height),
+                    lag: Some(readiness.lag),
+                };
+                store_shared_light_client_success(
+                    &client,
+                    network,
+                    &endpoint_fingerprint,
+                    &readiness,
+                )
+                .await?;
+                Ok(readiness)
+            }
+            Err(_) => {
+                store_shared_light_client_failure(&client, network, &endpoint_fingerprint).await?;
+                Err(ApiError::Unavailable)
+            }
+        }
+    }
+    .await;
+
+    let _ = client
+        .query_one("SELECT pg_advisory_unlock($1)", &[&lock_id])
+        .await;
+
+    match refresh_result {
+        Ok(readiness) => {
+            *local_cache = Some(LightClientCacheEntry {
+                checked_at: Instant::now(),
+                readiness: Some(readiness.clone()),
+            });
+            Ok(Json(readiness))
+        }
+        Err(error) => {
+            *local_cache = Some(LightClientCacheEntry {
                 checked_at: Instant::now(),
                 readiness: None,
             });
-            return Err(ApiError::Unavailable);
+            Err(error)
         }
-    };
-
-    Ok(Json(readiness))
+    }
 }
 
 async fn zcash_status(
@@ -8859,6 +9109,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0023_session_management.sql"),
             include_str!("../migrations/0024_zcash_identity_link.sql"),
             include_str!("../migrations/0025_zecauth_link_handoff.sql"),
+            include_str!("../migrations/0026_zcash_network_readiness.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -9107,6 +9358,97 @@ mod tests {
     }
 
     // Run with ZERANT_TEST_DATABASE_URL pointing at a disposable PostgreSQL database.
+    #[test]
+    fn light_client_endpoint_fingerprint_is_stable_and_isolated() {
+        let first = light_client_endpoint_fingerprint("https://zaino-a.example");
+        let same = light_client_endpoint_fingerprint("https://zaino-a.example");
+        let second = light_client_endpoint_fingerprint("https://zaino-b.example");
+        assert_eq!(first.len(), 64);
+        assert_eq!(first, same);
+        assert_ne!(first, second);
+        assert!(!first.contains("zaino"));
+    }
+
+    #[test]
+    fn persisted_light_client_cache_has_bounded_freshness() {
+        let now = OffsetDateTime::now_utc();
+        let readiness = ZcashNetworkReadiness {
+            configured: true,
+            network: "testnet".into(),
+            synced: false,
+            block_height: Some(100),
+            estimated_height: Some(101),
+            lag: Some(1),
+        };
+        let fresh = PersistedLightClientReadiness {
+            checked_at: now - Duration::seconds(1),
+            readiness: Some(readiness.clone()),
+        };
+        assert!(fresh.is_fresh(now));
+        assert!(fresh.within_stale_grace(now));
+
+        let stale_but_usable = PersistedLightClientReadiness {
+            checked_at: now - Duration::seconds(30),
+            readiness: Some(readiness),
+        };
+        assert!(!stale_but_usable.is_fresh(now));
+        assert!(stale_but_usable.within_stale_grace(now));
+
+        let expired = PersistedLightClientReadiness {
+            checked_at: now - Duration::seconds(91),
+            readiness: Some(ZcashNetworkReadiness {
+                configured: true,
+                network: "testnet".into(),
+                synced: true,
+                block_height: Some(100),
+                estimated_height: Some(100),
+                lag: Some(0),
+            }),
+        };
+        assert!(!expired.within_stale_grace(now));
+
+        let recent_failure = PersistedLightClientReadiness {
+            checked_at: now - Duration::seconds(30),
+            readiness: None,
+        };
+        assert!(recent_failure.is_fresh(now));
+        assert!(!recent_failure.within_stale_grace(now));
+    }
+
+    #[test]
+    fn light_client_database_heights_are_javascript_safe() {
+        assert_eq!(safe_network_height(0).unwrap(), 0);
+        assert_eq!(
+            safe_network_height(i64::try_from(MAX_SAFE_INTEGER).unwrap()).unwrap(),
+            MAX_SAFE_INTEGER
+        );
+        assert!(safe_network_height(-1).is_err());
+        assert!(safe_network_height(i64::try_from(MAX_SAFE_INTEGER + 1).unwrap()).is_err());
+    }
+
+    #[test]
+    fn zcash_readiness_migration_stores_no_endpoint_or_wallet_data() {
+        let schema = include_str!("../migrations/0026_zcash_network_readiness.sql");
+        for required in [
+            "endpoint_fingerprint",
+            "checked_at",
+            "failure_count",
+            "block_height",
+            "estimated_height",
+        ] {
+            assert!(schema.contains(required), "{required}");
+        }
+        for forbidden in [
+            "wallet_address",
+            "balance",
+            "memo",
+            "seed",
+            "transaction_history",
+        ] {
+            assert!(!schema.contains(forbidden), "{forbidden}");
+        }
+    }
+
     #[test]
     fn light_client_success_cache_is_short_lived() {
         let readiness = ZcashNetworkReadiness {
