@@ -7,6 +7,7 @@ import {
   connectedWalletNetwork,
   NoirWalletAdapter,
   normalizeDerivedSignature,
+  normalizeTransactionId,
   normalizeWalletConnection,
   zatoshiToZec,
 } from "./zcash-wallet";
@@ -159,6 +160,14 @@ test("rejects invalid wallet-app handoff callbacks", () => {
   );
 });
 
+test("accepts only canonical 64-hex Zcash transaction ids", () => {
+  const upper = "A".repeat(64);
+  assert.equal(normalizeTransactionId(upper), "a".repeat(64));
+  assert.throws(() => normalizeTransactionId("txid-shielded"), /invalid Zcash transaction id/);
+  assert.throws(() => normalizeTransactionId("0x" + "a".repeat(64)), /invalid Zcash transaction id/);
+  assert.throws(() => normalizeTransactionId(""), /did not return a transaction id/);
+});
+
 test("converts zatoshis to an exact ZEC decimal string", () => {
   assert.equal(zatoshiToZec(1), "0.00000001");
   assert.equal(zatoshiToZec(125_000_000), "1.25");
@@ -237,6 +246,8 @@ test("an explicit Noir connect opens approval even when silent lookup would reje
 test("enhanced injected adapter advertises and uses supported capabilities", async () => {
   let signingMode: unknown;
   let fundingSource: unknown;
+  let amount: unknown;
+  let recipient: unknown;
   const wallet = fakeWallet({
     signMessage: async (_message: string, options: { signingMode?: string }) => {
       signingMode = options.signingMode;
@@ -247,9 +258,11 @@ test("enhanced injected adapter advertises and uses supported capabilities", asy
         signingMode: "derived",
       };
     },
-    sendTransaction: async (params: { fundingSource?: string }) => {
+    sendTransaction: async (params: { fundingSource?: string; amount?: string; to?: string }) => {
       fundingSource = params.fundingSource;
-      return "txid-shielded";
+      amount = params.amount;
+      recipient = params.to;
+      return "a".repeat(64);
     },
   });
 
@@ -265,5 +278,7 @@ test("enhanced injected adapter advertises and uses supported capabilities", asy
 
   assert.equal(signingMode, "derived");
   assert.equal(fundingSource, "shielded");
-  assert.equal(txid, "txid-shielded");
+  assert.equal(amount, "0.1");
+  assert.equal(recipient, "u1-recipient");
+  assert.equal(txid, "a".repeat(64));
 });

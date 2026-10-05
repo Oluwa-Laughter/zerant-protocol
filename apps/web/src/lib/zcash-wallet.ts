@@ -109,11 +109,15 @@ export function zatoshiToZec(zat: number): string {
   return fraction ? whole.toString() + "." + fraction : whole.toString();
 }
 
-function normalizeTransactionId(value: unknown): string {
+export function normalizeTransactionId(value: unknown): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error("Wallet did not return a transaction id.");
   }
-  return value.trim();
+  const txid = value.trim();
+  if (!/^[0-9a-f]{64}$/i.test(txid)) {
+    throw new Error("Wallet returned an invalid Zcash transaction id.");
+  }
+  return txid.toLowerCase();
 }
 
 export function normalizeWalletConnection(
