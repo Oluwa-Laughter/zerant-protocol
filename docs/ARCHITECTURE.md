@@ -20,6 +20,14 @@ Issuer governance actions are written to an append-only `issuer_events` ledger i
 
 ## Load-bearing decisions
 
+### Server-backed Zcash payment tracking (2026-10-05)
+
+Payment-request review rejects destinations on a network other than the configured Zcash chain, so a testnet review cannot hand off a mainnet destination.
+
+The authenticated Zerant service owns a payment record for one validated, exact-amount ZIP-321 payment on the configured Zcash network. Preparation binds the account, a random record ID, SHA-256 of the canonical request, normalized recipient, integer zatoshis, and network. The canonical URI, memo, wallet account, balance, and history are not stored. Requests with multiple payments, unspecified amounts, memo, label, message, or extra parameters remain reviewable but cannot create a tracked payment in this profile. A submitted txid is bound once to the account-owned prepared record and is unique across records; retries with the same txid are idempotent. A wallet-returned txid is untrusted submission metadata, never settlement evidence. Only a future server-side named-transaction observer may advance beyond submitted; the existing native verified receipt path is regtest-only and must not be used to assert testnet settlement. Browser input never authorizes arbitrary transaction lookup.
+
+Prepared records expire after 24 hours. The service lists only records owned by the authenticated account and deletes expired prepared records after 30 days; submitted records remain pending until a reviewed observation and retention policy is implemented. This interim retention favors preserving the sole pending payment reference over silently losing it. Future confirmation/credit needs a durable txid tombstone and explicit reorg/retention rules before any submitted record is deleted. This tracking does not change credential subject binding, consent, key lifecycle, revocation, or replay contracts. It creates account-to-payment metadata within the protected service, and therefore does not confer anonymity or unlinkability.
+
 ### Wallet connector discovery (2026-10-05)
 
 Browser wallet selection is a client-side registry of explicit, reviewed connectors. Detection only reads known provider entry points and never requests accounts, addresses, balances, history, or remote metadata. Identity methods are offered only for connectors that can sign the exact server-issued challenge in the verified profile, or can complete the existing ZecAuth handoff. The server remains authoritative for challenge creation, signature verification, session redemption, and account linking. Connector metadata and capability flags do not grant authority. The ZecAuth callback contains only the public challenge and callback URL; the initiating browser retains the HttpOnly attempt cookie, and account/session IDs never enter the handoff. No connector discovery state or wallet address is persisted by Zerant.

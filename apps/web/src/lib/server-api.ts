@@ -225,6 +225,8 @@ export type RetentionMaintenanceSummary = {
   rate_limits: number;
   webhook_deliveries: number;
   proof_material: number;
+  expired_payments: number;
+  deleted_expired_payments: number;
 };
 
 export async function runRetentionMaintenanceToZerant(): Promise<RetentionMaintenanceSummary> {

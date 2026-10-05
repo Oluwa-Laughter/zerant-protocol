@@ -32,6 +32,8 @@ Before implementation, turn mitigations into independent acceptance fixtures, va
 
 ## Zcash/payment integration threats
 
+Payment tracking accepts only an authenticated account's validated, single, exact-amount request on the configured network. It stores an immutable canonical request digest and rejects a second txid for the same record or reuse of a txid across records. The browser may report a fabricated txid, so `submitted` is informational and has no credit or credential authority. The account-scoped list never accepts a txid lookup parameter. Testnet observation remains disabled until a trusted service can verify the named transaction's recipient, exact amount, pool, network, inclusion and confirmations. Pending account-linked recipients and txids are a service-compromise privacy risk; the interim retention policy is documented in ARCHITECTURE.md.
+
 - **RPC overreach:** Zcash-specific access stays behind `zerant-zcash`; no seed phrase is accepted and generic credentials do not import wallet-wide balances/history. A compromised wallet/operator or RPC endpoint remains a deployment risk.
 - **Payment-claim overreach:** a payment issuer must validate its own expected recipient, amount, network, transaction binding and confirmation/reorg policy before signing a narrow payment claim. A signed claim can still be dishonest if the issuer is dishonest or misconfigured.
 - **Capability confusion:** discovering `z_sendmany` means the current Zallet RPC advertises that capability; it does not prove Zerant has safely executed a shielded payment. Live payment behavior must be demonstrated on official regtest before product claims change.

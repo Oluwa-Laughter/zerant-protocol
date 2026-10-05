@@ -9,6 +9,8 @@ test("Zcash payment experience starts with sender-side private payment review", 
   assert.ok(html.includes("Private payment"));
   assert.ok(html.includes("Review payment"));
   assert.ok(html.includes("Your wallet remains in control"));
+  assert.ok(html.includes("Saved payment activity"));
+  assert.ok(html.includes("No saved payments yet"));
   assert.equal(html.includes("wallet balance"), false);
   assert.equal(html.includes("transaction history"), false);
 });

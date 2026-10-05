@@ -4,6 +4,15 @@
 verification API. JSON protocol amounts are integer zatoshis. A payment request is
 never a completed payment.
 
+The hosted testnet workspace has a separate persistence profile: one canonical,
+single-recipient ZIP-321 request with an exact positive amount may be prepared for
+the authenticated account. Its SHA-256 canonical URI digest is stored with the
+recipient, integer amount, configured network and random record ID. The account may
+attach one unique, syntactically valid txid. This yields `submitted` only. No hosted
+testnet observer or `VerifiedPaymentReceipt` is currently connected, so hosted
+records cannot become confirmed or issue payment claims. Rich or multi-payment
+requests remain reviewable without lifecycle tracking; the UI must disclose this.
+
 An intent has schema, random 128-bit intent_id, network, requester_origin, recipient,
 amount_zat, min_confirmations, explicit privacy_policy, issued_at, expires_at and
 optional reference_commitment. Unknown fields/floats/unsafe integers are rejected

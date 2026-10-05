@@ -60,6 +60,7 @@ use zerant_zcash::{
     },
 };
 
+mod payments;
 mod vault_rotation;
 
 const SESSION_COOKIE: &str = "zerant_session";
@@ -358,6 +359,8 @@ struct RetentionMaintenanceSummary {
     rate_limits: u64,
     webhook_deliveries: u64,
     proof_material: u64,
+    expired_payments: u64,
+    deleted_expired_payments: u64,
 }
 
 #[derive(Serialize)]
@@ -9106,7 +9109,24 @@ async fn inspect_zcash_payment_request(
     enforce_account_rate_limit(&state.db, account, "zcash_payment_inspect", 120).await?;
     let summary =
         zerant_zcash::zip321::inspect_payment_request(&input.uri).map_err(|_| ApiError::Invalid)?;
+    if !payment_request_matches_network(&summary, &state.zcash_chain) {
+        return Err(ApiError::Invalid);
+    }
     Ok(Json(summary))
+}
+
+fn payment_request_matches_network(
+    summary: &zerant_zcash::zip321::PaymentRequestSummary,
+    chain: &str,
+) -> bool {
+    let Some(expected_network) = chain.strip_prefix("zcash:") else {
+        return false;
+    };
+    summary.payments.iter().all(|payment| {
+        zerant_zcash::address::inspect_address(&payment.recipient)
+            .map(|address| address.network == expected_network)
+            .unwrap_or(false)
+    })
 }
 
 async fn create_zcash_payment_request(
@@ -9758,6 +9778,8 @@ async fn retention_maintenance_internal(
             rate_limits: 0,
             webhook_deliveries: 0,
             proof_material: 0,
+            expired_payments: 0,
+            deleted_expired_payments: 0,
         }));
     }
 
@@ -9891,6 +9913,33 @@ async fn retention_maintenance_internal(
         .await
         .map_err(|_| ApiError::Unavailable)?;
 
+    let expired_payments = tx
+        .execute(
+            "WITH due AS (
+            SELECT id FROM zcash_payments
+            WHERE state = 'prepared' AND expires_at <= NOW()
+            ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED
+         )
+         UPDATE zcash_payments p SET state = 'expired'
+         FROM due WHERE p.id = due.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let deleted_expired_payments = tx
+        .execute(
+            "WITH due AS (
+            SELECT id FROM zcash_payments
+            WHERE state = 'expired' AND expires_at <= NOW() - INTERVAL '30 days'
+            ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED
+         )
+         DELETE FROM zcash_payments p USING due WHERE p.id = due.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
     let summary = serde_json::json!({
         "expired_requests": expired_requests,
         "sessions": sessions,
@@ -9899,6 +9948,8 @@ async fn retention_maintenance_internal(
         "rate_limits": rate_limits,
         "webhook_deliveries": webhook_deliveries,
         "proof_material": proof_material,
+        "expired_payments": expired_payments,
+        "deleted_expired_payments": deleted_expired_payments,
     });
     tx.execute(
         "INSERT INTO maintenance_job_state(job, last_success_at, last_summary, updated_at)
@@ -9923,6 +9974,8 @@ async fn retention_maintenance_internal(
         rate_limits,
         webhook_deliveries,
         proof_material,
+        expired_payments,
+        deleted_expired_payments,
     }))
 }
 
@@ -10140,6 +10193,11 @@ fn app(state: AppState) -> Router {
             "/v1/zcash/payment-request/create",
             post(create_zcash_payment_request),
         )
+        .route(
+            "/v1/zcash/payments",
+            get(payments::list).post(payments::prepare),
+        )
+        .route("/v1/zcash/payments/{id}/submit", post(payments::submit))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -10188,6 +10246,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0028_zcash_network_last_good.sql"),
             include_str!("../migrations/0029_verifier_proof_packages.sql"),
             include_str!("../migrations/0030_operational_health.sql"),
+            include_str!("../migrations/0031_zcash_payments.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -10626,6 +10685,19 @@ mod tests {
             readiness: Some(degraded),
         };
         assert_eq!(cached.ttl(), LIGHT_CLIENT_FAILURE_TTL);
+    }
+
+    #[test]
+    fn payment_review_rejects_another_zcash_network() {
+        let summary = zerant_zcash::zip321::create_payment_request(
+            "tmEZhbWHTpdKMw5it8YDspUXSMGQyFwovpU",
+            "1.25",
+            "testnet",
+        )
+        .unwrap();
+        assert!(payment_request_matches_network(&summary, "zcash:testnet"));
+        assert!(!payment_request_matches_network(&summary, "zcash:mainnet"));
+        assert!(!payment_request_matches_network(&summary, "invalid"));
     }
 
     #[test]
