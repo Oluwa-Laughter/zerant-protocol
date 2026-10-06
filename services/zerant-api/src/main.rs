@@ -10707,6 +10707,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0034_zcash_payment_activity.sql"),
             include_str!("../migrations/0035_issuer_retirement.sql"),
             include_str!("../migrations/0036_safe_verifier_retirement.sql"),
+            include_str!("../migrations/0037_verifier_retirement_serialization.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -11139,7 +11140,10 @@ mod tests {
         let verifier = source
             .find("0036_safe_verifier_retirement.sql")
             .expect("0036 wired");
-        assert!(issuer < verifier);
+        let serialized = source
+            .find("0037_verifier_retirement_serialization.sql")
+            .expect("0037 wired");
+        assert!(issuer < verifier && verifier < serialized);
     }
 
     #[test]
@@ -11152,6 +11156,14 @@ mod tests {
         };
         assert!(require_active_issuer(&retired).is_err());
         assert!(require_issuer_role(&retired, &["owner", "admin"]).is_ok());
+    }
+
+    #[test]
+    fn verifier_retirement_guard_serializes_new_work() {
+        let schema = include_str!("../migrations/0037_verifier_retirement_serialization.sql");
+        assert!(schema.contains("FOR SHARE"));
+        assert!(schema.contains("verifier is retired"));
+        assert!(schema.contains("verifier profile not found"));
     }
 
     #[test]
