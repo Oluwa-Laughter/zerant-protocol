@@ -158,6 +158,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       <h2>{allowSignIn ? "Sign in with a Zcash wallet" : "Use a Zcash wallet"}</h2>
       <p className="muted">{allowSignIn ? "On desktop, Zerant signs in through a detected Noir Wallet using a privacy-preserving identity key. A payment address, balance, or history is never your Zerant identity." : "Choose Noir to approve this site for wallet actions. You can also hand a reviewed payment request to a compatible wallet app. Your Zerant account and credentials work without a wallet connection."}</p>
     </div>
+    {connection.activeChain === "zcash:testnet" && !connection.account ? (
     <div className="noir-connect-checklist" aria-label="How to approve Testnet Noir">
       <div>
         <span className="eyebrow">Connecting Testnet Noir</span>
@@ -171,6 +172,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       </ol>
       <p className="small muted">Noir’s generic permission screen may mention balances and activity. Zerant does not request or store your wallet balance or transaction history for identity.</p>
     </div>
+    ) : null}
     <div className="zcash-connection-diagnostics" aria-label="Zcash wallet connection diagnostics">
       <div>
         <span className="eyebrow">Zerant network</span>
