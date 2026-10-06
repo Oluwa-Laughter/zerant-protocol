@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
 import { zip321Connector, type ZcashConnector } from "@/lib/zcash-connectors";
-import { connectConnector, ensureZcashConfig, useZcashConnection } from "@/lib/zcash-connection";
+import { connectConnector, getZcashConnectionSnapshot, useZcashConnection } from "@/lib/zcash-connection";
 import { directPaymentMode, paymentAction } from "@/lib/zcash-payment-connector";
 
 type Payment = {
@@ -328,7 +328,8 @@ export function ZcashPaymentRequestReview({
       return;
     }
     try {
-      const chain = await ensureZcashConfig();
+      const chain = getZcashConnectionSnapshot().activeChain;
+      if (!chain) throw new Error("Zcash network configuration is still loading. Reopen the wallet menu and try again.");
       await connectConnector(connector, chain);
       setStatus("Wallet connected. Review the payment and approve only when you are ready.");
     } catch (error) {

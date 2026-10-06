@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
 import { type ZcashConnector } from "@/lib/zcash-connectors";
-import { connectConnector, ensureZcashConfig } from "@/lib/zcash-connection";
+import { connectConnector, getZcashConnectionSnapshot } from "@/lib/zcash-connection";
 import { completeWalletAppLink, removeWalletMessageMethod, removeZecAuthMethod, startWalletAppLink, submitZcashLink } from "@/lib/zcash-link";
 
 export type LinkedZcashMethod = {
@@ -108,7 +108,8 @@ export function ZcashSignInManager({
     try {
       if (!wallet.capabilities.has("identitySigning") || !wallet.signIdentityChallenge || !wallet.connect) throw new Error("Wallet cannot sign this request.");
       setStatus("Approve the Zcash sign-in request in your wallet.");
-      const chain = await ensureZcashConfig();
+      const chain = getZcashConnectionSnapshot().activeChain;
+      if (!chain) throw new Error("Zcash network configuration is still loading. Reopen the wallet menu and try again.");
       await connectConnector(wallet, chain);
       const result = await submitZcashLink(wallet);
       if (result.stage === "challenge") {

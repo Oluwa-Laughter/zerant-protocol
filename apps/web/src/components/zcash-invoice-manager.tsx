@@ -61,7 +61,7 @@ export function ZcashInvoiceManager({ enabled }: { enabled: boolean }) {
 
   useEffect(() => {
     if (!enabled) return;
-    void refreshInvoices(false);
+    const initialRefresh = window.setTimeout(() => { void refreshInvoices(false); }, 0);
     const onFocus = () => { void refreshInvoices(false); };
     const onVisibility = () => {
       if (document.visibilityState === "visible") void refreshInvoices(false);
@@ -69,6 +69,7 @@ export function ZcashInvoiceManager({ enabled }: { enabled: boolean }) {
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      window.clearTimeout(initialRefresh);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };

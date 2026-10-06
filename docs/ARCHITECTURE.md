@@ -2,6 +2,64 @@
 
 Status: active implementation architecture. The Rust protocol crates and public web console described below exist; future boundaries are labeled explicitly.
 
+## Architecture at a glance
+
+```mermaid
+flowchart TB
+    subgraph Client["Client boundary"]
+      Browser["Next.js product UI"]
+      Wallet["Zcash wallet / Noir"]
+    end
+
+    subgraph Service["Zerant service boundary"]
+      API["Rust Axum API"]
+      DB[("PostgreSQL")]
+      Core["zerant-core"]
+      Cred["zerant-credential"]
+      Policy["zerant-policy"]
+      Disclosure["zerant-disclosure"]
+      Zcash["zerant-zcash"]
+    end
+
+    subgraph External["External trust boundaries"]
+      Issuer["Issuer"]
+      Verifier["Verifier / integration"]
+      Network["Zcash network services"]
+    end
+
+    Issuer --> Browser
+    Verifier --> API
+    Browser -->|private Vercel service binding| API
+    Browser -->|explicit approval only| Wallet
+    Wallet -->|txid / signature result| Browser
+    API --> DB
+    API --> Core
+    API --> Cred
+    API --> Policy
+    API --> Disclosure
+    API --> Zcash
+    Zcash -->|bounded readiness / named transaction observation| Network
+    API -->|signed verifier webhooks| Verifier
+```
+
+### Request and payment separation
+
+A normal trust request never requires a wallet. The holder authenticates to Zerant, reviews the verifier's narrow request, and either approves or denies it. Approval re-verifies the private source credential and produces a verifier-specific response.
+
+A Zcash payment is a separate action. Zerant validates and records the exact payment request; a compatible wallet retains the spending keys and performs the transaction only after its own approval. The wallet result is recorded as **submitted** until a trusted observation path establishes stronger network state.
+
+### Security ownership
+
+| Boundary | Owns | Explicitly does not own |
+| --- | --- | --- |
+| Browser | UI state, consent interaction, transient wallet connection | durable credential authority, wallet keys |
+| Rust API | authorization, challenges, workflow state, encrypted credential access | wallet seed/spending keys |
+| Protocol crates | canonicalization, signature/replay/policy rules | user sessions or UI |
+| Wallet | spending keys, transaction approval | Zerant identity/credential portfolio |
+| Verifier | its request and approved result | holder's full credential collection |
+| Network observer | bounded chain/readiness or named-tx evidence | account identity or general wallet history |
+
+
 ## Current monorepo
 
 | Boundary | Responsibility |
@@ -51,15 +109,21 @@ value or issuer differs. Denial requires no preview and emits no proof. Preview
 does not reserve consent, persist another credential copy, or grant the verifier
 access. A changed request or available credential requires another holder review.
 
-### Explicit Noir connection gesture (2026-10-05)
+### Explicit Noir connection gesture (updated 2026-10-06)
 
-The user-initiated Noir connection calls `zcash_requestAccounts` directly. Silent
-`zcash_getAccounts` is reserved for restoring an existing site authorization; a
-preapproval rejection from that read must not block the wallet's approval prompt.
-Connection grants only the wallet capabilities the user approves and never grants
-Zerant sign-in or spending consent. No wallet address, balance, history, or key is
-persisted by this change. Testnet settlement remains unsupported without an
-authorized named-transaction observer.
+The user-initiated Noir connection calls `zcash_requestAccounts` directly from the
+wallet selection action. The selector loads Zerant's configured Zcash chain before
+showing wallet choices, so selecting Noir does not perform another network fetch
+before opening the wallet approval request. This keeps the approval-producing RPC
+as close as possible to the user's click.
+
+Silent `zcash_getAccounts` is reserved for restoring an existing site authorization.
+A rejected or closed interactive approval is surfaced as that original wallet result;
+Zerant does not immediately issue a second recovery RPC that could mask or race the
+approval lifecycle. Connection grants only the wallet capabilities the user approves
+and never grants Zerant sign-in or spending consent. No wallet balance, transaction
+history, or key is persisted by this change. Testnet settlement remains unsupported
+without an authorized named-transaction observer.
 
 Direct browser wallet sessions are admitted only after the returned account
 addresses identify the configured Zcash network locally. A mainnet Noir extension

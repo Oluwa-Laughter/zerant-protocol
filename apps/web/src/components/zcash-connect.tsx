@@ -73,7 +73,8 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
     let chain: "zcash:mainnet" | "zcash:testnet" | null = null;
     let approvalHint: number | undefined;
     try {
-      chain = await ensureZcashConfig();
+      chain = getZcashConnectionSnapshot().activeChain;
+      if (!chain) throw new Error("Zcash network configuration is still loading. Reopen the wallet menu and try again.");
       if (connector.walletId === "noir") {
         approvalHint = window.setTimeout(() => {
           setStatus(chain === "zcash:testnet"
@@ -88,17 +89,6 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       const kind = classifyInjectedWalletError(error);
-      if (connector.walletId === "noir" && chain && connector.existingConnection) {
-        try {
-          const recovered = await restoreConnection([connector], chain);
-          if (recovered) {
-            setStatus("Noir authorization was recovered from the wallet after the approval window closed. Continue with Zerant from this connected state.");
-            return;
-          }
-        } catch {
-          // A silent recovery must never replace the original wallet error.
-        }
-      }
       if (connector.walletId === "noir" && kind === "rejected") {
         setStatus("Noir ended the connection request. Noir reports this same result when its approval popup is closed without completing Connect. Try again, keep the Connect Request window open, select at least one Testnet account (use Edit accounts if needed), then click Connect.");
       } else if (connector.walletId === "noir" && kind === "unauthorized") {
