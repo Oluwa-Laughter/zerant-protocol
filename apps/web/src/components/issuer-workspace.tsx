@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 export type IssuerProfile = {
   display_name: string;
   issuer_id: string;
+  retired_at: string | null;
   created_at: string;
 };
 
@@ -103,6 +104,7 @@ function activityTitle(type: string): string {
     credential_schema_retired: "Credential type retired",
     credential_issued: "Credential issued",
     credential_revoked: "Credential revoked",
+    issuer_retired: "Issuer retired",
   };
   return labels[type] ?? "Organization activity";
 }
@@ -166,6 +168,8 @@ export function IssuerWorkspace({
   const [versionDescription, setVersionDescription] = useState("");
   const [versionExpiry, setVersionExpiry] = useState("90");
   const [status, setStatus] = useState("");
+  const [retireConfirm, setRetireConfirm] = useState("");
+  const [retiring, setRetiring] = useState(false);
 
   const activeSchemas = useMemo(
     () => schemas.filter((item) => item.active),
@@ -177,12 +181,14 @@ export function IssuerWorkspace({
     [team, currentZerantId],
   );
   const currentRole = currentMember?.role ?? null;
+  const issuerRetired = Boolean(profile?.retired_at);
   const canManageTeam = currentRole === "owner" || currentRole === "admin";
+  const canInviteTeam = canManageTeam && !issuerRetired;
   const canTransferOwnership = currentRole === "owner";
   const canManageSecurity = currentRole === "owner" || currentRole === "admin";
-  const canManageSchemas = currentRole === "owner" || currentRole === "admin";
+  const canManageSchemas = (currentRole === "owner" || currentRole === "admin") && !issuerRetired;
   const canIssue =
-    currentRole === "owner" || currentRole === "admin" || currentRole === "issuer";
+    !issuerRetired && (currentRole === "owner" || currentRole === "admin" || currentRole === "issuer");
 
   const revokedIssued = issued.filter((item) => item.revoked).length;
   const activeIssued = issued.length - revokedIssued;
@@ -342,6 +348,37 @@ export function IssuerWorkspace({
 
     setStatus("Ownership transferred securely.");
     window.location.reload();
+  }
+
+  async function retireIssuer() {
+    if (retiring || retireConfirm !== "RETIRE") return;
+    setRetiring(true);
+    try {
+      const response = await fetch("/api/zerant/issuer", {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        setStatus(
+          response.status === 403
+            ? "Sign in again recently and use the owner account before retiring this issuer."
+            : response.status === 409
+              ? "This issuer is already retired or its state changed. Refresh and try again."
+              : "Issuer retirement could not be completed.",
+        );
+        return;
+      }
+      const now = new Date().toISOString();
+      setProfile((current) => current ? { ...current, retired_at: now } : current);
+      setSchemas((current) => current.map((schema) =>
+        schema.active ? { ...schema, active: false, retired_at: schema.retired_at ?? now } : schema,
+      ));
+      setTeamInvitations([]);
+      setRetireConfirm("");
+      setStatus("Issuer retired. Historical credentials remain verifiable, and security maintenance remains available.");
+    } finally {
+      setRetiring(false);
+    }
   }
 
   async function createCredentialType() {
@@ -729,10 +766,17 @@ export function IssuerWorkspace({
             to people who need to prove them.
           </p>
         </div>
-        <span className="pill">
-          {currentRole ? currentRole.charAt(0).toUpperCase() + currentRole.slice(1) : "Issuer team"}
+        <span className={issuerRetired ? "pill issuer-retired-pill" : "pill"}>
+          {issuerRetired ? "Retired" : currentRole ? currentRole.charAt(0).toUpperCase() + currentRole.slice(1) : "Issuer team"}
         </span>
       </section>
+
+      {issuerRetired ? (
+        <section className="issuer-retired-banner" aria-label="Retired issuer status">
+          <div><p className="eyebrow">Retired issuer</p><h2>New trust creation is closed.</h2></div>
+          <p>Existing credentials, revocation, security keys, organization history, team cleanup, and ownership transfer remain available. New credential types, invitations, and credential issuance are disabled.</p>
+        </section>
+      ) : null}
 
       <section className="issuer-progress" aria-label="Issuer setup and issuance progress">
         <div className="issuer-progress-heading">
@@ -819,7 +863,7 @@ export function IssuerWorkspace({
             </div>
           </article>
 
-          {canManageTeam ? (
+          {canInviteTeam ? (
             <article className="issuer-panel">
               <p className="eyebrow">Invite teammate</p>
               <h3>Add responsibility by Zerant ID.</h3>
@@ -1076,6 +1120,34 @@ export function IssuerWorkspace({
           </div>
         </article>
       </section>
+
+      {currentRole === "owner" ? (
+        <section className="issuer-retirement-section">
+          <div className="section-heading">
+            <p className="eyebrow">Organization lifecycle</p>
+            <h2>{issuerRetired ? "This issuer is retired." : "Retire this issuer safely."}</h2>
+            <p className="muted">
+              {issuerRetired
+                ? "Historical credentials and verification material are preserved. Transfer ownership before deleting the owner’s personal Zerant account."
+                : "Retirement stops new credentials, credential types, and invitations. Existing credentials remain verifiable and can still be revoked if necessary."}
+            </p>
+          </div>
+          {!issuerRetired ? (
+            <div className="issuer-retirement-control">
+              <label htmlFor="retire-issuer-confirm">Type RETIRE to confirm</label>
+              <input
+                id="retire-issuer-confirm"
+                value={retireConfirm}
+                onChange={(event) => setRetireConfirm(event.target.value)}
+                autoComplete="off"
+              />
+              <Button variant="secondary" disabled={retiring || retireConfirm !== "RETIRE"} onClick={() => void retireIssuer()}>
+                {retiring ? "Retiring…" : "Retire issuer"}
+              </Button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="issuer-activity-section">
         <div className="section-heading">

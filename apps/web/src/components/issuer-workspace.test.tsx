@@ -10,6 +10,7 @@ import {
 const profile: IssuerProfile = {
   display_name: "Private Trust Org",
   issuer_id: "zerant:issuer:test",
+  retired_at: null,
   created_at: "2026-10-04T12:00:00Z",
 };
 
@@ -94,4 +95,29 @@ test("issuer must review the recipient and claim before sending", () => {
   assert.ok(html.includes('href="#issue-credential"'));
   assert.ok(html.includes("1 active type"));
   assert.equal(html.includes("Confirm and issue"), false);
+});
+
+
+test("retired issuer disables new trust creation but preserves maintenance language", () => {
+  const owner = { ...auditor, role: "owner" as const, owner: true };
+  const html = renderToStaticMarkup(
+    <IssuerWorkspace
+      authenticated
+      backendAvailable
+      currentZerantId={owner.zerant_id}
+      initialProfile={{ ...profile, retired_at: "2026-10-06T09:00:00Z" }}
+      initialIssued={[]}
+      initialSchemas={[]}
+      initialKeys={[]}
+      initialTeam={[owner]}
+      initialTeamInvitations={[]}
+      initialMyInvitations={[]}
+      initialActivity={{ items: [], next_cursor: null }}
+    />,
+  );
+  assert.ok(html.includes("New trust creation is closed."));
+  assert.ok(html.includes("Existing credentials, revocation, security keys"));
+  assert.equal(html.includes("Send invitation"), false);
+  assert.equal(html.includes("Retire issuer"), false);
+  assert.ok(html.includes("Transfer ownership before deleting"));
 });

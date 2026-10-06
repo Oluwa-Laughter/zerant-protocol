@@ -695,6 +695,7 @@ struct PublicIssuerDirectoryPage {
 struct IssuerProfileView {
     display_name: String,
     issuer_id: String,
+    retired_at: Option<OffsetDateTime>,
     created_at: OffsetDateTime,
 }
 
@@ -703,6 +704,7 @@ struct IssuerAccess {
     profile_id: Uuid,
     owner_account_id: Uuid,
     role: String,
+    retired_at: Option<OffsetDateTime>,
 }
 
 #[derive(Serialize)]
@@ -1757,7 +1759,7 @@ async fn issuer_access(db: &Pool, account: Uuid) -> Result<IssuerAccess, ApiErro
     let client = db_client(db).await?;
     let rows = client
         .query(
-            "SELECT p.id, p.account_id,
+            "SELECT p.id, p.account_id, p.retired_at,
                     CASE WHEN p.account_id = $1 THEN 'owner' ELSE m.role END AS role
              FROM issuer_profiles p
              LEFT JOIN issuer_members m
@@ -1781,7 +1783,8 @@ async fn issuer_access(db: &Pool, account: Uuid) -> Result<IssuerAccess, ApiErro
     Ok(IssuerAccess {
         profile_id: row.get(0),
         owner_account_id: row.get(1),
-        role: row.get(2),
+        retired_at: row.get(2),
+        role: row.get(3),
     })
 }
 
@@ -1790,6 +1793,14 @@ fn require_issuer_role(access: &IssuerAccess, allowed: &[&str]) -> Result<(), Ap
         Ok(())
     } else {
         Err(ApiError::Forbidden)
+    }
+}
+
+fn require_active_issuer(access: &IssuerAccess) -> Result<(), ApiError> {
+    if access.retired_at.is_some() {
+        Err(ApiError::Conflict)
+    } else {
+        Ok(())
     }
 }
 
@@ -4522,6 +4533,7 @@ async fn create_issuer_schema_version(
     enforce_account_rate_limit(&state.db, account, "credential_schema_version", 20).await?;
     let access = issuer_access(&state.db, account).await?;
     require_issuer_role(&access, &["owner", "admin"])?;
+    require_active_issuer(&access)?;
 
     let description = input.description.trim().to_owned();
     if !valid_short_text(&description, 2, 512) || !(1..=365).contains(&input.default_expiry_days) {
@@ -6436,7 +6448,7 @@ async fn create_verification_request_for_account(
     for issuer_id in &accepted {
         if client
             .query_opt(
-                "SELECT 1 FROM issuer_profiles WHERE issuer_id = $1",
+                "SELECT 1 FROM issuer_profiles WHERE issuer_id = $1 AND retired_at IS NULL",
                 &[issuer_id],
             )
             .await
@@ -7590,7 +7602,8 @@ async fn public_issuer_directory(
                   AND k.compromised_at IS NULL
                  LEFT JOIN credential_schemas s ON s.issuer_profile_id = p.id
                  LEFT JOIN issuer_revocation_state r ON r.issuer_profile_id = p.id
-                 WHERE (p.created_at, p.id) < ($1, $2)
+                 WHERE p.retired_at IS NULL
+                   AND (p.created_at, p.id) < ($1, $2)
                  GROUP BY p.id, p.issuer_id, p.display_name, p.created_at,
                           k.issuer_key_id, r.version
                  ORDER BY p.created_at DESC, p.id DESC
@@ -7613,6 +7626,7 @@ async fn public_issuer_directory(
                   AND k.compromised_at IS NULL
                  LEFT JOIN credential_schemas s ON s.issuer_profile_id = p.id
                  LEFT JOIN issuer_revocation_state r ON r.issuer_profile_id = p.id
+                 WHERE p.retired_at IS NULL
                  GROUP BY p.id, p.issuer_id, p.display_name, p.created_at,
                           k.issuer_key_id, r.version
                  ORDER BY p.created_at DESC, p.id DESC
@@ -7971,6 +7985,7 @@ async fn invite_issuer_member(
     enforce_account_rate_limit(&state.db, account, "issuer_team_invite", 20).await?;
     let access = issuer_access(&state.db, account).await?;
     require_issuer_role(&access, &["owner", "admin"])?;
+    require_active_issuer(&access)?;
 
     let zerant_id = input.zerant_id.trim().to_owned();
     let role = input.role.trim().to_owned();
@@ -8149,12 +8164,12 @@ async fn decide_issuer_invitation(
     let row = tx
         .query_opt(
             "SELECT i.issuer_profile_id, i.role, i.status, i.created_at, i.expires_at,
-                    p.display_name, p.issuer_id, a.public_handle
+                    p.display_name, p.issuer_id, a.public_handle, p.retired_at
              FROM issuer_invitations i
              JOIN issuer_profiles p ON p.id = i.issuer_profile_id
              JOIN accounts a ON a.id = i.invited_account_id
              WHERE i.id = $1 AND i.invited_account_id = $2
-             FOR UPDATE OF i",
+             FOR UPDATE OF i, p",
             &[&id, &account],
         )
         .await
@@ -8164,6 +8179,10 @@ async fn decide_issuer_invitation(
     let status: String = row.get(2);
     let expires_at: OffsetDateTime = row.get(4);
     if status != "pending" || expires_at <= OffsetDateTime::now_utc() {
+        return Err(ApiError::Conflict);
+    }
+    let issuer_retired_at: Option<OffsetDateTime> = row.get(8);
+    if issuer_retired_at.is_some() {
         return Err(ApiError::Conflict);
     }
 
@@ -8502,6 +8521,76 @@ async fn transfer_issuer_ownership(
     }))
 }
 
+async fn retire_issuer_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    let account = recent_account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "issuer_retire", 3).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner"])?;
+
+    let mut client = db_client(&state.db).await?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let row = tx
+        .query_opt(
+            "SELECT display_name, retired_at
+             FROM issuer_profiles
+             WHERE id = $1 AND account_id = $2
+             FOR UPDATE",
+            &[&access.profile_id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let retired_at: Option<OffsetDateTime> = row.get(1);
+    if retired_at.is_some() {
+        return Err(ApiError::Conflict);
+    }
+    let display_name: String = row.get(0);
+
+    tx.execute(
+        "UPDATE issuer_profiles SET retired_at = NOW() WHERE id = $1 AND retired_at IS NULL",
+        &[&access.profile_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    tx.execute(
+        "UPDATE credential_schemas
+         SET active = FALSE, retired_at = COALESCE(retired_at, NOW()), updated_at = NOW()
+         WHERE issuer_profile_id = $1 AND active = TRUE",
+        &[&access.profile_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    tx.execute(
+        "UPDATE issuer_invitations
+         SET status = 'cancelled', decided_at = NOW()
+         WHERE issuer_profile_id = $1 AND status = 'pending'",
+        &[&access.profile_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    record_issuer_event(
+        &tx,
+        access.profile_id,
+        account,
+        IssuerEvent {
+            event_type: "issuer_retired",
+            object_id: &access.profile_id.to_string(),
+            label: &display_name,
+            context: None,
+            counterparty: None,
+        },
+    )
+    .await?;
+    tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
 async fn get_issuer_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -8511,7 +8600,7 @@ async fn get_issuer_profile(
     let client = db_client(&state.db).await?;
     let row = client
         .query_opt(
-            "SELECT display_name, issuer_id, created_at
+            "SELECT display_name, issuer_id, retired_at, created_at
              FROM issuer_profiles
              WHERE id = $1",
             &[&access.profile_id],
@@ -8523,7 +8612,8 @@ async fn get_issuer_profile(
     Ok(Json(IssuerProfileView {
         display_name: row.get(0),
         issuer_id: row.get(1),
-        created_at: row.get(2),
+        retired_at: row.get(2),
+        created_at: row.get(3),
     }))
 }
 
@@ -8813,6 +8903,7 @@ async fn register_issuer(
         Json(IssuerProfileView {
             display_name: row.get(0),
             issuer_id: row.get(1),
+            retired_at: None,
             created_at,
         }),
     ))
@@ -8832,6 +8923,7 @@ async fn issue_private_credential(
     enforce_account_rate_limit(&state.db, account, "credential_issue", 30).await?;
     let access = issuer_access(&state.db, account).await?;
     require_issuer_role(&access, &["owner", "admin", "issuer"])?;
+    require_active_issuer(&access)?;
     let holder_zerant_id = input.holder_zerant_id.trim().to_owned();
     let value = input.value.trim().to_owned();
     if !holder_zerant_id.starts_with("zr_")
@@ -10345,7 +10437,12 @@ fn app(state: AppState) -> Router {
             axum::routing::delete(revoke_account_session),
         )
         .route("/v1/activity", get(list_activity))
-        .route("/v1/issuer", get(get_issuer_profile).post(register_issuer))
+        .route(
+            "/v1/issuer",
+            get(get_issuer_profile)
+                .post(register_issuer)
+                .delete(retire_issuer_profile),
+        )
         .route("/v1/issuer/team", get(list_issuer_team))
         .route("/v1/issuer/activity", get(list_issuer_activity))
         .route(
@@ -12798,6 +12895,7 @@ mod tests {
             profile_id: Uuid::from_u128(1),
             owner_account_id: Uuid::from_u128(2),
             role: role.to_owned(),
+            retired_at: None,
         };
 
         for role in ["owner", "admin"] {
@@ -12814,6 +12912,12 @@ mod tests {
         for role in ["admin", "issuer", "auditor"] {
             assert!(require_issuer_role(&access(role), &["owner"]).is_err());
         }
+        assert!(require_active_issuer(&access("owner")).is_ok());
+        let retired = IssuerAccess {
+            retired_at: Some(OffsetDateTime::now_utc()),
+            ..access("owner")
+        };
+        assert!(require_active_issuer(&retired).is_err());
     }
 
     #[test]
