@@ -1809,6 +1809,19 @@ fn require_active_issuer(access: &IssuerAccess) -> Result<(), ApiError> {
     }
 }
 
+fn issuer_invitation_allowed(access: &IssuerAccess, role: &str) -> bool {
+    access.retired_at.is_none() || (access.role == "owner" && role == "admin")
+}
+
+fn retired_issuer_invitation_accept_allowed(
+    retired_at: Option<OffsetDateTime>,
+    role: &str,
+    invited_by: Uuid,
+    owner: Uuid,
+) -> bool {
+    retired_at.is_none() || (role == "admin" && invited_by == owner)
+}
+
 fn valid_issuer_member_role(role: &str) -> bool {
     matches!(role, "admin" | "issuer" | "auditor")
 }
@@ -8051,10 +8064,12 @@ async fn invite_issuer_member(
     enforce_account_rate_limit(&state.db, account, "issuer_team_invite", 20).await?;
     let access = issuer_access(&state.db, account).await?;
     require_issuer_role(&access, &["owner", "admin"])?;
-    require_active_issuer(&access)?;
 
     let zerant_id = input.zerant_id.trim().to_owned();
     let role = input.role.trim().to_owned();
+    if !issuer_invitation_allowed(&access, &role) {
+        return Err(ApiError::Conflict);
+    }
     if !zerant_id.starts_with("zr_")
         || !valid_short_text(&zerant_id, 27, 27)
         || !valid_issuer_member_role(&role)
@@ -8230,7 +8245,8 @@ async fn decide_issuer_invitation(
     let row = tx
         .query_opt(
             "SELECT i.issuer_profile_id, i.role, i.status, i.created_at, i.expires_at,
-                    p.display_name, p.issuer_id, a.public_handle, p.retired_at
+                    p.display_name, p.issuer_id, a.public_handle, p.retired_at,
+                    i.invited_by_account_id, p.account_id
              FROM issuer_invitations i
              JOIN issuer_profiles p ON p.id = i.issuer_profile_id
              JOIN accounts a ON a.id = i.invited_account_id
@@ -8248,7 +8264,17 @@ async fn decide_issuer_invitation(
         return Err(ApiError::Conflict);
     }
     let issuer_retired_at: Option<OffsetDateTime> = row.get(8);
-    if issuer_retired_at.is_some() {
+    let invited_by: Uuid = row.get(9);
+    let issuer_owner: Uuid = row.get(10);
+    let invitation_role: String = row.get(1);
+    if input.decision == "accept"
+        && !retired_issuer_invitation_accept_allowed(
+            issuer_retired_at,
+            &invitation_role,
+            invited_by,
+            issuer_owner,
+        )
+    {
         return Err(ApiError::Conflict);
     }
 
@@ -10709,6 +10735,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0036_safe_verifier_retirement.sql"),
             include_str!("../migrations/0037_verifier_retirement_serialization.sql"),
             include_str!("../migrations/0038_issuer_retirement_serialization.sql"),
+            include_str!("../migrations/0039_retired_issuer_successor.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -11147,10 +11174,14 @@ mod tests {
         let issuer_serialized = source
             .find("0038_issuer_retirement_serialization.sql")
             .expect("0038 wired");
+        let issuer_successor = source
+            .find("0039_retired_issuer_successor.sql")
+            .expect("0039 wired");
         assert!(
             issuer < verifier
                 && verifier < verifier_serialized
                 && verifier_serialized < issuer_serialized
+                && issuer_serialized < issuer_successor
         );
     }
 
@@ -11168,6 +11199,14 @@ mod tests {
         assert!(schema.contains("FOR SHARE"));
         assert!(schema.contains("issuer_signing_keys_retired_issuer_guard"));
         assert!(schema.contains("issuer is retired"));
+    }
+
+    #[test]
+    fn retired_issuer_successor_guard_is_narrow() {
+        let schema = include_str!("../migrations/0039_retired_issuer_successor.sql");
+        assert!(schema.contains("NEW.role <> 'admin'"));
+        assert!(schema.contains("NEW.invited_by_account_id <> issuer_owner"));
+        assert!(schema.contains("retired issuer accepts owner-invited admin successors only"));
     }
 
     #[test]
@@ -13016,6 +13055,48 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    #[test]
+    fn retired_issuer_successor_rules_match_database_guard() {
+        let active_owner = IssuerAccess {
+            profile_id: Uuid::nil(),
+            owner_account_id: Uuid::from_u128(1),
+            role: "owner".into(),
+            retired_at: None,
+        };
+        assert!(issuer_invitation_allowed(&active_owner, "issuer"));
+
+        let retired_owner = IssuerAccess {
+            retired_at: Some(OffsetDateTime::UNIX_EPOCH),
+            ..active_owner.clone()
+        };
+        assert!(issuer_invitation_allowed(&retired_owner, "admin"));
+        assert!(!issuer_invitation_allowed(&retired_owner, "issuer"));
+
+        let retired_admin = IssuerAccess {
+            role: "admin".into(),
+            ..retired_owner.clone()
+        };
+        assert!(!issuer_invitation_allowed(&retired_admin, "admin"));
+        assert!(retired_issuer_invitation_accept_allowed(
+            None,
+            "issuer",
+            Uuid::nil(),
+            Uuid::nil()
+        ));
+        assert!(retired_issuer_invitation_accept_allowed(
+            Some(OffsetDateTime::UNIX_EPOCH),
+            "admin",
+            Uuid::from_u128(7),
+            Uuid::from_u128(7)
+        ));
+        assert!(!retired_issuer_invitation_accept_allowed(
+            Some(OffsetDateTime::UNIX_EPOCH),
+            "admin",
+            Uuid::from_u128(8),
+            Uuid::from_u128(7)
+        ));
     }
 
     #[test]

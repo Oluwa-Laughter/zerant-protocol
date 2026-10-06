@@ -121,3 +121,26 @@ test("retired issuer disables new trust creation but preserves maintenance langu
   assert.equal(html.includes("Retire issuer"), false);
   assert.ok(html.includes("Transfer ownership before deleting"));
 });
+
+
+test("retired issuer exposes only the admin successor path", () => {
+  const retiredProfile = { ...profile, retired_at: "2026-10-06T10:00:00Z" };
+  const html = renderToStaticMarkup(<IssuerWorkspace
+    authenticated={true}
+    backendAvailable={true}
+    currentZerantId="zr_111111111111111111111111"
+    initialProfile={retiredProfile}
+    initialIssued={[]}
+    initialSchemas={[]}
+    initialKeys={[]}
+    initialTeam={[{ zerant_id: "zr_111111111111111111111111", role: "owner", owner: true, joined_at: profile.created_at }]}
+    initialTeamInvitations={[]}
+    initialMyInvitations={[]}
+    initialActivity={{ items: [], next_cursor: null }}
+  />);
+  assert.ok(html.includes("Ownership succession"));
+  assert.ok(html.includes("Admin successor"));
+  assert.ok(html.includes("Invite successor"));
+  assert.ok(html.includes("retirement does not reopen issuance or configuration"));
+  assert.equal(html.includes("Issuer — issue and revoke credentials"), false);
+});

@@ -372,3 +372,5 @@
 .account-role-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.account-role-heading>p{margin:0}
 
 .wallet-recovery-option{display:grid;gap:10px;width:min(100%,660px);padding:14px;border:1px dashed color-mix(in srgb,var(--warning) 35%,var(--border));border-radius:12px;background:color-mix(in srgb,var(--warning) 4%,var(--card))}.wallet-recovery-option>div{display:grid;gap:4px}.wallet-recovery-option>p{margin:0}.wallet-recovery-option .button{justify-self:start}
+
+.issuer-successor-panel{border-color:color-mix(in srgb,var(--accent) 32%,var(--border));background:linear-gradient(135deg,var(--card),color-mix(in srgb,var(--soft) 76%,var(--card)))}.issuer-successor-role{display:grid;gap:3px;padding:11px 12px;border:1px solid var(--border);border-radius:9px;background:var(--soft)}.issuer-successor-role strong{font-size:.86rem}.issuer-successor-role span{font-size:.72rem;color:var(--muted)}

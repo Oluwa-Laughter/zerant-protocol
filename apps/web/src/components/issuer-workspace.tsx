@@ -184,6 +184,7 @@ export function IssuerWorkspace({
   const issuerRetired = Boolean(profile?.retired_at);
   const canManageTeam = currentRole === "owner" || currentRole === "admin";
   const canInviteTeam = canManageTeam && !issuerRetired;
+  const canInviteSuccessor = issuerRetired && currentRole === "owner";
   const canTransferOwnership = currentRole === "owner";
   const canManageSecurity = currentRole === "owner" || currentRole === "admin";
   const canManageSchemas = (currentRole === "owner" || currentRole === "admin") && !issuerRetired;
@@ -248,7 +249,7 @@ export function IssuerWorkspace({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         zerant_id: inviteZerantId,
-        role: inviteRole,
+        role: canInviteSuccessor ? "admin" : inviteRole,
       }),
     });
 
@@ -277,7 +278,9 @@ export function IssuerWorkspace({
       ...current.filter((item) => item.invited_zerant_id !== invitation.invited_zerant_id),
     ]);
     setInviteZerantId("");
-    setStatus("Invitation sent. The recipient must accept it from their Zerant account.");
+    setStatus(canInviteSuccessor
+      ? "Successor invitation sent. After they accept as admin, transfer ownership to them before deleting your personal account."
+      : "Invitation sent. The recipient must accept it from their Zerant account.");
   }
 
   async function decideInvitation(id: string, decision: "accept" | "decline") {
@@ -774,7 +777,7 @@ export function IssuerWorkspace({
       {issuerRetired ? (
         <section className="issuer-retired-banner" aria-label="Retired issuer status">
           <div><p className="eyebrow">Retired issuer</p><h2>New trust creation is closed.</h2></div>
-          <p>Existing credentials, revocation, security keys, organization history, team cleanup, and ownership transfer remain available. New credential types, invitations, and credential issuance are disabled.</p>
+          <p>Existing credentials, revocation, security keys, organization history, team cleanup, and ownership transfer remain available. New credential types and credential issuance stay disabled. The owner may invite an admin successor solely to complete ownership transfer.</p>
         </section>
       ) : null}
 
@@ -863,10 +866,11 @@ export function IssuerWorkspace({
             </div>
           </article>
 
-          {canInviteTeam ? (
-            <article className="issuer-panel">
-              <p className="eyebrow">Invite teammate</p>
-              <h3>Add responsibility by Zerant ID.</h3>
+          {canInviteTeam || canInviteSuccessor ? (
+            <article className={canInviteSuccessor ? "issuer-panel issuer-successor-panel" : "issuer-panel"}>
+              <p className="eyebrow">{canInviteSuccessor ? "Ownership succession" : "Invite teammate"}</p>
+              <h3>{canInviteSuccessor ? "Add an admin successor before transferring ownership." : "Add responsibility by Zerant ID."}</h3>
+              {canInviteSuccessor ? <p className="small muted">This retired issuer remains archive-only. The invited account can join only as an admin so you can transfer ownership; retirement does not reopen issuance or configuration.</p> : null}
               <label htmlFor="team-zerant-id">Teammate Zerant ID</label>
               <input
                 id="team-zerant-id"
@@ -875,22 +879,26 @@ export function IssuerWorkspace({
                 placeholder="zr_..."
               />
               <label htmlFor="team-role">Role</label>
-              <select
-                id="team-role"
-                value={inviteRole}
-                onChange={(event) =>
-                  setInviteRole(event.target.value as "admin" | "issuer" | "auditor")
-                }
-              >
-                <option value="issuer">Issuer — issue and revoke credentials</option>
-                <option value="admin">Admin — manage issuer configuration and team</option>
-                <option value="auditor">Auditor — read-only access</option>
-              </select>
+              {canInviteSuccessor ? (
+                <div id="team-role" className="issuer-successor-role"><strong>Admin successor</strong><span>Required for retired-issuer ownership transfer.</span></div>
+              ) : (
+                <select
+                  id="team-role"
+                  value={inviteRole}
+                  onChange={(event) =>
+                    setInviteRole(event.target.value as "admin" | "issuer" | "auditor")
+                  }
+                >
+                  <option value="issuer">Issuer — issue and revoke credentials</option>
+                  <option value="admin">Admin — manage issuer configuration and team</option>
+                  <option value="auditor">Auditor — read-only access</option>
+                </select>
+              )}
               <Button
                 disabled={!inviteZerantId.trim()}
                 onClick={inviteTeamMember}
               >
-                Send invitation
+                {canInviteSuccessor ? "Invite successor" : "Send invitation"}
               </Button>
 
               {teamInvitations.length ? (
