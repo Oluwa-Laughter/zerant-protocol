@@ -18,6 +18,7 @@ test("public invoice exposes only the payment request and honest lifecycle copy"
   assert.ok(html.includes("1.25 ZEC"));
   assert.ok(html.includes("Open payment request"));
   assert.ok(html.includes("Open in wallet"));
+  assert.ok(html.includes("Refresh invoice status"));
   assert.ok(html.includes("payment request, not a payment receipt"));
   assert.equal(html.includes("zr_"), false);
   assert.equal(html.includes("wallet balance"), false);

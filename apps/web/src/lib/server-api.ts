@@ -85,7 +85,10 @@ export async function fetchZerantBackend(
 }
 
 
-export async function proxyPublicToZerant(path: string): Promise<Response> {
+export async function proxyPublicToZerant(
+  path: string,
+  options?: { cacheControl?: string },
+): Promise<Response> {
   let upstream: Response;
   try {
     upstream = await fetch(new URL(path, backendOrigin()), {
@@ -103,7 +106,7 @@ export async function proxyPublicToZerant(path: string): Promise<Response> {
   const cacheControl = upstream.headers.get("cache-control");
   responseHeaders.set(
     "cache-control",
-    cacheControl ?? "public, max-age=60, stale-while-revalidate=60",
+    options?.cacheControl ?? cacheControl ?? "public, max-age=60, stale-while-revalidate=60",
   );
 
   return new Response(await upstream.arrayBuffer(), {

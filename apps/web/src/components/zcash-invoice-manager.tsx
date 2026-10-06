@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 type Invoice = {
@@ -35,22 +35,58 @@ export function ZcashInvoiceManager({ enabled }: { enabled: boolean }) {
   const [amount, setAmount] = useState("");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [busy, setBusy] = useState(false);
+  const refreshInFlight = useRef(false);
   const [status, setStatus] = useState(enabled
     ? "Create an exact Zcash payment request you can share."
     : "Sign in to create Zcash invoices.");
 
+  const refreshInvoices = useCallback(async (announce = false) => {
+    if (!enabled || refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    try {
+      const response = await fetch("/api/zerant/zcash/invoices", { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) {
+        if (announce) setStatus("Invoices could not be refreshed right now.");
+        return;
+      }
+      const page = (await response.json()) as InvoicePage;
+      setInvoices(page.items);
+      if (announce) setStatus("Invoice status refreshed.");
+    } catch {
+      if (announce) setStatus("Invoices could not be refreshed right now.");
+    } finally {
+      refreshInFlight.current = false;
+    }
+  }, [enabled]);
+
   useEffect(() => {
     if (!enabled) return;
-    const controller = new AbortController();
-    void fetch("/api/zerant/zcash/invoices", { credentials: "same-origin", cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Invoices unavailable");
-        const page = (await response.json()) as InvoicePage;
-        if (!controller.signal.aborted) setInvoices(page.items);
-      })
-      .catch(() => { if (!controller.signal.aborted) setStatus("Could not load invoices. Try reloading this page."); });
-    return () => controller.abort();
-  }, [enabled]);
+    void refreshInvoices(false);
+    const onFocus = () => { void refreshInvoices(false); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refreshInvoices(false);
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [enabled, refreshInvoices]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const nextExpiry = invoices
+      .filter((invoice) => invoice.state === "open")
+      .map((invoice) => Date.parse(invoice.expires_at))
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b)[0];
+    if (!nextExpiry) return;
+    const delay = Math.max(0, nextExpiry - Date.now() + 500);
+    if (delay > 86_400_500) return;
+    const timeout = window.setTimeout(() => { void refreshInvoices(false); }, delay);
+    return () => window.clearTimeout(timeout);
+  }, [enabled, invoices, refreshInvoices]);
 
   async function createInvoice() {
     if (!recipient.trim() || !amount.trim() || busy) return;
@@ -123,6 +159,9 @@ export function ZcashInvoiceManager({ enabled }: { enabled: boolean }) {
       <p className="small muted">Invoices expire after 24 hours. The share link does not reveal your Zerant ID, but it does reveal the invoice amount and exact Zcash request to anyone who has the link.</p>
     </div>
 
+    <div className="vault-actions wrap">
+      <Button variant="secondary" disabled={!enabled || busy} onClick={() => void refreshInvoices(true)}>Refresh invoices</Button>
+    </div>
     {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
 
     <div className="zcash-invoice-list">

@@ -10,6 +10,7 @@ test("invoice manager creates a request surface without claiming settlement", ()
   assert.ok(html.includes("payment request, not proof that you were paid"));
   assert.ok(html.includes("Invoices expire after 24 hours"));
   assert.ok(html.includes("Create invoice"));
+  assert.ok(html.includes("Refresh invoices"));
   assert.equal(html.includes("Payment verified"), false);
   assert.equal(html.includes("wallet balance"), false);
   assert.equal(html.includes("transaction history"), false);
