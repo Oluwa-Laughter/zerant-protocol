@@ -58,6 +58,24 @@ export function accountSecuritySummaryFromCounts(
   };
 }
 
+export function accountExportCompletionMessage(payload: {
+  activity_complete?: boolean;
+  payments_complete?: boolean;
+}): string {
+  const activityIncomplete = payload.activity_complete === false;
+  const paymentsIncomplete = payload.payments_complete === false;
+  if (activityIncomplete && paymentsIncomplete) {
+    return "Export ready. Older account activity and older Zcash payments are not included in this file; use the Activity and Zcash history pages for paginated history.";
+  }
+  if (activityIncomplete) {
+    return "Export ready. Older account activity is not included in this file; use the Activity page for paginated history.";
+  }
+  if (paymentsIncomplete) {
+    return "Export ready. Older Zcash payments are not included in this file; use the Zcash workspace for paginated history.";
+  }
+  return "Your Zerant data export is ready.";
+}
+
 export function AccountSettings({
   authenticated,
   backendAvailable,
@@ -95,7 +113,10 @@ export function AccountSettings({
       return;
     }
 
-    const payload = (await response.json()) as { payments_complete?: boolean };
+    const payload = (await response.json()) as {
+      activity_complete?: boolean;
+      payments_complete?: boolean;
+    };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
@@ -107,9 +128,7 @@ export function AccountSettings({
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
-    setStatus(payload.payments_complete === false
-      ? "Export ready. For older payments, use the paginated history in your Zcash workspace."
-      : "Your Zerant data export is ready.");
+    setStatus(accountExportCompletionMessage(payload));
   }
 
   async function deleteAccount() {

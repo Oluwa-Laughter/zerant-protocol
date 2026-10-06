@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { accountSecuritySummary, accountSecuritySummaryFromCounts } from "./account-settings";
+import {
+  accountExportCompletionMessage,
+  accountSecuritySummary,
+  accountSecuritySummaryFromCounts,
+} from "./account-settings";
 
 test("account security summary reports access redundancy without device profiling", () => {
   const summary = accountSecuritySummary(
@@ -23,4 +27,14 @@ test("count-based security summary stays consistent after client updates", () =>
     accountSecuritySummaryFromCounts(1, 0, 1),
     { accessMethods: 1, passkeys: 1, zcashMethods: 0, activeSessions: 1, hasRedundantAccess: false },
   );
+});
+
+
+test("account export completion message reports every truncation combination", () => {
+  assert.equal(accountExportCompletionMessage({ activity_complete: true, payments_complete: true }), "Your Zerant data export is ready.");
+  assert.match(accountExportCompletionMessage({ activity_complete: false, payments_complete: true }), /Older account activity/);
+  assert.match(accountExportCompletionMessage({ activity_complete: true, payments_complete: false }), /Older Zcash payments/);
+  const both = accountExportCompletionMessage({ activity_complete: false, payments_complete: false });
+  assert.match(both, /Older account activity/);
+  assert.match(both, /older Zcash payments/);
 });
