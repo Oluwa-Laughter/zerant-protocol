@@ -480,7 +480,9 @@ struct AccountSummary {
     passkey_count: i64,
     issuer_profile: Option<String>,
     issuer_role: Option<String>,
+    issuer_retired: bool,
     verifier_profile: Option<String>,
+    verifier_retired: bool,
     can_delete: bool,
 }
 
@@ -4101,7 +4103,14 @@ async fn account_summary(
                       LIMIT 1),
                     (SELECT display_name FROM verifier_profiles v WHERE v.account_id = a.id),
                     EXISTS(SELECT 1 FROM issuer_profiles p WHERE p.account_id = a.id),
-                    EXISTS(SELECT 1 FROM verifier_profiles v WHERE v.account_id = a.id AND v.retired_at IS NULL)
+                    EXISTS(SELECT 1 FROM verifier_profiles v WHERE v.account_id = a.id AND v.retired_at IS NULL),
+                    COALESCE((SELECT p.retired_at IS NOT NULL
+                       FROM issuer_profiles p
+                       LEFT JOIN issuer_members m
+                         ON m.issuer_profile_id = p.id AND m.account_id = a.id
+                      WHERE p.account_id = a.id OR m.account_id = a.id
+                      LIMIT 1), FALSE),
+                    COALESCE((SELECT v.retired_at IS NOT NULL FROM verifier_profiles v WHERE v.account_id = a.id), FALSE)
              FROM accounts a
              WHERE a.id = $1",
             &[&account],
@@ -4115,6 +4124,8 @@ async fn account_summary(
     let verifier_profile: Option<String> = row.get(5);
     let owns_issuer: bool = row.get(6);
     let active_verifier: bool = row.get(7);
+    let issuer_retired: bool = row.get(8);
+    let verifier_retired: bool = row.get(9);
     Ok(Json(AccountSummary {
         zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
         credential_count: row.get(1),
@@ -4122,7 +4133,9 @@ async fn account_summary(
         can_delete: !owns_issuer && !active_verifier,
         issuer_profile,
         issuer_role,
+        issuer_retired,
         verifier_profile,
+        verifier_retired,
     }))
 }
 

@@ -368,3 +368,5 @@
 .issuer-retired-pill{border-color:color-mix(in srgb,var(--warning) 45%,var(--border));background:color-mix(in srgb,var(--warning) 10%,var(--card))}.issuer-retired-banner,.issuer-retirement-section{display:grid;gap:14px;padding:20px;border:1px solid color-mix(in srgb,var(--warning) 28%,var(--border));border-radius:14px;background:color-mix(in srgb,var(--warning) 5%,var(--card))}.issuer-retired-banner h2,.issuer-retirement-section h2{margin:0}.issuer-retired-banner p{margin:0;max-width:78ch}.issuer-retirement-control{display:grid;gap:10px;max-width:440px}.issuer-retirement-control input{width:100%}
 
 .verifier-retired-banner{display:grid;gap:12px;padding:20px;border:1px solid color-mix(in srgb,var(--warning) 28%,var(--border));border-radius:14px;background:color-mix(in srgb,var(--warning) 5%,var(--card))}.verifier-retired-banner h2,.verifier-retired-banner p{margin:0}.verifier-retired-banner p{max-width:82ch}
+
+.account-role-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.account-role-heading>p{margin:0}

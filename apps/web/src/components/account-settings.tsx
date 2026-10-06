@@ -14,7 +14,9 @@ export type AccountSummary = {
   passkey_count: number;
   issuer_profile: string | null;
   issuer_role: string | null;
+  issuer_retired: boolean;
   verifier_profile: string | null;
+  verifier_retired: boolean;
   can_delete: boolean;
 };
 
@@ -198,11 +200,12 @@ export function AccountSettings({
 
         {summary.issuer_profile ? (
           <article className="account-card">
-            <p className="eyebrow">Issuer organization</p>
+            <div className="account-role-heading"><p className="eyebrow">Issuer organization</p><span className={summary.issuer_retired ? "pill issuer-retired-pill" : "pill"}>{summary.issuer_retired ? "Retired" : "Active"}</span></div>
             <h2>{summary.issuer_profile}</h2>
             <p className="muted">
-              Your role: {summary.issuer_role ?? "member"}. Organization permissions are managed
-              from the issuer workspace.
+              Your role: {summary.issuer_role ?? "member"}. {summary.issuer_retired
+                ? "The issuer is archive-only. If you own it, ownership still needs to be transferred before deleting your personal account."
+                : "Organization permissions are managed from the issuer workspace."}
             </p>
             <Link href="/issuer" className="text-link">
               Open issuer workspace →
@@ -210,6 +213,16 @@ export function AccountSettings({
           </article>
         ) : null}
 
+        {summary.verifier_profile ? (
+          <article className="account-card">
+            <div className="account-role-heading"><p className="eyebrow">Verifier organization</p><span className={summary.verifier_retired ? "pill issuer-retired-pill" : "pill"}>{summary.verifier_retired ? "Retired" : "Active"}</span></div>
+            <h2>{summary.verifier_profile}</h2>
+            <p className="muted">{summary.verifier_retired
+              ? "This verifier is archive-only. Its historical records remain, but it no longer blocks deletion of your personal Zerant account."
+              : "Verification requests, integrations, and verifier keys are managed from the verifier workspace."}</p>
+            <Link href="/verifier" className="text-link">Open verifier workspace →</Link>
+          </article>
+        ) : null}
 
         <PasskeyManager initialPasskeys={initialPasskeys} onCountChange={setPasskeyCount} />
 
@@ -261,7 +274,7 @@ export function AccountSettings({
                 ? " and"
                 : ""}
               {summary.verifier_profile ? " verifier " + summary.verifier_profile : ""}.
-              Organizational ownership must be transferred before the account can be deleted.
+              Active organizational ownership must be transferred before the account can be deleted. Retiring a verifier closes new work and removes that verifier as a deletion blocker; issuer ownership still requires transfer.
             </p>
           )}
         </article>
