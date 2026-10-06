@@ -53,6 +53,7 @@ The product does not seed demo credentials, identities, payments or verification
 - Active-session visibility and remote revocation without IP, location, or browser-fingerprint tracking.
 - Wallet-agnostic Zcash connection: portable ZecAuth wallet-app handoff plus capability-based injected wallet adapters.
 - Canonical Zcash address inspection and ZIP-321 payment handoff for compatible wallets, with optional direct browser submission only when an injected adapter advertises the exact capability.
+- Shareable account-owned Zcash invoice requests with exact ZIP-321 amounts, 24-hour expiry, cancellation, public capability links, bounded export/retention, and no settlement overclaim.
 - Read-only Z3/Zallet capability and settlement-observation boundaries.
 - PCZT/FROST coordination interfaces remain capability-gated; Zerant does not implement custom threshold cryptography.
 
@@ -62,7 +63,7 @@ The current server-first product encrypts credential records at rest with per-re
 
 This is **not end-to-end holder-only encryption**: an authorized Zerant service runtime can decrypt a holder record in order to serve the holder and construct an approved proof. Production deployment therefore requires strict service isolation, managed KMS/HSM custody, audit controls and careful backup access. Verifiers and other Zerant users do not receive the holder's private credential portfolio.
 
-No zero-knowledge, anonymity or full unlinkability claim is made. Zerant now uses a distinct protected holder key for each verifier relationship so proofs do not expose one stable holder key across verifiers, but service metadata, issuers and surrounding context can still correlate activity. A concrete managed KMS/HSM provider, stronger unlinkable credentials, production Zcash spending and live FROST signing remain future work.
+No zero-knowledge, anonymity or full unlinkability claim is made. Zerant now uses a distinct protected holder key for each verifier relationship so proofs do not expose one stable holder key across verifiers, but service metadata, issuers and surrounding context can still correlate activity. A concrete managed KMS/HSM provider, stronger unlinkable credentials, exact shielded invoice-settlement attestation automation, production Zcash spending and live FROST signing remain future work.
 
 Read architecture, disclosure profile, privacy limits, public trust discovery, verifier integration API, verifier webhooks, examples, Zcash integration, Zcash resource map and security documentation in docs/.
 

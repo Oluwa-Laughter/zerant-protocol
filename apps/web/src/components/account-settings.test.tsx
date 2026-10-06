@@ -30,11 +30,13 @@ test("count-based security summary stays consistent after client updates", () =>
 });
 
 
-test("account export completion message reports every truncation combination", () => {
-  assert.equal(accountExportCompletionMessage({ activity_complete: true, payments_complete: true }), "Your Zerant data export is ready.");
-  assert.match(accountExportCompletionMessage({ activity_complete: false, payments_complete: true }), /Older account activity/);
-  assert.match(accountExportCompletionMessage({ activity_complete: true, payments_complete: false }), /Older Zcash payments/);
-  const both = accountExportCompletionMessage({ activity_complete: false, payments_complete: false });
-  assert.match(both, /Older account activity/);
-  assert.match(both, /older Zcash payments/);
+test("account export completion message reports every truncation collection", () => {
+  assert.equal(accountExportCompletionMessage({ activity_complete: true, payments_complete: true, invoices_complete: true }), "Your Zerant data export is ready.");
+  assert.match(accountExportCompletionMessage({ activity_complete: false, payments_complete: true, invoices_complete: true }), /Older account activity/);
+  assert.match(accountExportCompletionMessage({ activity_complete: true, payments_complete: false, invoices_complete: true }), /Older Zcash payments/);
+  assert.match(accountExportCompletionMessage({ activity_complete: true, payments_complete: true, invoices_complete: false }), /Older Zcash invoices/);
+  const all = accountExportCompletionMessage({ activity_complete: false, payments_complete: false, invoices_complete: false });
+  assert.match(all, /Older account activity/);
+  assert.match(all, /older Zcash payments/);
+  assert.match(all, /older Zcash invoices/);
 });

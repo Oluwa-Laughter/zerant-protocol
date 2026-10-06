@@ -66,6 +66,7 @@ No signing, secure vault, protocol verification, Zcash integration, ZK, or mainn
 - optional WalletConnect-compatible Zcash mainnet session (no WalletConnect identity signing)
 - ZecAuth wallet-app authentication handoff and passkey-independent wallet connection
 - ZIP-316 address validation and ZIP-321 payment request handling
+- account-owned shareable Zcash invoice requests with public capability links, cancellation, expiry, bounded retention and export
 - shielded payment handoff
 - Z3/Zallet local capability boundary
 - zcash_client_backend light-client readiness for Zaino/lightwalletd-compatible services

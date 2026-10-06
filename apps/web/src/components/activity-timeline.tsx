@@ -54,6 +54,8 @@ function eventTitle(type: string): string {
     case "session_revoked": return "Session revoked";
     case "zcash_payment_prepared": return "Zcash payment prepared";
     case "zcash_payment_submitted": return "Zcash payment submitted";
+    case "zcash_invoice_created": return "Zcash invoice created";
+    case "zcash_invoice_cancelled": return "Zcash invoice cancelled";
     default: return "Trust activity";
   }
 }

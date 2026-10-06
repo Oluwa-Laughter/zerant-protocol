@@ -61,6 +61,7 @@ use zerant_zcash::{
     },
 };
 
+mod invoices;
 mod passkey_discoverable;
 mod payments;
 mod vault_rotation;
@@ -363,6 +364,8 @@ struct RetentionMaintenanceSummary {
     proof_material: u64,
     expired_payments: u64,
     deleted_expired_payments: u64,
+    expired_invoices: u64,
+    deleted_expired_invoices: u64,
 }
 
 #[derive(Serialize)]
@@ -496,6 +499,8 @@ struct AccountExport {
     activity_complete: bool,
     payments: Vec<payments::PaymentExportView>,
     payments_complete: bool,
+    invoices: Vec<invoices::InvoiceExportView>,
+    invoices_complete: bool,
 }
 
 #[derive(Deserialize)]
@@ -4243,9 +4248,10 @@ async fn export_account(
     }
 
     let (payments, payments_complete) = payments::export(&state.db, account).await?;
+    let (invoices, invoices_complete) = invoices::export(&state.db, account).await?;
 
     Ok(Json(AccountExport {
-        export_version: 2,
+        export_version: 3,
         generated_at: OffsetDateTime::now_utc(),
         zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
         credentials,
@@ -4253,6 +4259,8 @@ async fn export_account(
         activity_complete,
         payments,
         payments_complete,
+        invoices,
+        invoices_complete,
     }))
 }
 
@@ -10248,6 +10256,8 @@ async fn retention_maintenance_internal(
             proof_material: 0,
             expired_payments: 0,
             deleted_expired_payments: 0,
+            expired_invoices: 0,
+            deleted_expired_invoices: 0,
         }));
     }
 
@@ -10408,6 +10418,33 @@ async fn retention_maintenance_internal(
         .await
         .map_err(|_| ApiError::Unavailable)?;
 
+    let expired_invoices = tx
+        .execute(
+            "WITH due AS (
+            SELECT id FROM zcash_invoices
+            WHERE state = 'open' AND expires_at <= NOW()
+            ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED
+         )
+         UPDATE zcash_invoices i SET state = 'expired'
+         FROM due WHERE i.id = due.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let deleted_expired_invoices = tx
+        .execute(
+            "WITH due AS (
+            SELECT id FROM zcash_invoices
+            WHERE state = 'expired' AND expires_at <= NOW() - INTERVAL '30 days'
+            ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED
+         )
+         DELETE FROM zcash_invoices i USING due WHERE i.id = due.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
     let summary = serde_json::json!({
         "expired_requests": expired_requests,
         "sessions": sessions,
@@ -10418,6 +10455,8 @@ async fn retention_maintenance_internal(
         "proof_material": proof_material,
         "expired_payments": expired_payments,
         "deleted_expired_payments": deleted_expired_payments,
+        "expired_invoices": expired_invoices,
+        "deleted_expired_invoices": deleted_expired_invoices,
     });
     tx.execute(
         "INSERT INTO maintenance_job_state(job, last_success_at, last_summary, updated_at)
@@ -10444,6 +10483,8 @@ async fn retention_maintenance_internal(
         proof_material,
         expired_payments,
         deleted_expired_payments,
+        expired_invoices,
+        deleted_expired_invoices,
     }))
 }
 
@@ -10451,6 +10492,7 @@ fn app(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/v1/public/zcash/config", get(public_zcash_config))
+        .route("/v1/public/zcash/invoices/{id}", get(invoices::public_get))
         .route("/v1/public/issuers", get(public_issuer_directory))
         .route(
             "/v1/public/issuers/{issuer_id}",
@@ -10687,6 +10729,11 @@ fn app(state: AppState) -> Router {
         )
         .route("/v1/zcash/payments/{id}/submit", post(payments::submit))
         .route("/v1/zcash/payments/{id}/observe", post(payments::observe))
+        .route(
+            "/v1/zcash/invoices",
+            get(invoices::list).post(invoices::create),
+        )
+        .route("/v1/zcash/invoices/{id}/cancel", post(invoices::cancel))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -10855,6 +10902,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0040_issuer_audit_account_delete.sql",
         include_str!("../migrations/0040_issuer_audit_account_delete.sql"),
+    ),
+    (
+        "0041_zcash_invoices.sql",
+        include_str!("../migrations/0041_zcash_invoices.sql"),
     ),
 ];
 
@@ -11398,6 +11449,29 @@ mod tests {
         assert!(verifier_retirement_blocked(true, false));
         assert!(verifier_retirement_blocked(false, true));
         assert!(verifier_retirement_blocked(true, true));
+    }
+
+    #[test]
+    fn zcash_invoice_activity_migration_is_metadata_only() {
+        let schema = include_str!("../migrations/0041_zcash_invoices.sql");
+        for required in [
+            "zcash_invoice_created",
+            "zcash_invoice_cancelled",
+            "NEW.id::text",
+            "NEW.network",
+        ] {
+            assert!(schema.contains(required), "{required}");
+        }
+        for forbidden in [
+            "NEW.recipient",
+            "NEW.amount_zat",
+            "txid",
+            "wallet_address",
+            "balance",
+            "transaction_history",
+        ] {
+            assert!(!schema.contains(forbidden), "{forbidden}");
+        }
     }
 
     #[test]

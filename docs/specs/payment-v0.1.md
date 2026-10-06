@@ -8,10 +8,21 @@ The hosted testnet workspace has a separate persistence profile: one canonical,
 single-recipient ZIP-321 request with an exact positive amount may be prepared for
 the authenticated account. Its SHA-256 canonical URI digest is stored with the
 recipient, integer amount, configured network and random record ID. The account may
-attach one unique, syntactically valid txid. This yields `submitted` only. No hosted
-testnet observer or `VerifiedPaymentReceipt` is currently connected, so hosted
-records cannot become confirmed or issue payment claims. Rich or multi-payment
+attach one unique, syntactically valid txid. Zerant can then observe that exact txid
+through a configured read-only light-client endpoint and report mempool/main-chain
+status plus confirmation depth. This network observation still does not establish the
+shielded recipient or amount, so hosted records do not become `VerifiedPaymentReceipt`
+objects or issue payment claims from confirmation depth alone. Rich or multi-payment
 requests remain reviewable without lifecycle tracking; the UI must disclose this.
+
+The hosted product also supports account-owned shareable invoices. An invoice stores
+the digest, recipient, exact integer amount, configured network, expiry and lifecycle
+state needed to reconstruct one canonical ZIP-321 request. A public UUID capability
+link reveals only the exact payment request, amount/network, expiry and transparent
+destination warning; it does not reveal the Zerant account owner. Invoices expire
+after 24 hours, may be cancelled by their owner, are exported with bounded account
+data, and expired rows are removed after the retention window. An invoice page is a
+payment request, never a settlement receipt or paid claim.
 
 An intent has schema, random 128-bit intent_id, network, requester_origin, recipient,
 amount_zat, min_confirmations, explicit privacy_policy, issued_at, expires_at and

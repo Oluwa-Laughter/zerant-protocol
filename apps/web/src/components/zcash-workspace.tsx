@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ZcashAddressInspector } from "@/components/zcash-address-inspector";
 import { ZcashConnect } from "@/components/zcash-connect";
 import { ZcashPaymentRequestReview } from "@/components/zcash-payment-request-review";
+import { ZcashInvoiceManager } from "@/components/zcash-invoice-manager";
 import { ZcashLiveStatus } from "@/components/zcash-live-status";
 import type { WorkspaceSession, WorkspaceZcash, WorkspaceZcashNetwork } from "@/components/product-workspace";
 
@@ -39,6 +40,7 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
 
       <nav className="zcash-shortcuts" aria-label="Zcash tools">
         <a href="#zcash-payment-review">Prepare or review a payment</a>
+        <a href="#zcash-invoices">Request ZEC</a>
         <a href="#zcash-address-inspector">Check a Zcash address</a>
         {authenticated ? <a href="#zcash-wallet-actions">Connect a testnet wallet</a> : null}
       </nav>
@@ -108,6 +110,8 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         enabled={authenticated}
         observationAvailable={Boolean(liveNetwork?.network_actions_enabled)}
       />
+
+      <ZcashInvoiceManager enabled={authenticated} />
 
       {authenticated ? (
         <section id="zcash-wallet-actions" className="workspace-wallet" aria-label="Zcash wallet access">

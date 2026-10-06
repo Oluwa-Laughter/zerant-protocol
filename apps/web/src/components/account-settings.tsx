@@ -61,19 +61,19 @@ export function accountSecuritySummaryFromCounts(
 export function accountExportCompletionMessage(payload: {
   activity_complete?: boolean;
   payments_complete?: boolean;
+  invoices_complete?: boolean;
 }): string {
-  const activityIncomplete = payload.activity_complete === false;
-  const paymentsIncomplete = payload.payments_complete === false;
-  if (activityIncomplete && paymentsIncomplete) {
-    return "Export ready. Older account activity and older Zcash payments are not included in this file; use the Activity and Zcash history pages for paginated history.";
-  }
-  if (activityIncomplete) {
-    return "Export ready. Older account activity is not included in this file; use the Activity page for paginated history.";
-  }
-  if (paymentsIncomplete) {
-    return "Export ready. Older Zcash payments are not included in this file; use the Zcash workspace for paginated history.";
-  }
-  return "Your Zerant data export is ready.";
+  const missing: string[] = [];
+  if (payload.activity_complete === false) missing.push("older account activity");
+  if (payload.payments_complete === false) missing.push("older Zcash payments");
+  if (payload.invoices_complete === false) missing.push("older Zcash invoices");
+  if (!missing.length) return "Your Zerant data export is ready.";
+  const items = missing.length === 1
+    ? missing[0]
+    : missing.length === 2
+      ? `${missing[0]} and ${missing[1]}`
+      : `${missing[0]}, ${missing[1]}, and ${missing[2]}`;
+  return `Export ready. ${items[0].toUpperCase()}${items.slice(1)} are not included in this file; use the relevant Zerant history pages for paginated history.`;
 }
 
 export function AccountSettings({
@@ -116,6 +116,7 @@ export function AccountSettings({
     const payload = (await response.json()) as {
       activity_complete?: boolean;
       payments_complete?: boolean;
+      invoices_complete?: boolean;
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
