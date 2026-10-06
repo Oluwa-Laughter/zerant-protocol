@@ -10687,6 +10687,169 @@ fn env_required(name: &str) -> Result<String, ApiError> {
     env::var(name).map_err(|_| ApiError::Unavailable)
 }
 
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "0001_server_vault.sql",
+        include_str!("../migrations/0001_server_vault.sql"),
+    ),
+    (
+        "0002_zecauth.sql",
+        include_str!("../migrations/0002_zecauth.sql"),
+    ),
+    (
+        "0003_zecauth_browser_redeem.sql",
+        include_str!("../migrations/0003_zecauth_browser_redeem.sql"),
+    ),
+    (
+        "0004_trust_network.sql",
+        include_str!("../migrations/0004_trust_network.sql"),
+    ),
+    (
+        "0005_verification_network.sql",
+        include_str!("../migrations/0005_verification_network.sql"),
+    ),
+    (
+        "0006_revocation_lifecycle.sql",
+        include_str!("../migrations/0006_revocation_lifecycle.sql"),
+    ),
+    (
+        "0007_trust_activity.sql",
+        include_str!("../migrations/0007_trust_activity.sql"),
+    ),
+    (
+        "0008_rate_limits.sql",
+        include_str!("../migrations/0008_rate_limits.sql"),
+    ),
+    (
+        "0009_credential_schemas.sql",
+        include_str!("../migrations/0009_credential_schemas.sql"),
+    ),
+    (
+        "0010_account_controls.sql",
+        include_str!("../migrations/0010_account_controls.sql"),
+    ),
+    (
+        "0011_pairwise_holder_keys.sql",
+        include_str!("../migrations/0011_pairwise_holder_keys.sql"),
+    ),
+    (
+        "0012_issuer_key_lifecycle.sql",
+        include_str!("../migrations/0012_issuer_key_lifecycle.sql"),
+    ),
+    (
+        "0013_verifier_key_lifecycle.sql",
+        include_str!("../migrations/0013_verifier_key_lifecycle.sql"),
+    ),
+    (
+        "0014_wallet_message_auth.sql",
+        include_str!("../migrations/0014_wallet_message_auth.sql"),
+    ),
+    (
+        "0015_credential_schema_versions.sql",
+        include_str!("../migrations/0015_credential_schema_versions.sql"),
+    ),
+    (
+        "0016_public_trust_metadata.sql",
+        include_str!("../migrations/0016_public_trust_metadata.sql"),
+    ),
+    (
+        "0017_verifier_api_keys.sql",
+        include_str!("../migrations/0017_verifier_api_keys.sql"),
+    ),
+    (
+        "0018_issuer_teams.sql",
+        include_str!("../migrations/0018_issuer_teams.sql"),
+    ),
+    (
+        "0019_issuer_audit.sql",
+        include_str!("../migrations/0019_issuer_audit.sql"),
+    ),
+    (
+        "0020_verifier_webhooks.sql",
+        include_str!("../migrations/0020_verifier_webhooks.sql"),
+    ),
+    (
+        "0021_verification_policies.sql",
+        include_str!("../migrations/0021_verification_policies.sql"),
+    ),
+    (
+        "0022_passkeys.sql",
+        include_str!("../migrations/0022_passkeys.sql"),
+    ),
+    (
+        "0023_session_management.sql",
+        include_str!("../migrations/0023_session_management.sql"),
+    ),
+    (
+        "0024_zcash_identity_link.sql",
+        include_str!("../migrations/0024_zcash_identity_link.sql"),
+    ),
+    (
+        "0025_zecauth_link_handoff.sql",
+        include_str!("../migrations/0025_zecauth_link_handoff.sql"),
+    ),
+    (
+        "0026_zcash_network_readiness.sql",
+        include_str!("../migrations/0026_zcash_network_readiness.sql"),
+    ),
+    (
+        "0027_zcash_network_high_water.sql",
+        include_str!("../migrations/0027_zcash_network_high_water.sql"),
+    ),
+    (
+        "0028_zcash_network_last_good.sql",
+        include_str!("../migrations/0028_zcash_network_last_good.sql"),
+    ),
+    (
+        "0029_verifier_proof_packages.sql",
+        include_str!("../migrations/0029_verifier_proof_packages.sql"),
+    ),
+    (
+        "0030_operational_health.sql",
+        include_str!("../migrations/0030_operational_health.sql"),
+    ),
+    (
+        "0031_zcash_payments.sql",
+        include_str!("../migrations/0031_zcash_payments.sql"),
+    ),
+    (
+        "0032_discoverable_passkeys.sql",
+        include_str!("../migrations/0032_discoverable_passkeys.sql"),
+    ),
+    (
+        "0033_zcash_payment_observation.sql",
+        include_str!("../migrations/0033_zcash_payment_observation.sql"),
+    ),
+    (
+        "0034_zcash_payment_activity.sql",
+        include_str!("../migrations/0034_zcash_payment_activity.sql"),
+    ),
+    (
+        "0035_issuer_retirement.sql",
+        include_str!("../migrations/0035_issuer_retirement.sql"),
+    ),
+    (
+        "0036_safe_verifier_retirement.sql",
+        include_str!("../migrations/0036_safe_verifier_retirement.sql"),
+    ),
+    (
+        "0037_verifier_retirement_serialization.sql",
+        include_str!("../migrations/0037_verifier_retirement_serialization.sql"),
+    ),
+    (
+        "0038_issuer_retirement_serialization.sql",
+        include_str!("../migrations/0038_issuer_retirement_serialization.sql"),
+    ),
+    (
+        "0039_retired_issuer_successor.sql",
+        include_str!("../migrations/0039_retired_issuer_successor.sql"),
+    ),
+    (
+        "0040_issuer_audit_account_delete.sql",
+        include_str!("../migrations/0040_issuer_audit_account_delete.sql"),
+    ),
+];
+
 async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
     const MIGRATION_LOCK_ID: i64 = 9_248_177_301;
     let client = db_client(pool).await?;
@@ -10696,48 +10859,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
         .map_err(|_| ApiError::Unavailable)?;
 
     let result = async {
-        for migration in [
-            include_str!("../migrations/0001_server_vault.sql"),
-            include_str!("../migrations/0002_zecauth.sql"),
-            include_str!("../migrations/0003_zecauth_browser_redeem.sql"),
-            include_str!("../migrations/0004_trust_network.sql"),
-            include_str!("../migrations/0005_verification_network.sql"),
-            include_str!("../migrations/0006_revocation_lifecycle.sql"),
-            include_str!("../migrations/0007_trust_activity.sql"),
-            include_str!("../migrations/0008_rate_limits.sql"),
-            include_str!("../migrations/0009_credential_schemas.sql"),
-            include_str!("../migrations/0010_account_controls.sql"),
-            include_str!("../migrations/0011_pairwise_holder_keys.sql"),
-            include_str!("../migrations/0012_issuer_key_lifecycle.sql"),
-            include_str!("../migrations/0013_verifier_key_lifecycle.sql"),
-            include_str!("../migrations/0014_wallet_message_auth.sql"),
-            include_str!("../migrations/0015_credential_schema_versions.sql"),
-            include_str!("../migrations/0016_public_trust_metadata.sql"),
-            include_str!("../migrations/0017_verifier_api_keys.sql"),
-            include_str!("../migrations/0018_issuer_teams.sql"),
-            include_str!("../migrations/0019_issuer_audit.sql"),
-            include_str!("../migrations/0020_verifier_webhooks.sql"),
-            include_str!("../migrations/0021_verification_policies.sql"),
-            include_str!("../migrations/0022_passkeys.sql"),
-            include_str!("../migrations/0023_session_management.sql"),
-            include_str!("../migrations/0024_zcash_identity_link.sql"),
-            include_str!("../migrations/0025_zecauth_link_handoff.sql"),
-            include_str!("../migrations/0026_zcash_network_readiness.sql"),
-            include_str!("../migrations/0027_zcash_network_high_water.sql"),
-            include_str!("../migrations/0028_zcash_network_last_good.sql"),
-            include_str!("../migrations/0029_verifier_proof_packages.sql"),
-            include_str!("../migrations/0030_operational_health.sql"),
-            include_str!("../migrations/0031_zcash_payments.sql"),
-            include_str!("../migrations/0032_discoverable_passkeys.sql"),
-            include_str!("../migrations/0033_zcash_payment_observation.sql"),
-            include_str!("../migrations/0034_zcash_payment_activity.sql"),
-            include_str!("../migrations/0035_issuer_retirement.sql"),
-            include_str!("../migrations/0036_safe_verifier_retirement.sql"),
-            include_str!("../migrations/0037_verifier_retirement_serialization.sql"),
-            include_str!("../migrations/0038_issuer_retirement_serialization.sql"),
-            include_str!("../migrations/0039_retired_issuer_successor.sql"),
-            include_str!("../migrations/0040_issuer_audit_account_delete.sql"),
-        ] {
+        for (_, migration) in MIGRATIONS {
             client
                 .batch_execute(migration)
                 .await
@@ -11158,6 +11280,24 @@ mod tests {
         );
         assert!(safe_network_height(-1).is_err());
         assert!(safe_network_height(i64::try_from(MAX_SAFE_INTEGER + 1).unwrap()).is_err());
+    }
+
+    #[test]
+    fn migration_registry_matches_every_sql_file_in_order() {
+        let migration_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+        let mut files = std::fs::read_dir(migration_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".sql"))
+            .collect::<Vec<_>>();
+        files.sort();
+
+        let registered = MIGRATIONS
+            .iter()
+            .map(|(name, _)| (*name).to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(registered, files);
+        assert!(registered.windows(2).all(|pair| pair[0] < pair[1]));
     }
 
     #[test]
