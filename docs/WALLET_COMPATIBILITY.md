@@ -70,11 +70,12 @@ path for a wallet without a Zerant browser adapter.
 this does not mean Zingo has a live Zerant connection. Keep the external wallet's
 network and exact payment details visible to the user before approval.
 
-The Zcash workspace starts with payment review and exposes the complete validated
-ZIP-321 URI through an open or copy action. Its optional direct-connection chooser
-lists only detected installed providers. WalletConnect is intentionally not offered
-by product discovery: it does not solve the hosted testnet path. Sign-in and
-payment choosers filter the same capability registry for their separate purposes.
+The Zcash payment workspace starts with payment review and exposes the complete validated
+ZIP-321 URI through an open, QR, or copy action. It does not ask the holder to connect a
+browser wallet. The old optional direct-connection route remains isolated at
+`/zcash/wallet` for explicit wallet actions, outside normal payment navigation.
+WalletConnect is intentionally not offered by product discovery: it does not solve
+the hosted testnet path. The sign-in chooser filters its capability registry separately.
 "Supported Zcash wallet" means support for a specific action, not membership in a
 brand allowlist. There is no universal Zcash dApp connector today. New injected
 providers require an explicit safe detector and adapter; Zerant does not scan

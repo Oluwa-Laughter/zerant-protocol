@@ -1,12 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
 import { ZcashPaymentQr } from "@/components/zcash-payment-qr";
-import { zip321Connector, type ZcashConnector } from "@/lib/zcash-connectors";
-import { connectConnector, getZcashConnectionSnapshot, useZcashConnection } from "@/lib/zcash-connection";
-import { directPaymentMode, paymentAction } from "@/lib/zcash-payment-connector";
+import { zip321Connector } from "@/lib/zcash-connectors";
+import { paymentAction } from "@/lib/zcash-payment-connector";
 import { zatoshiToZec } from "@/lib/zcash-wallet";
 
 type Payment = {
@@ -46,6 +45,22 @@ type PaymentRecord = {
   transparent_only: boolean;
 };
 type PaymentPage = { items: PaymentRecord[]; next_cursor: string | null };
+type AddressSummary = { network: string };
+
+export async function checkPaymentRecipient(address: string, request: typeof fetch = fetch): Promise<void> {
+  if (address.startsWith("zr_")) throw new Error("A Zerant ID is not a payment address. Ask the recipient for a Zcash testnet address.");
+  if (address.startsWith("zcash:")) throw new Error("This is a Zcash payment link. Choose ‘Review a payment request’ and paste the complete link there.");
+  const response = await request("/api/zerant/zcash/address", {
+    method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ address }),
+  }).catch(() => { throw new Error("Zerant could not reach address validation right now. Check your connection and try again."); });
+  if (response.status === 401) throw new Error("Your Zerant session has ended. Sign in with your passkey and try again.");
+  if (response.status === 429) throw new Error("Too many address checks. Wait a minute and try again.");
+  if (response.status === 400) throw new Error("This is not a valid Zcash payment address. Copy the recipient’s testnet address from their wallet.");
+  if (!response.ok) throw new Error("Zerant could not check the recipient address right now. Try again shortly.");
+  const checked = await response.json() as AddressSummary;
+  if (checked.network !== "testnet") throw new Error("This address is not on Zcash testnet. Ask the recipient for a testnet address; do not send testnet ZEC to a mainnet address.");
+}
 
 function canTrack(summary: Summary): boolean {
   const payment = summary.payments[0];
@@ -116,7 +131,6 @@ export function ZcashPaymentRequestReview({
   enabled: boolean;
   observationAvailable?: boolean;
 }) {
-  const connection = useZcashConnection();
   const [flow, setFlow] = useState<Flow>("send");
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
@@ -183,7 +197,7 @@ export function ZcashPaymentRequestReview({
 
   function openInWalletApp() {
     if (!summary || record?.state === "submitted") return;
-    setStatus("Opening the complete validated payment in your wallet…");
+    setStatus("Trying to open a wallet app. If nothing opens, scan the QR code or copy the recipient and amount below.");
     const action = paymentAction(zip321Connector(), summary);
     if (action.kind === "handoff") window.location.assign(action.uri);
   }
@@ -229,28 +243,6 @@ export function ZcashPaymentRequestReview({
       setStatus("Transaction ID copied. Submission is recorded, but network settlement is still pending verification.");
     } catch {
       setStatus("Could not copy the transaction ID. Select it below and copy it manually.");
-    }
-  }
-
-  async function payWithConnectedWallet(allowTransparent = false) {
-    if (!summary || !record || record.state !== "prepared" || busy) return;
-    const wallet = connection.status === "connected" ? connection.selected : null;
-    if (!wallet) {
-      setStatus("Choose a compatible payment wallet first.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const action = paymentAction(wallet, summary, { allowTransparent });
-      if (action.kind !== "direct") throw new Error("Open the complete payment request in your wallet instead.");
-      setStatus(`Review and approve the ${action.mode} payment in your wallet…`);
-      const send = action.mode === "shielded" ? wallet.sendShieldedPayment! : wallet.sendTransparentPayment!;
-      const txid = await send(action.payment);
-      await submitTxid(record.id, txid);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "The wallet did not complete the payment.");
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -337,28 +329,12 @@ export function ZcashPaymentRequestReview({
     };
   }, [enabled, observationAvailable, observePayment, refreshRecords]);
 
-  async function selectWallet(connector: ZcashConnector) {
-    if (!summary) return;
-    if (connector.capabilities.has("zip321Handoff")) {
-      const action = paymentAction(connector, summary);
-      if (action.kind === "handoff") window.location.assign(action.uri);
-      return;
-    }
-    try {
-      const chain = getZcashConnectionSnapshot().activeChain;
-      if (!chain) throw new Error("Zcash network configuration is still loading. Reopen the wallet menu and try again.");
-      await connectConnector(connector, chain);
-      setStatus("Wallet connected. Review the payment and approve only when you are ready.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Wallet connection failed.");
-    }
-  }
-
   async function requestSummary(path: string, body: object, success: string) {
     setBusy(true);
     setSummary(null);
     setRecord(null);
     try {
+      if (flow === "send") await checkPaymentRecipient(recipient.trim());
       const response = await fetch(path, {
         method: "POST",
         credentials: "same-origin",
@@ -367,9 +343,10 @@ export function ZcashPaymentRequestReview({
       });
       if (!response.ok) {
         if (response.status === 429) throw new Error("You’re doing that too quickly. Try again in a minute.");
-        if (response.status === 401) throw new Error("Your Zerant session is not authenticated.");
+        if (response.status === 401) throw new Error("Your Zerant session has ended. Sign in with your passkey and try again.");
+        if (response.status === 503) throw new Error("Zerant could not prepare a payment right now. Try again shortly.");
         throw new Error(flow === "send"
-          ? "Check the recipient, network, and ZEC amount. Zerant could not prepare this payment."
+          ? "The amount must be greater than zero, in ZEC, with no more than eight decimal places. Check it and try again."
           : "That payment request is invalid or unsupported.");
       }
       const reviewed = (await response.json()) as Summary;
@@ -380,7 +357,9 @@ export function ZcashPaymentRequestReview({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ canonical_uri: reviewed.canonical_uri }),
         });
-        if (!prepared.ok) throw new Error("Zerant could not save this payment. Try preparing it again before opening your wallet.");
+        if (!prepared.ok) throw new Error(prepared.status === 401
+          ? "Your Zerant session has ended. Sign in with your passkey and prepare the payment again."
+          : "The address and amount are valid, but Zerant could not save the payment. Try again shortly before opening your wallet.");
         setRecord((await prepared.json()) as PaymentRecord);
         await refreshRecords().catch(() => undefined);
       }
@@ -405,9 +384,6 @@ export function ZcashPaymentRequestReview({
     "Payment request validated. Review it before wallet approval.",
   );
 
-  const mode = summary && connection.status === "connected"
-    ? directPaymentMode(summary, connection.selected)
-    : null;
   const payment = summary?.payments[0] ?? null;
   const manualDetails = summary ? manualPaymentDetails(summary) : null;
   const preparedCount = records.filter((item) => item.state === "prepared").length;
@@ -431,13 +407,15 @@ export function ZcashPaymentRequestReview({
           <p className="eyebrow">Private payment</p>
           <h3>Where are you sending ZEC?</h3>
         </div>
-        <label htmlFor="zcash-payment-recipient">Recipient</label>
-        <input id="zcash-payment-recipient" value={recipient} onChange={(event) => { setRecipient(event.target.value); setSummary(null); setRecord(null); }} disabled={!enabled || busy} spellCheck={false} autoComplete="off" placeholder="Zcash address" />
+        <label htmlFor="zcash-payment-recipient">Recipient’s Zcash testnet address</label>
+        <input id="zcash-payment-recipient" value={recipient} onChange={(event) => { setRecipient(event.target.value); setSummary(null); setRecord(null); }} disabled={!enabled || busy} spellCheck={false} autoComplete="off" placeholder="utest1… or tm…" aria-describedby="zcash-payment-recipient-help" />
+        <p id="zcash-payment-recipient-help" className="small muted">Ask the person you are paying for their testnet receive address. Your <code>zr_…</code> ID and a mainnet address cannot receive this payment. <Link href="/zcash/address">Check an address</Link>.</p>
         <label htmlFor="zcash-payment-amount">Amount</label>
         <div className="zcash-amount-field">
           <input id="zcash-payment-amount" value={amount} onChange={(event) => { setAmount(event.target.value); setSummary(null); setRecord(null); }} disabled={!enabled || busy} inputMode="decimal" autoComplete="off" placeholder="0.00" />
           <span>ZEC</span>
         </div>
+        <p className="small muted">Enter a positive ZEC amount with up to eight decimal places, such as 0.01.</p>
         <div className="vault-actions"><Button disabled={!enabled || busy || !recipient.trim() || !amount.trim()} onClick={() => void createPayment()}>{busy ? "Preparing…" : "Review payment"}</Button></div>
       </> : <>
         <label htmlFor="zcash-payment-uri">Zcash payment request</label>
@@ -460,14 +438,12 @@ export function ZcashPaymentRequestReview({
         </div>
         <p>{payment.transparent_only
           ? "This destination uses Zcash’s transparent pool. Sending to it reveals more transaction information on chain, so Zerant will never choose transparent payment for you."
-          : "This destination can receive a privacy-preserving Zcash payment. Zerant will prefer a shielded wallet action when your connected wallet supports it."}</p>
+          : "This destination can receive a shielded Zcash payment. Review the payment in your testnet wallet and choose a shielded send when it supports one."}</p>
       </div>
 
       {record?.state !== "submitted" ? <div className="payment-request-actions">
-        <Button disabled={busy} onClick={openInWalletApp}>Open payment in wallet</Button>
-        <Button variant="secondary" disabled={busy} onClick={() => void copyPaymentLink()}>Copy payment link</Button>
-        {mode === "shielded" && record ? <Button disabled={busy} onClick={() => void payWithConnectedWallet()}>Approve shielded payment</Button> : null}
-        {mode === "transparent" && record ? <Button disabled={busy} onClick={() => void payWithConnectedWallet(true)}>Approve transparent payment</Button> : null}
+        <Button disabled={busy} onClick={() => void copyPaymentLink()}>Copy payment link</Button>
+        <Button variant="secondary" disabled={busy} onClick={openInWalletApp}>Try opening wallet app</Button>
       </div> : null}
       {record?.state !== "submitted" ? <div className="payment-link-copy">
         <div className="payment-portable-handoff">
@@ -484,11 +460,6 @@ export function ZcashPaymentRequestReview({
           <div className="payment-manual-field"><div><span>Recipient</span><code>{manualDetails.recipient}</code></div><Button variant="secondary" onClick={() => void copyManualField(manualDetails.recipient, "Recipient")}>Copy recipient</Button></div>
           <div className="payment-manual-field"><div><span>Exact amount</span><code>{manualDetails.amountZec} ZEC</code></div><Button variant="secondary" onClick={() => void copyManualField(manualDetails.amountZec, "Amount")}>Copy amount</Button></div>
         </div> : null}
-        <details className="payment-direct-option">
-          <summary>Use a directly connected wallet</summary>
-          <p className="small muted">Direct connection is optional and currently requires a compatible Zcash testnet browser wallet. The payment link above works without connecting a wallet to Zerant.</p>
-          {!mode && record ? <ZcashWalletSelector purpose="payment" triggerLabel="Choose direct wallet" onSelect={(connector) => void selectWallet(connector)} /> : null}
-        </details>
       </div> : null}
       {record ? <p className="small muted">Saved payment: {record.state === "submitted" ? "Submitted" : "Prepared"}. If your wallet opens separately, enter its transaction ID in Recent payments after submission.</p> : null}
       <p className="small muted payment-request-note">A wallet transaction ID records submission here. Zerant can observe that exact txid on Zcash testnet without reading wallet history. Network inclusion does not independently reveal or verify a shielded recipient or amount.</p>

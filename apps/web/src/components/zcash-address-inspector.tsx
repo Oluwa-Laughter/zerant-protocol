@@ -20,8 +20,8 @@ export function ZcashAddressInspector({ enabled }: { enabled: boolean }) {
   const [summary, setSummary] = useState<AddressSummary | null>(null);
   const [status, setStatus] = useState(
     enabled
-      ? "Paste a real Zcash address to validate it."
-      : "Connect your Zcash identity before using address inspection.",
+      ? "Paste a Zcash address to check its network before using it."
+      : "Sign in to check a Zcash address.",
   );
 
   async function inspect() {
@@ -45,7 +45,9 @@ export function ZcashAddressInspector({ enabled }: { enabled: boolean }) {
 
     const result = (await response.json()) as AddressSummary;
     setSummary(result);
-    setStatus("Address validated by the native Zcash address parser.");
+    setStatus(result.network === "testnet"
+      ? "Valid Zcash testnet address. You can use it as a payment recipient if the owner gave it to you."
+      : "Valid Zcash address, but it is not on Zerant’s testnet. Do not use it for a testnet payment.");
   }
 
   return (
@@ -66,7 +68,7 @@ export function ZcashAddressInspector({ enabled }: { enabled: boolean }) {
           onChange={(event) => setAddress(event.target.value)}
           disabled={!enabled}
           spellCheck={false}
-          placeholder="u1… / zs1… / t1…"
+          placeholder="Testnet: utest1… or tm…"
         />
         <div className="vault-actions">
           <Button disabled={!enabled || !address.trim()} onClick={inspect}>

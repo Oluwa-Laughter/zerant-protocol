@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { manualPaymentDetails, paymentNetworkStatus, shouldAutoObservePayment, shouldObserveAfterSubmit, ZcashPaymentRequestReview } from "./zcash-payment-request-review";
+import { checkPaymentRecipient, manualPaymentDetails, paymentNetworkStatus, shouldAutoObservePayment, shouldObserveAfterSubmit, ZcashPaymentRequestReview } from "./zcash-payment-request-review";
+
+test("payment preparation requires a validated testnet destination without wallet connection", async () => {
+  const requests: string[] = [];
+  const inspect = ((input: string) => {
+    requests.push(input);
+    return Promise.resolve(Response.json({ network: "testnet" }));
+  }) as typeof fetch;
+  await checkPaymentRecipient("utest1recipient", inspect);
+  assert.deepEqual(requests, ["/api/zerant/zcash/address"]);
+  await assert.rejects(checkPaymentRecipient("zr_example", inspect), /not a payment address/);
+  await assert.rejects(checkPaymentRecipient("zcash:utest1example?amount=1", inspect), /Review a payment request/);
+  assert.equal(requests.length, 1);
+  await assert.rejects(checkPaymentRecipient("u1mainnet", (() => Promise.resolve(Response.json({ network: "mainnet" }))) as typeof fetch), /not on Zcash testnet/);
+  await assert.rejects(checkPaymentRecipient("invalid", (() => Promise.resolve(Response.json({ error: "invalid request" }, { status: 400 }))) as typeof fetch), /not a valid Zcash payment address/);
+});
 
 test("manual handoff keeps only one exact simple payment", () => {
   const payment = { index: 0, recipient: "utest1example", amount_zat: 123456789,
@@ -20,8 +35,10 @@ test("Zcash payment experience starts with sender-side private payment review", 
   const html = renderToStaticMarkup(<ZcashPaymentRequestReview enabled />);
   assert.ok(html.includes("Send ZEC"));
   assert.ok(html.includes("Private payment"));
-  assert.ok(html.includes("Review payment"));
+  assert.ok(html.includes("Recipient’s Zcash testnet address"));
   assert.ok(html.includes("Your wallet remains in control"));
+  assert.equal(html.includes("Choose direct wallet"), false);
+  assert.ok(html.includes("Review payment"));
   assert.ok(html.includes("Saved payment activity"));
   assert.ok(html.includes("No saved payments yet"));
   assert.equal(html.includes("wallet balance"), false);

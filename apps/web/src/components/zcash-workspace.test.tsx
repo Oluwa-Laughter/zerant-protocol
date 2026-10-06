@@ -37,11 +37,11 @@ test("dedicated Zcash workspace owns wallet and payment actions", () => {
   assert.ok(html.includes("Testnet wallet setup"));
   assert.ok(html.includes("Bring a Zcash testnet wallet."));
   assert.ok(html.includes("Open, scan, or copy"));
-  assert.ok(html.includes("You can make progress with the payment link even when direct approval fails."));
-  assert.ok(html.includes('id="zcash-wallet-actions"'));
+  assert.ok(html.includes("Get the recipient’s testnet address"));
+  assert.equal(html.includes('id="zcash-wallet-actions"'), false);
   assert.ok(html.includes('href="#zcash-payment-review"'));
   assert.ok(html.includes('href="#zcash-address-inspector"'));
-  assert.ok(html.includes('href="#zcash-wallet-actions"'));
+  assert.equal(html.includes('href="#zcash-wallet-actions"'), false);
   assert.ok(html.includes("Prepare, review, then approve in your wallet."));
   assert.ok(html.includes("Network visibility does not independently verify a shielded recipient or amount"));
   assert.ok(html.includes("Prepared"));
@@ -50,7 +50,7 @@ test("dedicated Zcash workspace owns wallet and payment actions", () => {
   assert.ok(html.includes("Mined · depth"));
   assert.equal(html.includes("Testnet settlement verification is not available yet"), false);
   assert.equal(html.includes(">Payment verified<"), false);
-  assert.ok(html.includes("A Zcash address identifies a payment destination"));
+  assert.ok(html.includes("Payments need a Zcash testnet receive address"));
 });
 
 test("signed-out Zcash workspace directs users to account access", () => {

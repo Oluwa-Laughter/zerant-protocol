@@ -27,7 +27,7 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
     : Boolean(zcash);
   const showAllSections = activeSection === undefined;
   const showOverview = showAllSections || activeSection === "overview";
-  const showSection = (section: "payments" | "invoices" | "wallet" | "address") => showAllSections || activeSection === section;
+  const showSection = (section: "payments" | "invoices" | "wallet" | "address") => activeSection === section || (showAllSections && section !== "wallet");
 
   return (
     <main id="main" className="product-app zcash-workspace-page">
@@ -47,7 +47,6 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
             { href: "/zcash", label: "Overview" },
             { href: "/zcash/payments", label: "Payments" },
             { href: "/zcash/invoices", label: "Invoices" },
-            { href: "/zcash/wallet", label: "Wallet access" },
             { href: "/zcash/address", label: "Address check" },
           ]}
         />
@@ -59,7 +58,6 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
         {activeSection === undefined ? <a href="#zcash-payment-review">Prepare or review a payment</a> : <Link href="/zcash/payments">Prepare or review a payment</Link>}
         {activeSection === undefined ? <a href="#zcash-invoices">Request ZEC</a> : <Link href="/zcash/invoices">Request ZEC</Link>}
         {activeSection === undefined ? <a href="#zcash-address-inspector">Check a Zcash address</a> : <Link href="/zcash/address">Check a Zcash address</Link>}
-        {authenticated ? (activeSection === undefined ? <a href="#zcash-wallet-actions">Connect a testnet wallet</a> : <Link href="/zcash/wallet">Connect a testnet wallet</Link>) : null}
       </nav> : null}
 
       {showOverview ? <section className="zcash-wallet-setup" aria-labelledby="zcash-testnet-wallet-title">
@@ -76,10 +74,10 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
             <Link className="button" href="/zcash/payments">Prepare a payment <span aria-hidden="true">→</span></Link>
           </article>
           <article className="workspace-card">
-            <p className="eyebrow">Optional direct connection</p>
-            <h3>Testnet Noir Wallet</h3>
-            <p className="muted">The Chrome Store Noir extension is mainnet. Direct browser payment requires Noir’s separate testnet build and its approval request. You can make progress with the payment link even when direct approval fails.</p>
-            <Link className="text-link" href="/zcash/wallet">Direct wallet options <span aria-hidden="true">→</span></Link>
+            <p className="eyebrow">Before you send</p>
+            <h3>Get the recipient’s testnet address</h3>
+            <p className="muted">A Zerant ID is for credentials and account access. Payments need a Zcash testnet receive address from the person you are paying.</p>
+            <Link className="text-link" href="/zcash/address">Check an address <span aria-hidden="true">→</span></Link>
           </article>
         </div>
         <p className="small muted">Wallet installation and payment approval stay outside Zerant. Never enter a recovery phrase, spending key, or wallet password into Zerant.</p>
@@ -116,7 +114,6 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
         <section className="workspace-route-cards" aria-label="Zcash workspace sections">
           <Link href="/zcash/payments"><strong>Payments</strong><span>Review a payment and hand it to a compatible wallet.</span></Link>
           <Link href="/zcash/invoices"><strong>Invoices</strong><span>Create a shareable request for a specific amount.</span></Link>
-          <Link href="/zcash/wallet"><strong>Wallet access</strong><span>Connect only when the wallet supports Zcash testnet.</span></Link>
           <Link href="/zcash/address"><strong>Address check</strong><span>Inspect a destination before using it in a request.</span></Link>
         </section>
       ) : null}
@@ -144,7 +141,7 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
           <div className="workspace-wallet-heading">
             <p className="eyebrow">Optional direct connection</p>
             <h2>Connect a wallet only if it supports this network.</h2>
-            <p className="muted">Zerant uses Zcash testnet. The Noir extension from the Chrome Store is mainnet and cannot pay a testnet request. A separate Testnet Noir build is available from Noir. A compatible wallet can also use the reviewed payment link above without connecting to Zerant.</p>
+            <p className="muted">Zerant uses Zcash testnet. The Noir extension from the Chrome Store is mainnet and cannot pay a testnet request. A separate Testnet Noir build is available from Noir. You can use a compatible wallet through <Link href="/zcash/payments">payment review</Link> without connecting it to Zerant.</p>
           </div>
           <ZcashConnect purpose="connection" />
           <p className="small muted wallet-compatibility-note">A Zcash address identifies a payment destination. It does not connect a wallet or give Zerant spending authority.</p>
