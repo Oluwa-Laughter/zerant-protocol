@@ -2,240 +2,117 @@
 
 **Prove trust. Preserve privacy.**
 
-Zerant is a privacy-preserving trust layer for Zcash applications. Organizations can issue trusted credentials, holders keep those credentials private, and applications request only the specific fact they need instead of collecting a holder's full identity, credential history, wallet address, balance, or transaction history.
+Zerant is a trust and credential layer for applications in the Zcash ecosystem. An organization issues a signed statement to a person's private Zerant vault. Another organization can request one specific fact, and the holder decides whether to disclose it. Zcash payments are a separate action: Zerant prepares and tracks a request, while a wallet keeps the spending keys and asks for its own approval.
 
-Zerant separates **identity**, **consent**, and **payment authority**. A Zcash wallet is optional for account access, but wallet approval is required when a user chooses to perform a Zcash payment.
+Zerant is running on **Zcash testnet**. A Zerant ID (`zr_…`) is an account identifier, not a payment address or a record of wallet activity. A passkey is sufficient to use credentials; connecting a wallet is optional until the user chooses a wallet action.
 
-**Live production:** [zerant.vercel.app](https://zerant.vercel.app)
+## How it works
 
-![Zerant production landing page](docs/assets/screenshots/01-landing.png)
+```mermaid
+flowchart LR
+    I[Issuer organization] -->|Signs one claim| V[Holder's private vault]
+    R[Verifier organization] -->|Purpose-bound request| C[Holder reviews and consents]
+    V --> C
+    C -->|Approved claim only| S[Zerant validation]
+    S -->|Issuer trust, signatures, expiry,<br/>revocation, audience and replay| O[Narrow verifier result]
+    C -->|Denied| D[No proof delivered]
+```
 
-## Why Zerant
+The verifier receives the approved result, not the holder's credential collection. A credential is meaningful within its issuer, claim, and context; Zerant does not calculate a public reputation score. The current proof mechanism uses signed minimal disclosures and separate atomic attestations. It is **not** a zero-knowledge or anonymity system.
 
-Most trust systems over-collect data. A verifier that only needs to know whether a user is eligible may end up storing a name, wallet address, account history, unrelated credentials, and payment activity.
+Payments follow a different authority path:
 
-Zerant changes that flow:
+```mermaid
+flowchart LR
+    A[Zerant account] --> P[Validate recipient, exact amount<br/>and Zcash network]
+    P --> R[Review ZIP-321 request]
+    R --> W[Compatible wallet approves and submits]
+    W -->|Transaction ID| S[Saved as submitted]
+    S --> N[Bounded network observation]
+    N --> Q[Pending exact settlement verification]
+```
 
-1. **Issuer** creates and signs a credential.
-2. **Holder** receives it under a Zerant ID and keeps it private.
-3. **Verifier** requests one narrow claim with a stated purpose.
-4. **Holder** reviews the exact request and approves or denies it.
-5. **Zerant** returns a short-lived verifier-specific result.
-6. **Zcash payment**, when required, is approved separately in the user's wallet.
-
-There is no universal reputation score and no wallet-wide identity profile.
-
-### End-to-end product flow
-
-![Zerant end-to-end product flow](docs/assets/screenshots/04-flow.png)
-
-## Hackathon build
-
-The current build includes:
-
-- private credential issuance and holder vaults;
-- contextual verifier requests with explicit consent;
-- issuer organizations, roles, invitations, key rotation, revocation, and audit history;
-- verifier API keys and signed webhook delivery;
-- passkey-based account access;
-- optional Zcash wallet authentication;
-- Noir Wallet injected connection on Zcash testnet;
-- ZIP-321 payment request validation and portable wallet handoff;
-- direct shielded wallet payment when the connected adapter advertises that capability;
-- saved payment state and exact transaction-ID submission tracking;
-- Zcash testnet network readiness and bounded transaction observation;
-- shareable account-owned Zcash invoices.
-
-The project intentionally does **not** claim zero knowledge, anonymity, full unlinkability, production-grade mainnet settlement verification, or live FROST signing where those mechanisms are not implemented.
-
-## Product surfaces
-
-| Surface | Purpose |
-| --- | --- |
-| `/vault` | Holder credentials, Zerant ID, and account access |
-| `/issuer` | Issuer organization, credential types, issuance, revocation, and team governance |
-| `/issuers` | Public issuer and credential-definition discovery |
-| `/verifier` | Register a verifier and create narrow proof requests |
-| `/requests` | Holder review and consent inbox |
-| `/zcash` | Zcash wallet connection, payment preparation, invoices, and payment state |
-| `/app` | Product workspace and current account overview |
-| `/pay/[id]` | Public shareable Zcash invoice request |
+A wallet-returned transaction ID means **submitted**, not paid or settled. The hosted testnet observer can report network status and confirmation depth for a named transaction, but it cannot independently prove a shielded recipient and exact amount. Zerant does not issue a verified payment claim from that status alone. Richer payment requests remain available as reviewed ZIP-321 handoffs when a direct wallet method cannot represent them exactly.
 
 ## Architecture
 
-![Zerant protocol architecture](docs/assets/screenshots/03-architecture.png)
+```mermaid
+flowchart TB
+    subgraph Browser[Browser]
+        UI[Next.js product and consent UI]
+        Wallet[Optional Zcash wallet]
+    end
+    subgraph Zerant[Zerant service boundary]
+        Proxy[Next.js server proxy routes]
+        API[Private Rust Axum API]
+        Protocol[Credential, disclosure,<br/>policy and Zcash crates]
+        DB[(PostgreSQL / Neon)]
+    end
+    Chain[Zcash testnet services]
+    Verifier[Verifier integration]
 
-The web product, Rust service, protocol crates, wallet, verifier, and Zcash network are treated as separate trust boundaries. The browser does not become the protocol authority and the wallet does not become the user's Zerant identity.
+    UI -->|Same-origin requests| Proxy
+    Proxy -->|Private Vercel service binding| API
+    API --> Protocol
+    API --> DB
+    API -->|Bounded network queries| Chain
+    API -->|Approved result and signed webhook| Verifier
+    UI -->|Explicit connection or payment approval| Wallet
+    Wallet -->|Signature or submitted txid| UI
+```
 
-### Trust boundaries
+The browser holds transient wallet connection state. The private service owns sessions, authorization, encrypted credential records, issuer and verifier workflows, payment records, and proof validation. The Zcash integration crate owns Zcash parsing and observation boundaries. Neither the browser nor the wallet becomes a general credential authority.
 
-- **Browser:** product UI, consent, wallet selection, and transient wallet connection state.
-- **Rust service:** durable account state, credential storage, authorization, server challenges, replay protection, and verifier workflows.
-- **Protocol crates:** canonical parsing, signatures, policy evaluation, disclosure binding, and Zcash request validation.
-- **Wallet:** holds spending keys and authorizes every payment action.
-- **Verifier:** receives only the approved result for its request.
-- **Database:** stores encrypted credentials and durable workflow state, never wallet seed material.
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full implementation architecture.
-
-## Zcash wallet model
-
-![Zerant Zcash payment workspace](docs/assets/screenshots/02-zcash.png)
-
-Zerant does not make a wallet the user's identity.
-
-### Account access
-
-A user can access Zerant with a passkey. Zcash wallet sign-in is optional and can be linked separately.
-
-### Wallet connection
-
-For an installed Noir Wallet, Zerant uses the Noir SDK:
-
-- `zcash_requestAccounts` for an explicit user-initiated connection;
-- `zcash_getAccounts` only for silent restoration of an existing authorization;
-- `zcash_signMessage` with a derived signing key for the supported identity flow;
-- `zcash_sendTransaction` for a direct payment when the wallet advertises the required capability.
-
-The browser never reads wallet history to establish identity.
-
-### Payments
-
-A payment is a separate capability:
-
-1. Zerant validates the recipient and amount.
-2. Zerant constructs or validates the canonical ZIP-321 request.
-3. The user reviews the exact request.
-4. The user either approves it in a connected wallet or opens the portable request in another compatible wallet.
-5. A wallet-returned transaction ID is stored as **submitted**, not automatically treated as settled.
-
-This distinction is deliberate: **wallet submission is not settlement proof**.
-
-## Privacy model
-
-Zerant minimizes what crosses each boundary:
-
-- credentials are not public profile fields;
-- denial returns no credential result;
-- verifier requests are purpose-, audience-, nonce-, and expiry-bound;
-- proofs are verifier-specific;
-- wallet balances and transaction history are not used as identity;
-- the service stores only the Zcash payment records a user explicitly prepares in Zerant;
-- a submitted transaction ID is tracked independently from credential identity.
-
-Credential records are encrypted at rest behind a versioned key-provider boundary. The current deployment is server-readable for authorized product operations, so Zerant is **not** holder-only end-to-end encrypted.
-
-Read [docs/PRIVACY.md](docs/PRIVACY.md), [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), and [SECURITY.md](SECURITY.md).
-
-## Repository structure
+### Repository layout
 
 ```text
-apps/web/                  Next.js product UI and API proxy routes
-services/zerant-api/       Rust/Axum authenticated service
-crates/zerant-core/        IDs, canonicalization, origin/time rules
-crates/zerant-credential/  Credential signing, trust, revocation
-crates/zerant-policy/      Deterministic contextual policy evaluation
-crates/zerant-disclosure/  Requests, holder responses, replay binding
-crates/zerant-zcash/       Zcash parsing, readiness, payment observation
-docs/                      Architecture, protocol, privacy, wallet and integration docs
-fixtures/                  Deterministic and sanitized integration fixtures
-scripts/                   Local checks and Zcash regtest helpers
+apps/web/                 Next.js product, public pages, components, server proxy routes
+services/zerant-api/      Private Rust/Axum API, PostgreSQL persistence and migrations
+crates/zerant-core/       Identifiers, canonicalization and common validation
+crates/zerant-credential/ Signed credentials, issuer trust and revocation
+crates/zerant-policy/     Contextual policy evaluation
+crates/zerant-disclosure/ Requests, consent-bound responses and replay rules
+crates/zerant-zcash/      Addresses, ZIP-321, payments and Zcash network boundaries
+docs/                    Architecture, privacy, threat model and protocol specs
+fixtures/                Shared protocol fixtures
+scripts/                 Validation and operational helpers
 ```
 
-## Local development
+The main workspace routes are `/app`, `/vault`, `/requests`, `/activity`, `/zcash`, `/issuer`, `/verifier`, and `/account`. `/issuers` is the public issuer directory; `/pay/[id]` displays a bounded public invoice request. A public invoice does not identify its owner or certify payment.
 
-Requirements:
+## Wallet access on testnet
 
-- Node.js **22.x**
-- pnpm **10+**
-- Rust toolchain
-- PostgreSQL for authenticated server workflows
+Noir Wallet has separate mainnet and testnet extension builds. Zerant can detect an installed Noir provider without receiving account authorization. Selecting it explicitly calls Noir's interactive connection method; Zerant accepts a returned account only if its addresses match the configured testnet. A detected mainnet extension cannot be switched into testnet by Zerant. The [Noir developer guide](https://docs.zknoir.com/developers/) explains how to obtain the official testnet build.
+
+Wallet connection does not sign in to Zerant, approve a proof, or authorize spending. Wallet sign-in uses a separate challenge and signature when supported. A ZEC payment requires separate wallet approval. A validated ZIP-321 request can also be handed to a compatible testnet wallet without a live browser connection. Zerant never requests a seed phrase, spending key, wallet balance, or transaction history for identity.
+
+## Run and verify
+
+Use Node **22.x** and pnpm **10.34.6** for the web workspace. Rust tooling and a PostgreSQL database are needed for the private service; see [deployment and configuration](docs/VERCEL_DEPLOYMENT.md) for its server-only settings.
 
 ```bash
-pnpm install
-pnpm dev
-```
+pnpm install --frozen-lockfile
+pnpm --filter @zerant/web dev
 
-Then open:
-
-```text
-http://localhost:3000
-```
-
-The public shell can render without all external services. Authenticated credentials, issuer/verifier workflows, and durable payments require the Rust service and PostgreSQL.
-
-## Verification
-
-Web:
-
-```bash
-pnpm --filter @zerant/web typecheck
 pnpm --filter @zerant/web test
+pnpm --filter @zerant/web lint
+pnpm --filter @zerant/web typecheck
 pnpm --filter @zerant/web build
+
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+python3 scripts/secret-check.py
 ```
 
-Full repository gate:
+For a browser-level wallet regression check, run `node scripts/browser-wallet-smoke.mjs https://zerant.vercel.app`. It launches an isolated browser with a simulated Noir provider to verify passive discovery, one interactive request, rejection handling, and wrong-network rejection. It does not replace an approval test with the real Testnet Noir extension.
 
-```bash
-make check
-```
+The deployed web app reaches the Rust backend through private Vercel service binding and same-origin `/api/zerant/*` routes. Do not put database, RPC, or key configuration in `NEXT_PUBLIC_*`. The health endpoint is `/api/zerant/health`.
 
-Zcash regtest integration helpers are explicit and never run against mainnet:
+## Privacy and limits
 
-```bash
-make z3-check
-make integration
-```
+Zerant stores credentials and workflow state on the server under its existing envelope encryption architecture. It keeps Zerant identity separate from wallet addresses and limits verifier results to the approved claim. Issuer honesty, device compromise, traffic correlation, and coercion remain outside what signed minimal disclosure can solve. Pairwise identifiers reduce obvious cross-application linking but do not guarantee unlinkability.
 
-## Deployment
+The production configuration remains on **testnet**. Network readiness is not a payment receipt. Exact shielded settlement verification for hosted testnet payments requires an authorized recipient-side observation path and is not currently asserted by Zerant. PCZT and FROST code marks capability boundaries; it is not a live shared-control signing product.
 
-Zerant deploys as one Vercel project:
-
-- Next.js customer application;
-- private Rust/Axum container service;
-- Neon PostgreSQL.
-
-The web app reaches the Rust service through a private Vercel service binding. Deployment variables and key-rotation procedures are documented in [docs/VERCEL_DEPLOYMENT.md](docs/VERCEL_DEPLOYMENT.md).
-
-## Demo
-
-Use [docs/DEMO.md](docs/DEMO.md) for the exact judging flow, screenshot checklist, and demo-video script. The ready-to-paste Colosseum project copy, architecture summary, links, and final submission checklist are in [docs/COLOSSEUM_SUBMISSION.md](docs/COLOSSEUM_SUBMISSION.md).
-
-Recommended short demo path:
-
-1. Sign in with a passkey.
-2. Open the Vault and show a private credential.
-3. Create a verifier request.
-4. Review the request as the holder and approve only the requested claim.
-5. Show the verifier receiving the narrow result.
-6. Open Zcash, prepare a payment, connect Testnet Noir, and approve the wallet action.
-7. Show Zerant recording the returned transaction ID as submitted/pending verification.
-8. Show a shareable invoice link.
-
-## Documentation
-
-- [Colosseum submission pack](docs/COLOSSEUM_SUBMISSION.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Demo and screenshot runbook](docs/DEMO.md)
-- [Protocol](docs/PROTOCOL.md)
-- [Privacy](docs/PRIVACY.md)
-- [Threat model](docs/THREAT_MODEL.md)
-- [Account access](docs/ACCOUNT_ACCESS.md)
-- [Wallet compatibility](docs/WALLET_COMPATIBILITY.md)
-- [Zcash integration](docs/ZCASH-INTEGRATION.md)
-- [Verifier integration API](docs/VERIFIER_INTEGRATION_API.md)
-- [Verifier webhooks](docs/VERIFIER_WEBHOOKS.md)
-- [Deployment](docs/VERCEL_DEPLOYMENT.md)
-
-## Current limitations
-
-- Zcash testnet is the active development network.
-- Mainnet direct wallet execution is not the hackathon target.
-- A wallet-returned transaction ID proves submission, not exact shielded settlement.
-- Exact shielded recipient/amount confirmation requires an authorized observation path.
-- PCZT/FROST remain capability-gated boundaries; Zerant does not implement custom threshold cryptography.
-- Stronger unlinkable credential constructions and managed KMS/HSM custody remain future work.
-
-## License and contribution
-
-This repository is the active Zerant hackathon implementation. Security-sensitive changes should preserve the documented consent, replay, revocation, wallet-authority, and privacy boundaries rather than bypass them for convenience.
+For the detailed security contracts, read [architecture](docs/ARCHITECTURE.md), [protocol](docs/PROTOCOL.md), [privacy](docs/PRIVACY.md), [threat model](docs/THREAT_MODEL.md), [wallet compatibility](docs/WALLET_COMPATIBILITY.md), and [Zcash integration](docs/ZCASH-INTEGRATION.md).
