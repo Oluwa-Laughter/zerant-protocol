@@ -214,7 +214,7 @@ Recommended short demo path:
 
 ## Documentation
 
-- [Hackathon submission pack](docs/SUBMISSION.md)
+- [Colosseum submission pack](docs/COLOSSEUM_SUBMISSION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Demo and screenshot runbook](docs/DEMO.md)
 - [Protocol](docs/PROTOCOL.md)
