@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { connectedWalletNetwork, type ConnectedZcashWallet, type ZcashWalletAdapter } from "./zcash-wallet";
+import { classifyInjectedWalletError, connectedWalletNetwork, type ConnectedZcashWallet, type ZcashWalletAdapter } from "./zcash-wallet";
 import type { ZcashChain, ZcashConnector } from "./zcash-connectors";
 
 export type ConnectionSnapshot = {
@@ -94,8 +94,8 @@ export async function probeExistingConnection(
     const account = await connector.existingConnection();
     if (!account) return "not_authorized";
     return connectedWalletNetwork(account) === chain ? "ready" : "wrong_network";
-  } catch {
-    return "unavailable";
+  } catch (error) {
+    return classifyInjectedWalletError(error) === "unauthorized" ? "not_authorized" : "unavailable";
   }
 }
 
@@ -148,4 +148,17 @@ export async function disconnectZcash(): Promise<void> {
   connectionCleanup = null;
   try { await disconnect?.(); }
   finally { update({ selected: null, adapter: null, account: null, status: "idle", displayUri: null }); }
+}
+
+export async function resetConnectorAuthorization(
+  connector: ZcashConnector,
+  chain: ZcashChain,
+): Promise<WalletAuthorizationProbe> {
+  if (!connector.disconnect) return "unavailable";
+  if (snapshot.selected?.id === connector.id) {
+    await disconnectZcash();
+  } else {
+    await connector.disconnect();
+  }
+  return probeExistingConnection(connector, chain);
 }

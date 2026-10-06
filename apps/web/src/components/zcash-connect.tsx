@@ -6,7 +6,7 @@ import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
 import { signInWithZcashWallet, type SignInChallenge, type ZcashSignInStage } from "@/lib/zcash-auth";
 import { discoverZcashConnectors, type ZcashConnector } from "@/lib/zcash-connectors";
 import { classifyInjectedWalletError } from "@/lib/zcash-wallet";
-import { connectConnector, disconnectZcash, ensureZcashConfig, getZcashConnectionSnapshot, restoreConnection, useZcashConnection } from "@/lib/zcash-connection";
+import { connectConnector, disconnectZcash, ensureZcashConfig, getZcashConnectionSnapshot, resetConnectorAuthorization, restoreConnection, useZcashConnection } from "@/lib/zcash-connection";
 
 function signInStageCopy(stage: ZcashSignInStage): string {
   switch (stage) {
@@ -114,6 +114,40 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
     finally { if (approvalHint !== undefined) window.clearTimeout(approvalHint); setBusy(false); }
   }
 
+  async function resetNoirAuthorization() {
+    if (busy) return;
+    setBusy(true);
+    setHandoffUri("");
+    setStatus("Resetting Testnet Noir site authorization…");
+    try {
+      const chain = await ensureZcashConfig();
+      const { walletConnectProjectId } = getZcashConnectionSnapshot();
+      const noir = connection.selected?.walletId === "noir"
+        ? connection.selected
+        : discoverZcashConnectors(purpose, chain, walletConnectProjectId)
+            .find((connector) => connector.walletId === "noir" && typeof connector.disconnect === "function");
+
+      if (!noir?.disconnect) {
+        setStatus("Testnet Noir is not detected in this browser. Unlock the extension, reload Zerant, then try again.");
+        return;
+      }
+
+      const resetState = await resetConnectorAuthorization(noir, chain);
+      if (resetState === "not_authorized") {
+        setStatus("Noir site authorization was cleared and verified. Zerant did not change your wallet funds or history. Choose Testnet Noir again and approve a fresh Connect Request.");
+      } else if (resetState === "ready" || resetState === "wrong_network") {
+        setStatus("Noir still reports this site as authorized after reset. Open Noir’s connected-dApp controls, remove Zerant there, reload this page, then reconnect.");
+      } else {
+        setStatus("Noir accepted the reset, but Zerant could not confirm that the site permission was cleared. Reload this page and reconnect; if it still fails, remove Zerant from Noir’s connected-dApp controls.");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setStatus(message || "Noir authorization could not be reset. Unlock Testnet Noir and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function signIn() {
     if (!connection.selected?.capabilities.has("identitySigning") || busy) return;
     setBusy(true);
@@ -173,6 +207,11 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       <p className="small muted">Noir’s generic permission screen may mention balances and activity. Zerant does not request or store your wallet balance or transaction history for identity.</p>
     </div>
     ) : null}
+    {!connection.account ? <div className="wallet-recovery-option">
+      <div><span className="eyebrow">Connection recovery</span><strong>Noir permission stuck?</strong></div>
+      <p className="small muted">If Noir keeps ending the Connect Request, clear only this site’s Noir authorization and reconnect. This does not delete your Zerant account or touch wallet funds.</p>
+      <Button variant="secondary" disabled={busy} onClick={() => void resetNoirAuthorization()}>Reset Noir permission</Button>
+    </div> : null}
     <div className="zcash-connection-diagnostics" aria-label="Zcash wallet connection diagnostics">
       <div>
         <span className="eyebrow">Zerant network</span>

@@ -38,6 +38,8 @@ test("dedicated Zcash workspace owns wallet and payment actions", () => {
   assert.ok(html.includes("Open official Noir releases"));
   assert.ok(html.includes("noir-wallet-sdk/releases"));
   assert.ok(html.includes("[Testnet] Noir Wallet"));
+  assert.ok(html.includes("Reset Noir permission"));
+  assert.ok(html.includes("does not delete your Zerant account or touch wallet funds"));
   assert.ok(html.includes("Zcash wallet connection diagnostics"));
   assert.ok(html.includes("Wallet authorization"));
   assert.ok(html.includes("Zerant sign-in"));

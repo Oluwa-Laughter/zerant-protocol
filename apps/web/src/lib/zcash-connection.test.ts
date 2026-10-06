@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { connectConnector, disconnectZcash, getZcashConnectionSnapshot, probeExistingConnection, restoreConnection } from "./zcash-connection";
+import { connectConnector, disconnectZcash, getZcashConnectionSnapshot, probeExistingConnection, resetConnectorAuthorization, restoreConnection } from "./zcash-connection";
 import { discoverZcashConnectors, injectedConnector, walletConnectConnector } from "./zcash-connectors";
 import { registerZcashWalletDetector, type ZcashWalletAdapter } from "./zcash-wallet";
 import { signInWithZcashWallet } from "./zcash-auth";
@@ -157,6 +157,28 @@ test("WalletConnect does not advertise payment without transfer method or transp
 });
 
 
+test("authorization reset clears selected state and verifies Noir permission is gone", async () => {
+  let authorized = true;
+  let disconnectCalls = 0;
+  const adapter: ZcashWalletAdapter = {
+    ...fakeAdapter("reset", true),
+    connect: async () => ({
+      providerId: "reset", providerName: "Testnet Noir", shieldedAddress: "utest1reset", transparentAddress: "tmReset", accountCount: 1,
+    }),
+    existingConnection: async () => authorized ? ({
+      providerId: "reset", providerName: "Testnet Noir", shieldedAddress: "utest1reset", transparentAddress: "tmReset", accountCount: 1,
+    }) : null,
+    disconnect: async () => { disconnectCalls += 1; authorized = false; },
+  };
+  const connector = injectedConnector(adapter);
+  await connectConnector(connector, "zcash:testnet");
+  assert.equal(getZcashConnectionSnapshot().selected?.id, connector.id);
+  assert.equal(await resetConnectorAuthorization(connector, "zcash:testnet"), "not_authorized");
+  assert.equal(disconnectCalls, 1);
+  assert.equal(getZcashConnectionSnapshot().selected, null);
+  assert.equal(getZcashConnectionSnapshot().account, null);
+});
+
 test("silent wallet probe distinguishes authorization and network mismatch", async () => {
   const base = injectedConnector({
     ...fakeAdapter("test"),
@@ -172,6 +194,10 @@ test("silent wallet probe distinguishes authorization and network mismatch", asy
   assert.equal(await probeExistingConnection(base, "zcash:mainnet"), "wrong_network");
   const pending = injectedConnector({ ...fakeAdapter("pending"), existingConnection: async () => null });
   assert.equal(await probeExistingConnection(pending, "zcash:testnet"), "not_authorized");
+  const rejectedLookup = injectedConnector({ ...fakeAdapter("rejected-lookup"), existingConnection: async () => { throw { code: 4100, message: "Unauthorized" }; } });
+  assert.equal(await probeExistingConnection(rejectedLookup, "zcash:testnet"), "not_authorized");
+  const brokenLookup = injectedConnector({ ...fakeAdapter("broken-lookup"), existingConnection: async () => { throw new Error("Provider crashed"); } });
+  assert.equal(await probeExistingConnection(brokenLookup, "zcash:testnet"), "unavailable");
 });
 
 
