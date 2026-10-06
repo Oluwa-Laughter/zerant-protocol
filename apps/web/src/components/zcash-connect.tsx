@@ -82,6 +82,10 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
           : "Noir has not authorized this site yet. Unlock Noir, choose Connect again, and approve Zerant when the wallet prompt opens.");
       } else if (connector.walletId === "noir" && kind === "pending") {
         setStatus("Noir already has a connection request waiting. Open the extension and finish or dismiss that request before trying again.");
+      } else if (connector.walletId === "noir" && /no wallets available to authori[sz]e/i.test(message)) {
+        setStatus(chain === "zcash:testnet"
+          ? "Testnet Noir has no account ready to share. Open the Testnet Noir extension, create or unlock a Testnet account, then choose Connect again."
+          : "Noir has no account ready to share. Open the extension, create or unlock an account, then choose Connect again.");
       } else {
         setStatus(message || "Wallet connection failed.");
       }

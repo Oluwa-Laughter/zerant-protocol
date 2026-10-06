@@ -142,7 +142,7 @@ try {
     await waitFor(`!![...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Noir Wallet"))`);
     console.log("Official extension: provider detected; chooser displays Noir Wallet.");
     await clickButton("Noir Wallet");
-    await waitFor("document.body.innerText.includes('No wallets available to authorize')");
+    await waitFor("document.body.innerText.includes('No wallets available to authorize') || document.body.innerText.includes('no account ready to share')");
     const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then((response) => response.json());
     console.log("Browser targets after Connect:", targets.map((target) => `${target.type}: ${target.url.startsWith("chrome-extension://") ? "wallet extension" : target.url.startsWith(baseUrl) ? "Zerant" : "other"}`).join(", "));
     console.log("Zerant result:", (await evaluate("document.body.innerText")).slice(-400));
