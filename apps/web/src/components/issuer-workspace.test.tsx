@@ -144,3 +144,27 @@ test("retired issuer exposes only the admin successor path", () => {
   assert.ok(html.includes("retirement does not reopen issuance or configuration"));
   assert.equal(html.includes("Issuer — issue and revoke credentials"), false);
 });
+
+
+test("ownership transfer is only offered to admins", () => {
+  const html = renderToStaticMarkup(<IssuerWorkspace
+    authenticated={true}
+    backendAvailable={true}
+    currentZerantId="zr_111111111111111111111111"
+    initialProfile={profile}
+    initialIssued={[]}
+    initialSchemas={[]}
+    initialKeys={[]}
+    initialTeam={[
+      { zerant_id: "zr_111111111111111111111111", role: "owner", owner: true, joined_at: profile.created_at },
+      { zerant_id: "zr_222222222222222222222222", role: "admin", owner: false, joined_at: profile.created_at },
+      { zerant_id: "zr_333333333333333333333333", role: "issuer", owner: false, joined_at: profile.created_at },
+      { zerant_id: "zr_444444444444444444444444", role: "auditor", owner: false, joined_at: profile.created_at },
+    ]}
+    initialTeamInvitations={[]}
+    initialMyInvitations={[]}
+    initialActivity={{ items: [], next_cursor: null }}
+  />);
+  assert.equal((html.match(/Transfer ownership/g) ?? []).length, 1);
+  assert.ok(html.includes("only eligible ownership successors"));
+});

@@ -815,8 +815,7 @@ export function IssuerWorkspace({
           <p className="eyebrow">Organization team</p>
           <h2>Separate responsibilities without sharing accounts.</h2>
           <p className="muted">
-            Owners control ownership, admins manage configuration, issuers can issue and revoke,
-            and auditors have read-only access.
+            Owners control ownership, admins manage configuration and are the only eligible ownership successors, issuers can issue and revoke, and auditors have read-only access.
           </p>
         </div>
 
@@ -851,7 +850,7 @@ export function IssuerWorkspace({
                           Remove
                         </Button>
                       ) : null}
-                      {canTransferOwnership && !member.owner ? (
+                      {canTransferOwnership && !member.owner && member.role === "admin" ? (
                         <Button
                           variant="secondary"
                           onClick={() => transferOwnership(member.zerant_id)}

@@ -1826,6 +1826,10 @@ fn valid_issuer_member_role(role: &str) -> bool {
     matches!(role, "admin" | "issuer" | "auditor")
 }
 
+fn issuer_member_can_receive_ownership(role: &str) -> bool {
+    role == "admin"
+}
+
 struct IssuerEvent<'a> {
     event_type: &'a str,
     object_id: &'a str,
@@ -8434,7 +8438,7 @@ async fn transfer_issuer_ownership(
 
     let target = tx
         .query_opt(
-            "SELECT m.account_id, m.joined_at
+            "SELECT m.account_id, m.joined_at, m.role
              FROM issuer_members m
              JOIN accounts a ON a.id = m.account_id
              WHERE m.issuer_profile_id = $1 AND a.public_handle = $2
@@ -8445,8 +8449,12 @@ async fn transfer_issuer_ownership(
         .map_err(|_| ApiError::Unavailable)?
         .ok_or(ApiError::NotFound)?;
     let new_owner: Uuid = target.get(0);
+    let target_role: String = target.get(2);
     if new_owner == access.owner_account_id {
         return Err(ApiError::Invalid);
+    }
+    if !issuer_member_can_receive_ownership(&target_role) {
+        return Err(ApiError::Conflict);
     }
 
     let owns_other: bool = tx
@@ -13252,6 +13260,14 @@ mod tests {
             Uuid::from_u128(8),
             Uuid::from_u128(7)
         ));
+    }
+
+    #[test]
+    fn issuer_ownership_transfer_requires_admin_successor() {
+        assert!(issuer_member_can_receive_ownership("admin"));
+        assert!(!issuer_member_can_receive_ownership("issuer"));
+        assert!(!issuer_member_can_receive_ownership("auditor"));
+        assert!(!issuer_member_can_receive_ownership("owner"));
     }
 
     #[test]
