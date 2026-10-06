@@ -10708,6 +10708,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0035_issuer_retirement.sql"),
             include_str!("../migrations/0036_safe_verifier_retirement.sql"),
             include_str!("../migrations/0037_verifier_retirement_serialization.sql"),
+            include_str!("../migrations/0038_issuer_retirement_serialization.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -11140,10 +11141,33 @@ mod tests {
         let verifier = source
             .find("0036_safe_verifier_retirement.sql")
             .expect("0036 wired");
-        let serialized = source
+        let verifier_serialized = source
             .find("0037_verifier_retirement_serialization.sql")
             .expect("0037 wired");
-        assert!(issuer < verifier && verifier < serialized);
+        let issuer_serialized = source
+            .find("0038_issuer_retirement_serialization.sql")
+            .expect("0038 wired");
+        assert!(
+            issuer < verifier
+                && verifier < verifier_serialized
+                && verifier_serialized < issuer_serialized
+        );
+    }
+
+    #[test]
+    fn verifier_retirement_guard_serializes_signing_keys() {
+        let schema = include_str!("../migrations/0037_verifier_retirement_serialization.sql");
+        assert!(schema.contains("FOR SHARE"));
+        assert!(schema.contains("verifier_signing_keys_retired_verifier_guard"));
+        assert!(schema.contains("verifier is retired"));
+    }
+
+    #[test]
+    fn issuer_retirement_guard_serializes_new_trust() {
+        let schema = include_str!("../migrations/0038_issuer_retirement_serialization.sql");
+        assert!(schema.contains("FOR SHARE"));
+        assert!(schema.contains("issuer_signing_keys_retired_issuer_guard"));
+        assert!(schema.contains("issuer is retired"));
     }
 
     #[test]

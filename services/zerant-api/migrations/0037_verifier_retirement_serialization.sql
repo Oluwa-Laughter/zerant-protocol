@@ -20,3 +20,8 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS verifier_signing_keys_retired_verifier_guard ON verifier_signing_keys;
+CREATE TRIGGER verifier_signing_keys_retired_verifier_guard
+BEFORE INSERT ON verifier_signing_keys
+FOR EACH ROW EXECUTE FUNCTION zerant_reject_retired_verifier_insert();
