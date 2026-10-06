@@ -10736,6 +10736,7 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0037_verifier_retirement_serialization.sql"),
             include_str!("../migrations/0038_issuer_retirement_serialization.sql"),
             include_str!("../migrations/0039_retired_issuer_successor.sql"),
+            include_str!("../migrations/0040_issuer_audit_account_delete.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -11177,11 +11178,15 @@ mod tests {
         let issuer_successor = source
             .find("0039_retired_issuer_successor.sql")
             .expect("0039 wired");
+        let issuer_audit_delete = source
+            .find("0040_issuer_audit_account_delete.sql")
+            .expect("0040 wired");
         assert!(
             issuer < verifier
                 && verifier < verifier_serialized
                 && verifier_serialized < issuer_serialized
                 && issuer_serialized < issuer_successor
+                && issuer_successor < issuer_audit_delete
         );
     }
 
@@ -11199,6 +11204,16 @@ mod tests {
         assert!(schema.contains("FOR SHARE"));
         assert!(schema.contains("issuer_signing_keys_retired_issuer_guard"));
         assert!(schema.contains("issuer is retired"));
+    }
+
+    #[test]
+    fn issuer_audit_account_delete_migration_allows_only_fk_nullification() {
+        let schema = include_str!("../migrations/0040_issuer_audit_account_delete.sql");
+        assert!(schema.contains("zerant.allow_account_delete"));
+        assert!(schema.contains("OLD.actor_account_id IS NOT NULL"));
+        assert!(schema.contains("NEW.actor_account_id IS NULL"));
+        assert!(schema.contains("issuer_events is append-only"));
+        assert!(schema.contains("NEW.actor_zerant_id = OLD.actor_zerant_id"));
     }
 
     #[test]
