@@ -35,31 +35,22 @@ test("dedicated Zcash workspace owns wallet and payment actions", () => {
   assert.ok(html.includes("Track submission"));
 
   assert.ok(html.includes("Testnet wallet setup"));
-  assert.ok(html.includes("Open official Noir releases"));
-  assert.ok(html.includes("noir-wallet-sdk/releases"));
-  assert.ok(html.includes("[Testnet] Noir Wallet"));
-  assert.ok(html.includes("Reset Noir permission"));
-  assert.ok(html.includes("does not delete your Zerant account or touch wallet funds"));
-  assert.ok(html.includes("Zcash wallet connection diagnostics"));
-  assert.ok(html.includes("Wallet authorization"));
-  assert.ok(html.includes("Zerant sign-in"));
-  assert.ok(html.includes("ZIP-321 testnet wallet"));
-  assert.ok(html.includes("github.com/zingolabs/zingo-pc"));
-  assert.ok(html.includes("Never enter a recovery phrase"));
+  assert.ok(html.includes("Bring a Zcash testnet wallet."));
+  assert.ok(html.includes("Open, scan, or copy"));
+  assert.ok(html.includes("You can make progress with the payment link even when direct approval fails."));
   assert.ok(html.includes('id="zcash-wallet-actions"'));
   assert.ok(html.includes('href="#zcash-payment-review"'));
   assert.ok(html.includes('href="#zcash-address-inspector"'));
   assert.ok(html.includes('href="#zcash-wallet-actions"'));
   assert.ok(html.includes("Prepare, review, then approve in your wallet."));
-  assert.ok(html.includes("Mempool visibility and confirmation depth are network facts"));
-  assert.ok(html.includes("do not independently reveal or verify a shielded recipient or amount"));
+  assert.ok(html.includes("Network visibility does not independently verify a shielded recipient or amount"));
   assert.ok(html.includes("Prepared"));
   assert.ok(html.includes("Submitted"));
   assert.ok(html.includes("Seen"));
   assert.ok(html.includes("Mined · depth"));
   assert.equal(html.includes("Testnet settlement verification is not available yet"), false);
   assert.equal(html.includes(">Payment verified<"), false);
-  assert.ok(html.includes("Pasting a wallet address does not connect a wallet"));
+  assert.ok(html.includes("A Zcash address identifies a payment destination"));
 });
 
 test("signed-out Zcash workspace directs users to account access", () => {

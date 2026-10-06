@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { paymentNetworkStatus, shouldAutoObservePayment, shouldObserveAfterSubmit, ZcashPaymentRequestReview } from "./zcash-payment-request-review";
+import { manualPaymentDetails, paymentNetworkStatus, shouldAutoObservePayment, shouldObserveAfterSubmit, ZcashPaymentRequestReview } from "./zcash-payment-request-review";
+
+test("manual handoff keeps only one exact simple payment", () => {
+  const payment = { index: 0, recipient: "utest1example", amount_zat: 123456789,
+    memo_present: false, transparent_only: false, can_receive_memo: true,
+    label: null, message: null, other_param_names: [] as string[] };
+  const summary = { canonical_uri: "zcash:utest1example?amount=1.23456789", payment_count: 1,
+    total_zat: 123456789, payments: [payment] };
+  assert.deepEqual(manualPaymentDetails(summary), { recipient: payment.recipient, amountZec: "1.23456789" });
+  assert.equal(manualPaymentDetails({ ...summary, payment_count: 2, payments: [payment, payment] }), null);
+  assert.equal(manualPaymentDetails({ ...summary, payments: [{ ...payment, memo_present: true }] }), null);
+  assert.equal(manualPaymentDetails({ ...summary, payments: [{ ...payment, message: "Keep this exact" }] }), null);
+  assert.equal(manualPaymentDetails({ ...summary, payments: [{ ...payment, amount_zat: Number.MAX_SAFE_INTEGER + 1 }] }), null);
+});
 
 test("Zcash payment experience starts with sender-side private payment review", () => {
   const html = renderToStaticMarkup(<ZcashPaymentRequestReview enabled />);

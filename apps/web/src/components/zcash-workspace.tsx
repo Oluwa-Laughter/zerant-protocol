@@ -34,8 +34,8 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
       <section className="app-heading workspace-intro">
         <div>
           <p className="eyebrow">Zerant on Zcash · Testnet</p>
-          <h1>Prepare a Zcash payment. Keep control in your wallet.</h1>
-          <p>Zerant is built for the Zcash ecosystem. It prepares and tracks a specific payment request while a compatible Zcash wallet holds funds and approves the transaction.</p>
+          <h1>Pay with a Zcash testnet wallet.</h1>
+          <p>Prepare and review a payment in Zerant. Then open its payment link, scan its QR code, or copy the exact details into your testnet wallet. Browser connection is optional.</p>
         </div>
         <span className="pill">{authenticated ? "Zerant account connected" : "Sign-in required"}</span>
       </section>
@@ -65,21 +65,21 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
       {showOverview ? <section className="zcash-wallet-setup" aria-labelledby="zcash-testnet-wallet-title">
         <div className="section-heading">
           <p className="eyebrow">Testnet wallet setup</p>
-          <h2 id="zcash-testnet-wallet-title">Use a wallet that is actually on Zcash testnet.</h2>
-          <p className="muted">The Noir Wallet from the Chrome Web Store is mainnet. For Zerant testnet, use Noir’s separate official testnet extension build, or use a compatible testnet wallet through the reviewed ZIP-321 payment link.</p>
+          <h2 id="zcash-testnet-wallet-title">Bring a Zcash testnet wallet.</h2>
+          <p className="muted">Zerant works with a compatible wallet through a standard Zcash payment link. You can also use the exact recipient and amount in a testnet wallet that cannot open the link.</p>
         </div>
         <div className="zcash-wallet-setup-grid">
           <article className="workspace-card">
-            <p className="eyebrow">Direct connection</p>
-            <h3>Testnet Noir Wallet</h3>
-            <p className="muted">Noir publishes a separate testnet extension on its official GitHub Releases page. Download the asset ending in <code>-testnet.zip</code>, unzip it, then load the extracted extension from Chrome’s Extensions page in Developer mode. The installed extension should identify itself as <strong>[Testnet] Noir Wallet</strong>.</p>
-            <a className="button" href="https://github.com/NoirWallet/noir-wallet-sdk/releases" target="_blank" rel="noreferrer">Open official Noir releases <span aria-hidden="true">↗</span></a>
+            <p className="eyebrow">No browser connection</p>
+            <h3>Open, scan, or copy</h3>
+            <p className="muted">Review the recipient and amount, then use the Zcash payment link or QR code in a compatible testnet wallet. For a simple payment, you can copy both fields manually.</p>
+            <Link className="button" href="/zcash/payments">Prepare a payment <span aria-hidden="true">→</span></Link>
           </article>
           <article className="workspace-card">
-            <p className="eyebrow">Portable payment</p>
-            <h3>ZIP-321 testnet wallet</h3>
-            <p className="muted">A wallet does not need a Zerant browser connection to pay a reviewed request. Zerant can produce the canonical <code>zcash:</code> payment link; wallets such as Zingo document testnet wallets and ZIP-321 URI handling.</p>
-            <a className="text-link" href="https://github.com/zingolabs/zingo-pc" target="_blank" rel="noreferrer">Review Zingo PC support <span aria-hidden="true">↗</span></a>
+            <p className="eyebrow">Optional direct connection</p>
+            <h3>Testnet Noir Wallet</h3>
+            <p className="muted">The Chrome Store Noir extension is mainnet. Direct browser payment requires Noir’s separate testnet build and its approval request. You can make progress with the payment link even when direct approval fails.</p>
+            <Link className="text-link" href="/zcash/wallet">Direct wallet options <span aria-hidden="true">→</span></Link>
           </article>
         </div>
         <p className="small muted">Wallet installation and payment approval stay outside Zerant. Never enter a recovery phrase, spending key, or wallet password into Zerant.</p>
@@ -105,7 +105,7 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
         <article className="workspace-card">
           <p className="eyebrow">Payment tracking</p>
           <h2>Review first. Approve in your wallet.</h2>
-          <p className="muted">Zerant saves the transaction ID your wallet returns and can observe that exact txid on trusted Zcash testnet infrastructure. Mempool visibility and confirmation depth are network facts; they do not independently reveal or verify a shielded recipient or amount.</p>
+          <p className="muted">If your wallet submits the payment, save its transaction ID in Zerant. Zerant can observe that exact txid on trusted Zcash testnet infrastructure. Network visibility does not independently verify a shielded recipient or amount.</p>
           <div className="zcash-lifecycle" aria-label="Available Zcash payment states">
             <span>Prepared</span><span>Submitted</span><span>Seen</span><span>Mined · depth</span>
           </div>
@@ -147,7 +147,7 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
             <p className="muted">Zerant uses Zcash testnet. The Noir extension from the Chrome Store is mainnet and cannot pay a testnet request. A separate Testnet Noir build is available from Noir. A compatible wallet can also use the reviewed payment link above without connecting to Zerant.</p>
           </div>
           <ZcashConnect purpose="connection" />
-          <p className="small muted wallet-compatibility-note">Pasting a wallet address does not connect a wallet. A destination address belongs in a payment request. Connecting never approves spending.</p>
+          <p className="small muted wallet-compatibility-note">A Zcash address identifies a payment destination. It does not connect a wallet or give Zerant spending authority.</p>
         </section>
       ) : null}
 

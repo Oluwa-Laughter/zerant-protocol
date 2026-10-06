@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
+import { ZcashPaymentQr } from "@/components/zcash-payment-qr";
 import { zip321Connector, type ZcashConnector } from "@/lib/zcash-connectors";
 import { connectConnector, getZcashConnectionSnapshot, useZcashConnection } from "@/lib/zcash-connection";
 import { directPaymentMode, paymentAction } from "@/lib/zcash-payment-connector";
+import { zatoshiToZec } from "@/lib/zcash-wallet";
 
 type Payment = {
   index: number;
@@ -47,10 +49,16 @@ type PaymentPage = { items: PaymentRecord[]; next_cursor: string | null };
 
 function canTrack(summary: Summary): boolean {
   const payment = summary.payments[0];
-  return summary.payment_count === 1 && Boolean(payment) &&
-    payment.amount_zat !== null && payment.amount_zat > 0 &&
+  return summary.payment_count === 1 && summary.payments.length === 1 && Boolean(payment) &&
+    payment.amount_zat !== null && Number.isSafeInteger(payment.amount_zat) && payment.amount_zat > 0 &&
     !payment.memo_present && payment.label === null && payment.message === null &&
     payment.other_param_names.length === 0;
+}
+
+export function manualPaymentDetails(summary: Summary): { recipient: string; amountZec: string } | null {
+  if (!canTrack(summary)) return null;
+  const payment = summary.payments[0];
+  return { recipient: payment.recipient, amountZec: zatoshiToZec(payment.amount_zat!) };
 }
 
 function formatZec(zat: number | null): string {
@@ -187,6 +195,15 @@ export function ZcashPaymentRequestReview({
       setStatus("Payment link copied. Open it in a compatible Zcash wallet on the same network and check the recipient and amount before approving.");
     } catch {
       setStatus("Copy failed. Select the payment link shown below and copy it manually.");
+    }
+  }
+
+  async function copyManualField(value: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setStatus(`${label} copied. Compare the recipient and exact amount in your testnet wallet before approving.`);
+    } catch {
+      setStatus(`Could not copy ${label.toLowerCase()}. Select the value shown below and copy it manually.`);
     }
   }
 
@@ -392,6 +409,7 @@ export function ZcashPaymentRequestReview({
     ? directPaymentMode(summary, connection.selected)
     : null;
   const payment = summary?.payments[0] ?? null;
+  const manualDetails = summary ? manualPaymentDetails(summary) : null;
   const preparedCount = records.filter((item) => item.state === "prepared").length;
   const submittedCount = records.filter((item) => item.state === "submitted").length;
 
@@ -446,16 +464,31 @@ export function ZcashPaymentRequestReview({
       </div>
 
       {record?.state !== "submitted" ? <div className="payment-request-actions">
+        <Button disabled={busy} onClick={openInWalletApp}>Open payment in wallet</Button>
+        <Button variant="secondary" disabled={busy} onClick={() => void copyPaymentLink()}>Copy payment link</Button>
         {mode === "shielded" && record ? <Button disabled={busy} onClick={() => void payWithConnectedWallet()}>Approve shielded payment</Button> : null}
         {mode === "transparent" && record ? <Button disabled={busy} onClick={() => void payWithConnectedWallet(true)}>Approve transparent payment</Button> : null}
-        {!mode && record ? <ZcashWalletSelector purpose="payment" triggerLabel="Choose payment wallet" onSelect={(connector) => void selectWallet(connector)} /> : null}
-        <Button variant="secondary" disabled={busy} onClick={openInWalletApp}>Open in another wallet</Button>
-        <Button variant="secondary" disabled={busy} onClick={() => void copyPaymentLink()}>Copy payment link</Button>
       </div> : null}
       {record?.state !== "submitted" ? <div className="payment-link-copy">
-        <label htmlFor="reviewed-payment-link">Reviewed payment link</label>
-        <textarea id="reviewed-payment-link" readOnly value={summary.canonical_uri} rows={3} />
-        <p className="small muted">Use a wallet on the same Zcash network. Zingo PC documents testnet and payment-link support; other wallets may also support this format. Review the exact details again in your wallet.</p>
+        <div className="payment-portable-handoff">
+          <ZcashPaymentQr uri={summary.canonical_uri} />
+          <div>
+            <label htmlFor="reviewed-payment-link">Reviewed payment link · Zcash testnet</label>
+            <textarea id="reviewed-payment-link" readOnly value={summary.canonical_uri} rows={3} />
+            <p className="small muted">Scan this QR code with a compatible testnet wallet, open the link, or copy it into your wallet. Compare the recipient and amount in the wallet before approval.</p>
+          </div>
+        </div>
+        {manualDetails ? <div className="payment-manual-handoff">
+          <h3>Wallet does not open payment links?</h3>
+          <p className="small muted">For this single payment, enter these exact details in any testnet wallet that can send to this address. The wallet must approve and submit the transaction.</p>
+          <div className="payment-manual-field"><div><span>Recipient</span><code>{manualDetails.recipient}</code></div><Button variant="secondary" onClick={() => void copyManualField(manualDetails.recipient, "Recipient")}>Copy recipient</Button></div>
+          <div className="payment-manual-field"><div><span>Exact amount</span><code>{manualDetails.amountZec} ZEC</code></div><Button variant="secondary" onClick={() => void copyManualField(manualDetails.amountZec, "Amount")}>Copy amount</Button></div>
+        </div> : null}
+        <details className="payment-direct-option">
+          <summary>Use a directly connected wallet</summary>
+          <p className="small muted">Direct connection is optional and currently requires a compatible Zcash testnet browser wallet. The payment link above works without connecting a wallet to Zerant.</p>
+          {!mode && record ? <ZcashWalletSelector purpose="payment" triggerLabel="Choose direct wallet" onSelect={(connector) => void selectWallet(connector)} /> : null}
+        </details>
       </div> : null}
       {record ? <p className="small muted">Saved payment: {record.state === "submitted" ? "Submitted" : "Prepared"}. If your wallet opens separately, enter its transaction ID in Recent payments after submission.</p> : null}
       <p className="small muted payment-request-note">A wallet transaction ID records submission here. Zerant can observe that exact txid on Zcash testnet without reading wallet history. Network inclusion does not independently reveal or verify a shielded recipient or amount.</p>

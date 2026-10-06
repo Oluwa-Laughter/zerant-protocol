@@ -10,6 +10,7 @@ These paths do not depend on a browser-extension vendor:
 
 - **Authentication:** Zerant can create a short-lived `zecauth:` request for wallet apps that implement the ZecAuth handoff draft.
 - **Payments:** Zerant uses canonical ZIP-321 `zcash:` payment-request URIs. A wallet that understands ZIP-321 can receive the exact validated request without Zerant translating it into a vendor-specific transaction format.
+- **QR and manual payment:** The payment page renders the complete URI as a QR code in the browser. For one exact-amount payment with no memo or extra fields, it also shows the validated recipient and decimal ZEC amount for manual entry in a testnet wallet. The holder must compare both fields in that wallet. Multi-output and memo-bearing requests keep the complete URI because manual entry would omit required details.
 - **Addresses:** Zerant validates Zcash addresses through the maintained Zcash address libraries rather than a wallet-specific parser.
 
 Portable handoff is the preferred interoperability layer because the wallet remains responsible for keys, transaction construction and user approval.
