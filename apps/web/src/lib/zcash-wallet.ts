@@ -273,9 +273,11 @@ export class NoirWalletAdapter implements ZcashWalletAdapter {
     const onChange = () => handler();
     this.wallet.zcash.on("accountsChanged", onChange);
     this.wallet.zcash.on("chainChanged", onChange);
+    this.wallet.zcash.on("disconnect", onChange);
     return () => {
       this.wallet.zcash.removeListener("accountsChanged", onChange);
       this.wallet.zcash.removeListener("chainChanged", onChange);
+      this.wallet.zcash.removeListener("disconnect", onChange);
     };
   }
 }

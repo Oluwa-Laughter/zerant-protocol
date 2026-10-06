@@ -243,6 +243,22 @@ test("an explicit Noir connect opens approval even when silent lookup would reje
   assert.equal(lookupCalls, 0);
 });
 
+test("Noir connection subscriptions include explicit provider disconnects", () => {
+  const added: string[] = [];
+  const removed: string[] = [];
+  const wallet = fakeWallet({
+    on: (event: string) => { added.push(event); },
+    removeListener: (event: string) => { removed.push(event); },
+  });
+
+  const adapter = new NoirWalletAdapter(wallet);
+  const cleanup = adapter.subscribeConnectionChanges(() => undefined);
+
+  assert.deepEqual(added, ["accountsChanged", "chainChanged", "disconnect"]);
+  cleanup();
+  assert.deepEqual(removed, ["accountsChanged", "chainChanged", "disconnect"]);
+});
+
 test("enhanced injected adapter advertises and uses supported capabilities", async () => {
   let signingMode: unknown;
   let fundingSource: unknown;
