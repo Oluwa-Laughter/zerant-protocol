@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 export type VerifierProfile = {
   display_name: string;
   origin: string;
+  retired_at: string | null;
   created_at: string;
 };
 
@@ -171,7 +172,7 @@ export function VerifierWorkspace({
   const [proofLoadingId, setProofLoadingId] = useState<string | null>(null);
   const [retireConfirm, setRetireConfirm] = useState("");
   const [retiring, setRetiring] = useState(false);
-  const [retired, setRetired] = useState(false);
+  const [retired, setRetired] = useState(Boolean(initialProfile?.retired_at));
 
   const selectedSchema = availableSchemas.find((schema) => schema.id === schemaId);
   const pendingRequestCount = requests.filter((request) => request.status === "pending").length;
@@ -245,9 +246,13 @@ export function VerifierWorkspace({
         );
         return;
       }
-      setProfile(null);
+      const now = new Date().toISOString();
+      setProfile((current) => current ? { ...current, retired_at: now } : current);
       setRetired(true);
-      setStatus("Verifier profile retired. Your account can now refresh its deletion eligibility.");
+      setApiKeys((current) => current.map((key) => ({ ...key, revoked: true })));
+      setWebhooks((current) => current.map((webhook) => ({ ...webhook, disabled: true })));
+      setRequestReview(null);
+      setStatus("Verifier retired. Historical requests, proofs, and key history are preserved. New verification work and integrations are closed.");
     } catch {
       setStatus("Verifier retirement could not be completed.");
     } finally {
@@ -572,19 +577,6 @@ export function VerifierWorkspace({
     );
   }
 
-  if (retired) {
-    return (
-      <main id="main" className="verifier-page">
-        <section className="verifier-hero">
-          <p className="eyebrow">Verifier retired</p>
-          <h1>This verifier profile has been removed.</h1>
-          <p>Verifier keys, integrations, policies and verifier-side request records were removed. Holder-side Zerant activity remains as historical metadata.</p>
-          <Link href="/account" className="button">Review account settings <span aria-hidden="true">→</span></Link>
-          {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
-        </section>
-      </main>
-    );
-  }
 
   if (!profile) {
     return (
@@ -632,6 +624,13 @@ export function VerifierWorkspace({
         <span className="pill">{profile.origin}</span>
       </section>
 
+      {retired ? (
+        <section className="verifier-retired-banner" aria-label="Retired verifier status">
+          <div><p className="eyebrow">Verifier retired</p><h2>Archive-only mode is active.</h2></div>
+          <p>Historical requests, bounded proof results, signing-key history, policies, integration-key records, and webhook records are preserved. New verification requests, integrations, and security-key rotation are disabled.</p>
+        </section>
+      ) : null}
+
       <section className="verifier-progress" aria-label="Verifier request progress">
         <div className="verifier-progress-heading">
           <div><p className="eyebrow">Verification flow</p><h2>Ask for one fact. Receive one bounded result.</h2></div>
@@ -670,10 +669,10 @@ export function VerifierWorkspace({
             their normal short expiry.
           </p>
           <div className="vault-actions wrap">
-            <Button variant="secondary" onClick={() => rotateVerifierKey(false)}>
+            <Button variant="secondary" disabled={retired} onClick={() => rotateVerifierKey(false)}>
               Rotate security key
             </Button>
-            <Button variant="secondary" onClick={() => rotateVerifierKey(true)}>
+            <Button variant="secondary" disabled={retired} onClick={() => rotateVerifierKey(true)}>
               Replace compromised key
             </Button>
           </div>
@@ -772,7 +771,7 @@ export function VerifierWorkspace({
             <option value="365">1 year</option>
           </select>
 
-          <Button disabled={!apiKeyName.trim()} onClick={createApiKey}>
+          <Button disabled={retired || !apiKeyName.trim()} onClick={createApiKey}>
             Create integration key
           </Button>
 
@@ -861,7 +860,7 @@ export function VerifierWorkspace({
             spellCheck={false}
           />
 
-          <Button disabled={!webhookName.trim() || !webhookUrl.trim()} onClick={createWebhook}>
+          <Button disabled={retired || !webhookName.trim() || !webhookUrl.trim()} onClick={createWebhook}>
             Add webhook
           </Button>
 
@@ -935,6 +934,7 @@ export function VerifierWorkspace({
             value={holderId}
             onChange={(event) => { setHolderId(event.target.value); setRequestReview(null); }}
             placeholder="zr_..."
+            disabled={retired}
           />
 
           <label htmlFor="verify-purpose">Why do you need this?</label>
@@ -951,6 +951,7 @@ export function VerifierWorkspace({
             id="verify-schema"
             value={schemaId}
             onChange={(event) => { setSchemaId(event.target.value); setRequestReview(null); }}
+            disabled={retired}
           >
             {availableSchemas.length ? (
               availableSchemas.map((schema) => (
@@ -992,13 +993,13 @@ export function VerifierWorkspace({
               </dl>
               <p className="small muted">The holder will see who is asking, this purpose, and the exact claim Zerant proposes to share before they can approve.</p>
               <div className="vault-actions wrap">
-                <Button onClick={() => void createRequest()}>Send verification request</Button>
+                <Button disabled={retired} onClick={() => void createRequest()}>Send verification request</Button>
                 <Button variant="secondary" onClick={() => { setRequestReview(null); setStatus("Edit the request details, then review again."); }}>Edit details</Button>
               </div>
             </div>
           ) : (
             <Button
-              disabled={!holderId.trim() || !purpose.trim() || !selectedSchema}
+              disabled={retired || !holderId.trim() || !purpose.trim() || !selectedSchema}
               onClick={reviewRequest}
             >
               Review request
@@ -1064,14 +1065,18 @@ export function VerifierWorkspace({
       <section className="verifier-retirement" aria-labelledby="verifier-retirement-title">
         <div>
           <p className="eyebrow">Verifier lifecycle</p>
-          <h2 id="verifier-retirement-title">Retire this verifier profile.</h2>
-          <p className="muted">Retirement permanently removes this verifier’s signing keys, integration keys, webhooks, policies and verifier-side request records. Holder-side Zerant activity remains as historical metadata. Pending requests or webhook deliveries must finish first.</p>
+          <h2 id="verifier-retirement-title">{retired ? "This verifier is retired." : "Retire this verifier safely."}</h2>
+          <p className="muted">{retired
+            ? "Historical verifier records remain available in archive-only mode. The personal Zerant account may now be deleted without cascading through this verifier history."
+            : "Retirement closes new verification work, revokes active integration keys, disables webhooks, and retires active policies while preserving verifier-side request, proof, and signing-key history. Pending requests or webhook deliveries must finish first."}</p>
         </div>
-        <label htmlFor="verifier-retire-confirm">Type RETIRE to confirm</label>
-        <input id="verifier-retire-confirm" value={retireConfirm} onChange={(event) => setRetireConfirm(event.target.value)} autoComplete="off" />
-        <Button variant="secondary" disabled={retireConfirm !== "RETIRE" || retiring} onClick={() => void retireVerifier()}>
-          {retiring ? "Retiring…" : "Retire verifier profile"}
-        </Button>
+        {!retired ? <>
+          <label htmlFor="verifier-retire-confirm">Type RETIRE to confirm</label>
+          <input id="verifier-retire-confirm" value={retireConfirm} onChange={(event) => setRetireConfirm(event.target.value)} autoComplete="off" />
+          <Button variant="secondary" disabled={retireConfirm !== "RETIRE" || retiring} onClick={() => void retireVerifier()}>
+            {retiring ? "Retiring…" : "Retire verifier profile"}
+          </Button>
+        </> : null}
       </section>
     </main>
   );

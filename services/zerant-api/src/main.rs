@@ -856,6 +856,7 @@ struct RegisterVerifier {
 struct VerifierProfileView {
     display_name: String,
     origin: String,
+    retired_at: Option<OffsetDateTime>,
     created_at: OffsetDateTime,
 }
 
@@ -1658,6 +1659,8 @@ async fn verifier_api_account_id(
                  FROM verifier_api_keys k
                  JOIN verifier_profiles v ON v.id = k.verifier_profile_id
                  WHERE k.token_hash = $1
+                   AND v.retired_at IS NULL
+                   AND v.account_id IS NOT NULL
                    AND k.revoked_at IS NULL
                    AND (k.expires_at IS NULL OR k.expires_at > NOW())
              ), touched AS (
@@ -4097,7 +4100,8 @@ async fn account_summary(
                       WHERE p.account_id = a.id OR m.account_id = a.id
                       LIMIT 1),
                     (SELECT display_name FROM verifier_profiles v WHERE v.account_id = a.id),
-                    EXISTS(SELECT 1 FROM issuer_profiles p WHERE p.account_id = a.id)
+                    EXISTS(SELECT 1 FROM issuer_profiles p WHERE p.account_id = a.id),
+                    EXISTS(SELECT 1 FROM verifier_profiles v WHERE v.account_id = a.id AND v.retired_at IS NULL)
              FROM accounts a
              WHERE a.id = $1",
             &[&account],
@@ -4110,11 +4114,12 @@ async fn account_summary(
     let issuer_role: Option<String> = row.get(4);
     let verifier_profile: Option<String> = row.get(5);
     let owns_issuer: bool = row.get(6);
+    let active_verifier: bool = row.get(7);
     Ok(Json(AccountSummary {
         zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
         credential_count: row.get(1),
         passkey_count: row.get(2),
-        can_delete: !owns_issuer && verifier_profile.is_none(),
+        can_delete: !owns_issuer && !active_verifier,
         issuer_profile,
         issuer_role,
         verifier_profile,
@@ -4235,7 +4240,7 @@ async fn delete_account(
     let roles = tx
         .query_one(
             "SELECT EXISTS(SELECT 1 FROM issuer_profiles WHERE account_id = $1),
-                    EXISTS(SELECT 1 FROM verifier_profiles WHERE account_id = $1)",
+                    EXISTS(SELECT 1 FROM verifier_profiles WHERE account_id = $1 AND retired_at IS NULL)",
             &[&account],
         )
         .await
@@ -4877,7 +4882,7 @@ async fn get_verifier_profile(
     let client = db_client(&state.db).await?;
     let row = client
         .query_opt(
-            "SELECT display_name, origin, created_at
+            "SELECT display_name, origin, retired_at, created_at
              FROM verifier_profiles WHERE account_id = $1",
             &[&account],
         )
@@ -4888,7 +4893,8 @@ async fn get_verifier_profile(
     Ok(Json(VerifierProfileView {
         display_name: row.get(0),
         origin: row.get(1),
-        created_at: row.get(2),
+        retired_at: row.get(2),
+        created_at: row.get(3),
     }))
 }
 
@@ -4910,13 +4916,17 @@ async fn retire_verifier_profile(
 
     let verifier = tx
         .query_opt(
-            "SELECT id FROM verifier_profiles WHERE account_id = $1 FOR UPDATE",
+            "SELECT id, retired_at FROM verifier_profiles WHERE account_id = $1 FOR UPDATE",
             &[&account],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?
         .ok_or(ApiError::NotFound)?;
     let verifier_profile_id: Uuid = verifier.get(0);
+    let already_retired: Option<OffsetDateTime> = verifier.get(1);
+    if already_retired.is_some() {
+        return Err(ApiError::Conflict);
+    }
 
     let blockers = tx
         .query_one(
@@ -4944,16 +4954,53 @@ async fn retire_verifier_profile(
         return Err(ApiError::Conflict);
     }
 
+    tx.execute(
+        "UPDATE verification_requests
+         SET status = 'expired'
+         WHERE verifier_profile_id = $1
+           AND status = 'pending'
+           AND expires_at <= NOW()",
+        &[&verifier_profile_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+
     let affected = tx
         .execute(
-            "DELETE FROM verifier_profiles WHERE id = $1 AND account_id = $2",
+            "UPDATE verifier_profiles
+             SET retired_at = NOW()
+             WHERE id = $1 AND account_id = $2 AND retired_at IS NULL",
             &[&verifier_profile_id, &account],
         )
         .await
         .map_err(|_| ApiError::Unavailable)?;
     if affected != 1 {
-        return Err(ApiError::NotFound);
+        return Err(ApiError::Conflict);
     }
+    tx.execute(
+        "UPDATE verifier_api_keys
+         SET revoked_at = COALESCE(revoked_at, NOW())
+         WHERE verifier_profile_id = $1 AND revoked_at IS NULL",
+        &[&verifier_profile_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    tx.execute(
+        "UPDATE verifier_webhooks
+         SET disabled_at = COALESCE(disabled_at, NOW())
+         WHERE verifier_profile_id = $1 AND disabled_at IS NULL",
+        &[&verifier_profile_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    tx.execute(
+        "UPDATE verification_policies
+         SET active = FALSE, retired_at = COALESCE(retired_at, NOW())
+         WHERE verifier_profile_id = $1 AND active = TRUE",
+        &[&verifier_profile_id],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
     tx.commit().await.map_err(|_| ApiError::Unavailable)?;
     Ok(StatusCode::NO_CONTENT.into_response())
 }
@@ -5025,6 +5072,7 @@ async fn rotate_verifier_key(
              FROM verifier_profiles v
              JOIN verifier_signing_keys k ON k.verifier_profile_id = v.id
              WHERE v.account_id = $1
+               AND v.retired_at IS NULL
                AND k.retired_at IS NULL
                AND k.compromised_at IS NULL
              FOR UPDATE OF k",
@@ -5132,7 +5180,7 @@ async fn create_verifier_api_key(
         .map_err(|_| ApiError::Unavailable)?;
     let verifier = tx
         .query_opt(
-            "SELECT id FROM verifier_profiles WHERE account_id = $1 FOR UPDATE",
+            "SELECT id FROM verifier_profiles WHERE account_id = $1 AND retired_at IS NULL FOR UPDATE",
             &[&account],
         )
         .await
@@ -5314,7 +5362,7 @@ async fn create_verifier_webhook(
         .map_err(|_| ApiError::Unavailable)?;
     let verifier = tx
         .query_opt(
-            "SELECT id FROM verifier_profiles WHERE account_id = $1 FOR UPDATE",
+            "SELECT id FROM verifier_profiles WHERE account_id = $1 AND retired_at IS NULL FOR UPDATE",
             &[&account],
         )
         .await
@@ -5964,6 +6012,7 @@ async fn register_verifier(
         Json(VerifierProfileView {
             display_name: row.get(0),
             origin: row.get(1),
+            retired_at: None,
             created_at,
         }),
     ))
@@ -6050,7 +6099,7 @@ async fn verifier_profile_id_for_account(db: &Pool, account: Uuid) -> Result<Uui
     let client = db_client(db).await?;
     client
         .query_opt(
-            "SELECT id FROM verifier_profiles WHERE account_id = $1",
+            "SELECT id FROM verifier_profiles WHERE account_id = $1 AND retired_at IS NULL",
             &[&account],
         )
         .await
@@ -6213,7 +6262,7 @@ async fn create_verification_policy_version(
             "SELECT p.verifier_profile_id, p.slug, p.display_name, p.version
              FROM verification_policies p
              JOIN verifier_profiles v ON v.id = p.verifier_profile_id
-             WHERE p.id = $1 AND v.account_id = $2 AND p.active = TRUE
+             WHERE p.id = $1 AND v.account_id = $2 AND v.retired_at IS NULL AND p.active = TRUE
              FOR UPDATE OF p",
             &[&policy_id, &account],
         )
@@ -6280,6 +6329,7 @@ async fn retire_verification_policy(
              WHERE p.id = $1
                AND p.verifier_profile_id = v.id
                AND v.account_id = $2
+               AND v.retired_at IS NULL
                AND p.active = TRUE",
             &[&policy_id, &account],
         )
@@ -6307,6 +6357,7 @@ async fn resolve_verification_policy(
              JOIN credential_schemas s ON s.id = p.credential_schema_id
              WHERE p.id = $1
                AND v.account_id = $2
+               AND v.retired_at IS NULL
                AND p.active = TRUE
                AND s.active = TRUE",
             &[&policy_id, &account],
@@ -6477,6 +6528,7 @@ async fn create_verification_request_for_account(
              FROM verifier_profiles v
              JOIN verifier_signing_keys k ON k.verifier_profile_id = v.id
              WHERE v.account_id = $1
+               AND v.retired_at IS NULL
                AND k.retired_at IS NULL
                AND k.compromised_at IS NULL",
             &[&account],
@@ -10638,6 +10690,8 @@ async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
             include_str!("../migrations/0032_discoverable_passkeys.sql"),
             include_str!("../migrations/0033_zcash_payment_observation.sql"),
             include_str!("../migrations/0034_zcash_payment_activity.sql"),
+            include_str!("../migrations/0035_issuer_retirement.sql"),
+            include_str!("../migrations/0036_safe_verifier_retirement.sql"),
         ] {
             client
                 .batch_execute(migration)
@@ -11059,6 +11113,18 @@ mod tests {
         );
         assert!(safe_network_height(-1).is_err());
         assert!(safe_network_height(i64::try_from(MAX_SAFE_INTEGER + 1).unwrap()).is_err());
+    }
+
+    #[test]
+    fn retirement_migrations_are_wired_into_startup_order() {
+        let source = include_str!("main.rs");
+        let issuer = source
+            .find("0035_issuer_retirement.sql")
+            .expect("0035 wired");
+        let verifier = source
+            .find("0036_safe_verifier_retirement.sql")
+            .expect("0036 wired");
+        assert!(issuer < verifier);
     }
 
     #[test]
