@@ -110,71 +110,54 @@ End with:
 
 ## Screenshot set
 
-Create a clean set of 6–8 screenshots. Use the same browser width and avoid developer tools.
+The repository already contains four clean submission visuals captured from the current production build or rendered directly from the documented architecture:
 
-### 01 — Landing
+- `docs/assets/screenshots/01-landing.png` — production landing page;
+- `docs/assets/screenshots/02-zcash.png` — public Zcash workspace and four-step wallet/payment boundary;
+- `docs/assets/screenshots/03-architecture.png` — system architecture and trust boundaries;
+- `docs/assets/screenshots/04-flow.png` — end-to-end credential, consent, verifier, and optional payment flow.
 
-Capture the hero plus the product explanation.
+For the final demo package, add the following authenticated/manual frames from the real browser session. These should not be fabricated from seeded data.
+
+### 05 — Vault
+
+Capture one real credential card and the Zerant ID after passkey sign-in.
 
 Filename:
 
-`docs/assets/screenshots/01-landing.png`
+`docs/assets/screenshots/05-vault.png`
 
-### 02 — Vault
-
-Capture one credential card and the Zerant ID.
-
-Filename:
-
-`docs/assets/screenshots/02-vault.png`
-
-### 03 — Holder consent
+### 06 — Holder consent
 
 Capture the verification request preview before approval.
 
 Filename:
 
-`docs/assets/screenshots/03-holder-consent.png`
+`docs/assets/screenshots/06-holder-consent.png`
 
-### 04 — Verified result
+### 07 — Noir Wallet approval
 
-Capture the verifier result after approval.
-
-Filename:
-
-`docs/assets/screenshots/04-verified-result.png`
-
-### 05 — Zcash payment review
-
-Capture recipient, amount, privacy review, and wallet action.
+Capture the Noir approval window while Zerant is requesting the connection or payment. Do not expose seed phrases, wallet history, or unrelated account data.
 
 Filename:
 
-`docs/assets/screenshots/05-zcash-payment-review.png`
+`docs/assets/screenshots/07-noir-approval.png`
 
-### 06 — Noir Wallet approval
+### 08 — Submitted payment
 
-Capture the Noir approval window with no sensitive account history visible.
-
-Filename:
-
-`docs/assets/screenshots/06-noir-approval.png`
-
-### 07 — Submitted payment
-
-Capture the saved payment card showing the transaction ID and pending/observed state.
+Capture the saved payment card showing the wallet-returned transaction ID and Zerant's submitted/pending network state.
 
 Filename:
 
-`docs/assets/screenshots/07-payment-submitted.png`
+`docs/assets/screenshots/08-payment-submitted.png`
 
-### 08 — Public invoice
+### 09 — Public invoice
 
-Capture the shareable invoice page.
+If an invoice is part of the recorded demo, capture its shareable public page.
 
 Filename:
 
-`docs/assets/screenshots/08-public-invoice.png`
+`docs/assets/screenshots/09-public-invoice.png`
 
 ## Screenshot quality rules
 

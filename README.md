@@ -6,6 +6,10 @@ Zerant is a privacy-preserving trust layer for Zcash applications. Organizations
 
 Zerant separates **identity**, **consent**, and **payment authority**. A Zcash wallet is optional for account access, but wallet approval is required when a user chooses to perform a Zcash payment.
 
+**Live production:** [zerant.vercel.app](https://zerant.vercel.app)
+
+![Zerant production landing page](docs/assets/screenshots/01-landing.png)
+
 ## Why Zerant
 
 Most trust systems over-collect data. A verifier that only needs to know whether a user is eligible may end up storing a name, wallet address, account history, unrelated credentials, and payment activity.
@@ -20,6 +24,10 @@ Zerant changes that flow:
 6. **Zcash payment**, when required, is approved separately in the user's wallet.
 
 There is no universal reputation score and no wallet-wide identity profile.
+
+### End-to-end product flow
+
+![Zerant end-to-end product flow](docs/assets/screenshots/04-flow.png)
 
 ## Hackathon build
 
@@ -55,25 +63,9 @@ The project intentionally does **not** claim zero knowledge, anonymity, full unl
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    U[Holder / Issuer / Verifier] --> W[Next.js Web App]
-    W -->|private service binding| A[Rust Axum API]
-    A --> DB[(PostgreSQL)]
-    A --> C[Protocol Crates]
-    C --> CC[zerant-core]
-    C --> CR[zerant-credential]
-    C --> CP[zerant-policy]
-    C --> CD[zerant-disclosure]
-    C --> CZ[zerant-zcash]
+![Zerant protocol architecture](docs/assets/screenshots/03-architecture.png)
 
-    W -->|explicit user approval| NW[Noir Wallet]
-    W -->|portable handoff| ZIP[ZIP-321 / ZecAuth]
-    A -->|bounded readiness / named tx observation| ZN[Zcash Network Services]
-
-    V[External Verifier] -->|API key| A
-    A -->|signed webhook| V
-```
+The web product, Rust service, protocol crates, wallet, verifier, and Zcash network are treated as separate trust boundaries. The browser does not become the protocol authority and the wallet does not become the user's Zerant identity.
 
 ### Trust boundaries
 
@@ -87,6 +79,8 @@ flowchart LR
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full implementation architecture.
 
 ## Zcash wallet model
+
+![Zerant Zcash payment workspace](docs/assets/screenshots/02-zcash.png)
 
 Zerant does not make a wallet the user's identity.
 
