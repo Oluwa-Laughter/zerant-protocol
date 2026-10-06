@@ -54,15 +54,18 @@ function clearConnectionState(): void {
 }
 
 async function refreshSelectedConnection(connector: ZcashConnector, chain: ZcashChain): Promise<void> {
-  if (snapshot.selected?.id !== connector.id || !connector.existingConnection) return;
+  if (snapshot.selected !== connector || snapshot.status !== "connected" || !connector.existingConnection) return;
+  const previousAccount = snapshot.account;
   try {
     const account = await connector.existingConnection();
+    if (snapshot.selected !== connector || snapshot.status !== "connected" || snapshot.account !== previousAccount) return;
     if (!account || connectedWalletNetwork(account) !== chain) {
       clearConnectionState();
       return;
     }
     update({ account, status: "connected" });
   } catch {
+    if (snapshot.selected !== connector || snapshot.status !== "connected" || snapshot.account !== previousAccount) return;
     clearConnectionState();
   }
 }
@@ -108,6 +111,10 @@ function requireWalletNetwork(account: ConnectedZcashWallet, chain: ZcashChain):
 
 export async function connectConnector(connector: ZcashConnector, chain: ZcashChain): Promise<ConnectedZcashWallet> {
   if (!connector.adapter || !connector.connect) throw new Error("This choice does not support a live wallet connection.");
+  // A previous wallet must not issue account lookups from provider events while
+  // this user-triggered approval request is open.
+  connectionCleanup?.();
+  connectionCleanup = null;
   update({ selected: connector, adapter: connector.adapter, account: null, status: "connecting", displayUri: null });
   try {
     const account = await connector.connect();

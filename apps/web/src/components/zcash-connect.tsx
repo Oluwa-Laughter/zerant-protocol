@@ -6,7 +6,7 @@ import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
 import { signInWithZcashWallet, type SignInChallenge, type ZcashSignInStage } from "@/lib/zcash-auth";
 import { discoverZcashConnectors, type ZcashConnector } from "@/lib/zcash-connectors";
 import { classifyInjectedWalletError } from "@/lib/zcash-wallet";
-import { connectConnector, disconnectZcash, ensureZcashConfig, getZcashConnectionSnapshot, resetConnectorAuthorization, restoreConnection, useZcashConnection } from "@/lib/zcash-connection";
+import { connectConnector, disconnectZcash, ensureZcashConfig, getZcashConnectionSnapshot, resetConnectorAuthorization, useZcashConnection } from "@/lib/zcash-connection";
 
 function signInStageCopy(stage: ZcashSignInStage): string {
   switch (stage) {
@@ -34,17 +34,10 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
   useEffect(() => { if (handoffUri) openHandoff.current?.focus(); }, [handoffUri]);
 
   useEffect(() => {
-    let active = true;
-    void ensureZcashConfig().then((chain) => {
-      if (!active) return;
-      const { walletConnectProjectId } = getZcashConnectionSnapshot();
-      return restoreConnection(
-        discoverZcashConnectors(purpose, chain, walletConnectProjectId),
-        chain,
-      );
-    }).catch(() => { /* Silent restore must never block manual wallet selection. */ });
-    return () => { active = false; };
-  }, [purpose]);
+    // Load only Zerant's public network configuration here. Do not touch the
+    // injected wallet before the user's explicit connection gesture.
+    void ensureZcashConfig().catch(() => undefined);
+  }, []);
 
   async function choose(connector: ZcashConnector) {
     if (busy) return;
@@ -68,20 +61,12 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
     }
     setBusy(true);
     setStatus(connector.walletId === "noir"
-      ? "Opening Noir’s Connect Request. Keep the Noir popup open, select at least one Testnet account if none is selected, then click Connect."
+      ? "Check Noir’s Connect Request. Select a Testnet account and click Connect in the wallet."
       : "Opening wallet connection…");
     let chain: "zcash:mainnet" | "zcash:testnet" | null = null;
-    let approvalHint: number | undefined;
     try {
       chain = getZcashConnectionSnapshot().activeChain;
       if (!chain) throw new Error("Zcash network configuration is still loading. Reopen the wallet menu and try again.");
-      if (connector.walletId === "noir") {
-        approvalHint = window.setTimeout(() => {
-          setStatus(chain === "zcash:testnet"
-            ? "Still waiting for Noir. In Noir’s Connect Request window, make sure at least one Testnet account is selected. If it says no wallets selected, choose Edit accounts, select one account, then click Connect. Keep that window open until it closes itself."
-            : "Still waiting for Noir. Open and unlock the Noir extension in Chrome, then check for its site approval prompt. Your Zerant account remains usable without this connection.");
-        }, 8000);
-      }
       await connectConnector(connector, chain);
       setStatus(connector.capabilities.has("identitySigning")
         ? "Wallet connected. Continue with the separate Zerant sign-in approval."
@@ -90,7 +75,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       const message = error instanceof Error ? error.message : "";
       const kind = classifyInjectedWalletError(error);
       if (connector.walletId === "noir" && kind === "rejected") {
-        setStatus("Noir ended the connection request. Noir reports this same result when its approval popup is closed without completing Connect. Try again, keep the Connect Request window open, select at least one Testnet account (use Edit accounts if needed), then click Connect.");
+        setStatus("Noir’s Connect Request was closed or rejected. Select a Testnet account and click Connect in Noir to try again.");
       } else if (connector.walletId === "noir" && kind === "unauthorized") {
         setStatus(chain === "zcash:testnet"
           ? "Testnet Noir has not authorized this site yet. Unlock the Testnet Noir extension, choose Connect again, and approve Zerant when the wallet prompt opens."
@@ -101,7 +86,7 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
         setStatus(message || "Wallet connection failed.");
       }
     }
-    finally { if (approvalHint !== undefined) window.clearTimeout(approvalHint); setBusy(false); }
+    finally { setBusy(false); }
   }
 
   async function resetNoirAuthorization() {
@@ -182,41 +167,9 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       <h2>{allowSignIn ? "Sign in with a Zcash wallet" : "Use a Zcash wallet"}</h2>
       <p className="muted">{allowSignIn ? "On desktop, Zerant signs in through a detected Noir Wallet using a privacy-preserving identity key. A payment address, balance, or history is never your Zerant identity." : "Choose Noir to approve this site for wallet actions. You can also hand a reviewed payment request to a compatible wallet app. Your Zerant account and credentials work without a wallet connection."}</p>
     </div>
-    {connection.activeChain === "zcash:testnet" && !connection.account ? (
-    <div className="noir-connect-checklist" aria-label="How to approve Testnet Noir">
-      <div>
-        <span className="eyebrow">Connecting Testnet Noir</span>
-        <strong>Complete Noir’s separate Connect Request window.</strong>
-      </div>
-      <ol>
-        <li>Unlock <strong>[Testnet] Noir Wallet</strong>.</li>
-        <li>Keep Noir’s Connect Request popup open.</li>
-        <li>If no account is selected, choose <strong>Edit accounts</strong> and select at least one Testnet account.</li>
-        <li>Click <strong>Connect</strong> inside Noir. Closing that popup before this step is reported to Zerant as a rejected request.</li>
-      </ol>
-      <p className="small muted">Noir’s generic permission screen may mention balances and activity. Zerant does not request or store your wallet balance or transaction history for identity.</p>
-    </div>
-    ) : null}
-    {!connection.account ? <div className="wallet-recovery-option">
-      <div><span className="eyebrow">Connection recovery</span><strong>Noir permission stuck?</strong></div>
-      <p className="small muted">If Noir keeps ending the Connect Request, clear only this site’s Noir authorization and reconnect. This does not delete your Zerant account or touch wallet funds.</p>
-      <Button variant="secondary" disabled={busy} onClick={() => void resetNoirAuthorization()}>Reset Noir permission</Button>
-    </div> : null}
-    <div className="zcash-connection-diagnostics" aria-label="Zcash wallet connection diagnostics">
-      <div>
-        <span className="eyebrow">Zerant network</span>
-        <strong>{connection.activeChain === "zcash:testnet" ? "Testnet" : connection.activeChain === "zcash:mainnet" ? "Mainnet" : "Loading…"}</strong>
-      </div>
-      <div>
-        <span className="eyebrow">Wallet authorization</span>
-        <strong>{connection.status === "connected" ? "Authorized" : connection.status === "connecting" ? "Approval in progress" : "Not connected"}</strong>
-      </div>
-      <div>
-        <span className="eyebrow">Zerant sign-in</span>
-        <strong>{allowSignIn && connection.account && connection.selected?.capabilities.has("identitySigning") ? "Ready" : allowSignIn ? "Wallet connection required" : "Not required"}</strong>
-      </div>
-    </div>
     <ZcashWalletSelector purpose={purpose} busy={busy} hideAuthHandoff={!allowSignIn} hidePaymentHandoff={!allowSignIn} triggerLabel={allowSignIn ? "Choose sign-in wallet" : "Connect a direct wallet"} onSelect={(connector) => void choose(connector)} />
+    {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
+    {connection.account && (!allowSignIn || connection.selected?.capabilities.has("identitySigning")) ? <div className="zcash-connection-state"><p className="small">Connected to <strong>{connection.account.providerName}</strong>{connection.selected?.capabilities.has("shieldedPayment") ? ". Shielded payments available." : "."}</p><div className="vault-actions wrap">{allowSignIn ? <Button onClick={() => void signIn()} disabled={busy}>Sign in with wallet</Button> : null}<Button variant="secondary" onClick={() => void disconnectZcash()} disabled={busy}>Disconnect wallet</Button></div></div> : null}
     {handoffUri ? <div className="wallet-handoff zcash-connect-handoff">
       <p className="small muted">This sign-in request expires after five minutes. It contains the challenge and callback, not your wallet address or history.</p>
       <textarea readOnly aria-label="ZecAuth sign-in request URI" value={handoffUri} rows={3} />
@@ -227,7 +180,39 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
       </div>
     </div> : null}
     {!allowSignIn && connection.displayUri ? <div className="wallet-connect-option"><h3>Pair in your wallet</h3><p className="small muted">Only WalletConnect-compatible Zcash wallets can approve this request.</p><textarea readOnly aria-label="WalletConnect pairing URI" value={connection.displayUri} rows={3} /><Button variant="secondary" onClick={() => void navigator.clipboard.writeText(connection.displayUri!).then(() => setStatus("Connection link copied."), () => setStatus("Copy failed. Select the connection link above."))}>Copy connection link</Button></div> : null}
-    {connection.account && (!allowSignIn || connection.selected?.capabilities.has("identitySigning")) ? <div className="zcash-connection-state"><p className="small">Connected to <strong>{connection.account.providerName}</strong>{connection.selected?.capabilities.has("shieldedPayment") ? ". Shielded payments available." : "."}</p><div className="vault-actions wrap">{allowSignIn ? <Button onClick={() => void signIn()} disabled={busy}>Sign in with wallet</Button> : null}<Button variant="secondary" onClick={() => void disconnectZcash()} disabled={busy}>Disconnect wallet</Button></div></div> : null}
-    {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
+    {connection.activeChain === "zcash:testnet" && !connection.account ? (
+      <details className="noir-connect-checklist">
+        <summary>How to approve in Testnet Noir</summary>
+        <ol>
+          <li>Unlock <strong>[Testnet] Noir Wallet</strong>.</li>
+          <li>Keep Noir’s Connect Request popup open.</li>
+          <li>If no account is selected, choose <strong>Edit accounts</strong> and select at least one Testnet account.</li>
+          <li>Click <strong>Connect</strong> inside Noir. Closing the popup first rejects the request.</li>
+        </ol>
+        <p className="small muted">Noir’s permission screen may mention balances and activity. Zerant does not request or store them for identity.</p>
+      </details>
+    ) : null}
+    {!connection.account ? <details className="wallet-recovery-option">
+      <summary>Having trouble connecting?</summary>
+      <p className="small muted">If Noir keeps ending the Connect Request, clear this site’s Noir permission and reconnect. This does not delete your Zerant account or touch wallet funds.</p>
+      <Button variant="secondary" disabled={busy} onClick={() => void resetNoirAuthorization()}>Reset Noir permission</Button>
+    </details> : null}
+    <details className="wallet-connection-details">
+      <summary>Connection details</summary>
+      <div className="zcash-connection-diagnostics" aria-label="Zcash wallet connection diagnostics">
+        <div>
+          <span className="eyebrow">Zerant network</span>
+          <strong>{connection.activeChain === "zcash:testnet" ? "Testnet" : connection.activeChain === "zcash:mainnet" ? "Mainnet" : "Loading…"}</strong>
+        </div>
+        <div>
+          <span className="eyebrow">Wallet authorization</span>
+          <strong>{connection.status === "connected" ? "Authorized" : connection.status === "connecting" ? "Approval in progress" : "Not connected"}</strong>
+        </div>
+        <div>
+          <span className="eyebrow">Zerant sign-in</span>
+          <strong>{allowSignIn && connection.account && connection.selected?.capabilities.has("identitySigning") ? "Ready" : allowSignIn ? "Wallet connection required" : "Not required"}</strong>
+        </div>
+      </div>
+    </details>
   </div>;
 }

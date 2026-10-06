@@ -26,6 +26,8 @@ An adapter advertises capabilities independently:
 
 A wallet can support any subset. Zerant must not assume that connection implies signing, or that signing implies payment submission.
 
+Fresh connection discovery is passive. Opening Zerant's wallet chooser may detect a reviewed provider and load Zerant's public network configuration, but it must not call the provider's account methods before the user selects a wallet. For Noir, the first account RPC in a fresh connection flow is the user-triggered interactive connect request. Silent account lookup remains a restoration or recovery primitive and is not part of chooser discovery.
+
 Noir Wallet is currently one concrete injected adapter. It is not Zerant's wallet protocol and it is not required for the portable wallet-app or ZIP-321 paths.
 
 ### 3. Wallets without Zerant authentication capabilities
@@ -44,6 +46,7 @@ Account settings also allow removal of a linked ZecAuth or chain-specific wallet
 - Direct browser payment is allowed only when the request can be represented exactly by the adapter's supported method.
 - Multi-recipient, memo-bearing or otherwise richer requests stay in the portable wallet handoff path.
 - Wallet-specific code stays under the adapter boundary.
+- Provider detection and wallet-choice rendering must not silently request accounts or authorization.
 
 ## Adding another injected wallet
 

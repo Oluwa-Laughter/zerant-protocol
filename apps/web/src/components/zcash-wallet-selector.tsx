@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { discoverZcashConnectors, type WalletPurpose, type ZcashConnector } from "@/lib/zcash-connectors";
-import { ensureZcashConfig, getZcashConnectionSnapshot, probeExistingConnection, setZcashDisplayUri, type WalletAuthorizationProbe } from "@/lib/zcash-connection";
+import { ensureZcashConfig, getZcashConnectionSnapshot, setZcashDisplayUri } from "@/lib/zcash-connection";
 
 export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = false, hidePaymentHandoff = false, triggerLabel = "Connect Zcash wallet", onSelect }: {
   purpose: WalletPurpose;
@@ -18,7 +18,6 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeChain, setActiveChain] = useState<"zcash:mainnet" | "zcash:testnet" | null>(null);
-  const [probes, setProbes] = useState<Record<string, WalletAuthorizationProbe>>({});
   const trigger = useRef<HTMLButtonElement>(null);
   const first = useRef<HTMLButtonElement>(null);
 
@@ -33,15 +32,6 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
       : "Installed wallet · supports Zerant sign-in";
     if (connector.capabilities.has("shieldedPayment")) return "Installed wallet · supports shielded payments";
     return "Installed wallet · available for supported Zcash actions";
-  }
-
-  function probeLabel(connector: ZcashConnector): string | null {
-    const probe = probes[connector.id];
-    if (probe === "ready") return activeChain === "zcash:testnet" ? "Authorized · testnet ready" : "Authorized · mainnet ready";
-    if (probe === "wrong_network") return "Authorized · wrong network";
-    if (probe === "not_authorized") return "Detected · approval required";
-    if (probe === "unavailable") return "Detected · unlock to check";
-    return null;
   }
 
   useEffect(() => {
@@ -63,12 +53,6 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
         (!hideAuthHandoff || !connector.capabilities.has("zecAuth")) &&
         (!hidePaymentHandoff || !connector.capabilities.has("zip321Handoff")));
       setConnectors(discovered);
-      for (const connector of discovered) {
-        if (connector.availability !== "detected" || !connector.existingConnection) continue;
-        void probeExistingConnection(connector, activeChain).then((probe) => {
-          setProbes((current) => ({ ...current, [connector.id]: probe }));
-        });
-      }
     };
 
     // Browser extensions may inject after React has already rendered. Noir emits this
@@ -134,7 +118,7 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
                   <span className="wallet-selector-choice-title">{connector.name}</span>
                   <span className="wallet-selector-choice-detail">{connectorDetail(connector)}</span>
                 </span>
-                {connector.availability === "detected" ? <span className="wallet-selector-detected">{probeLabel(connector) ?? "Detected"}</span> : null}
+                {connector.availability === "detected" ? <span className="wallet-selector-detected">Detected</span> : null}
                 <span className="wallet-selector-arrow" aria-hidden="true">→</span>
               </button>
             ))}

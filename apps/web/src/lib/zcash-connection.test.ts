@@ -39,6 +39,105 @@ test("registry discovers multiple installed providers and portable paths", async
   } finally { removeFirst(); removeSecond(); if (prior) Object.defineProperty(globalThis, "window", prior); else Reflect.deleteProperty(globalThis, "window"); }
 });
 
+test("fresh wallet discovery never asks for accounts before the selected wallet connects", async () => {
+  const prior = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: {} });
+  let lookupCalls = 0;
+  let connectCalls = 0;
+  const adapter: ZcashWalletAdapter = {
+    ...fakeAdapter("passive-noir"),
+    existingConnection: async () => { lookupCalls += 1; return null; },
+    connect: async () => {
+      connectCalls += 1;
+      return { providerId: "passive-noir", providerName: "Testnet wallet", shieldedAddress: "utest1connected", transparentAddress: "tmConnected", accountCount: 1 };
+    },
+  };
+  const remove = registerZcashWalletDetector(() => adapter);
+  try {
+    const choices = discoverZcashConnectors("connection", "zcash:testnet");
+    assert.equal(lookupCalls, 0);
+    assert.equal(connectCalls, 0);
+    await connectConnector(choices[0], "zcash:testnet");
+    assert.equal(connectCalls, 1);
+    assert.equal(lookupCalls, 0);
+    await disconnectZcash();
+  } finally {
+    remove();
+    if (prior) Object.defineProperty(globalThis, "window", prior);
+    else Reflect.deleteProperty(globalThis, "window");
+  }
+});
+
+test("rejected interactive connection keeps the wallet result and does not run recovery", async () => {
+  const rejected = { code: 4001, message: "User rejected" };
+  let lookupCalls = 0;
+  let disconnectCalls = 0;
+  const connector = injectedConnector({
+    ...fakeAdapter("rejected-noir"),
+    connect: async () => { throw rejected; },
+    existingConnection: async () => { lookupCalls += 1; return null; },
+    disconnect: async () => { disconnectCalls += 1; },
+  });
+  await assert.rejects(connectConnector(connector, "zcash:testnet"), (error) => error === rejected);
+  assert.equal(lookupCalls, 0);
+  assert.equal(disconnectCalls, 0);
+  assert.equal(getZcashConnectionSnapshot().account, null);
+  assert.equal(getZcashConnectionSnapshot().status, "idle");
+});
+
+test("a new approval detaches the previous wallet's account events first", async () => {
+  let oldEvent: (() => void) | null = null;
+  let cleanupCalls = 0;
+  let oldLookupCalls = 0;
+  const previous = injectedConnector({
+    ...fakeAdapter("previous"),
+    connect: async () => ({ providerId: "previous", providerName: "Previous", shieldedAddress: "utest1previous", transparentAddress: "tmPrevious", accountCount: 1 }),
+    existingConnection: async () => { oldLookupCalls += 1; return null; },
+    subscribeConnectionChanges: (handler) => {
+      oldEvent = handler;
+      return () => { cleanupCalls += 1; oldEvent = null; };
+    },
+  });
+  await connectConnector(previous, "zcash:testnet");
+  const next = injectedConnector({
+    ...fakeAdapter("next"),
+    connect: async () => {
+      assert.equal(cleanupCalls, 1);
+      (oldEvent as (() => void) | null)?.();
+      return { providerId: "next", providerName: "Next", shieldedAddress: "utest1next", transparentAddress: "tmNext", accountCount: 1 };
+    },
+  });
+  await connectConnector(next, "zcash:testnet");
+  assert.equal(oldLookupCalls, 0);
+  assert.equal(getZcashConnectionSnapshot().account?.providerId, "next");
+  await disconnectZcash();
+});
+
+test("an old account event cannot overwrite a new interactive connection", async () => {
+  let oldEvent: (() => void) | null = null;
+  let finishLookup: (account: Awaited<ReturnType<NonNullable<ZcashWalletAdapter["existingConnection"]>>>) => void = () => {
+    throw new Error("Account lookup did not start.");
+  };
+  const previous = injectedConnector({
+    ...fakeAdapter("previous-pending"),
+    connect: async () => ({ providerId: "previous-pending", providerName: "Previous", shieldedAddress: "utest1previous", transparentAddress: "tmPrevious", accountCount: 1 }),
+    existingConnection: () => new Promise((resolve) => { finishLookup = resolve; }),
+    subscribeConnectionChanges: (handler) => { oldEvent = handler; return () => { oldEvent = null; }; },
+  });
+  await connectConnector(previous, "zcash:testnet");
+  (oldEvent as (() => void) | null)?.();
+  const next = injectedConnector({
+    ...fakeAdapter("next-pending"),
+    connect: async () => ({ providerId: "next-pending", providerName: "Next", shieldedAddress: "utest1next", transparentAddress: "tmNext", accountCount: 1 }),
+  });
+  await connectConnector(next, "zcash:testnet");
+  finishLookup({ providerId: "previous-pending", providerName: "Previous", shieldedAddress: "u1wrongnetwork", transparentAddress: "t1Wrong", accountCount: 1 });
+  await Promise.resolve();
+  assert.equal(getZcashConnectionSnapshot().account?.providerId, "next-pending");
+  assert.equal(getZcashConnectionSnapshot().status, "connected");
+  await disconnectZcash();
+});
+
 test("identity restore reuses existing wallet authorization without prompting", async () => {
   let connectCalls = 0;
   let existingCalls = 0;
@@ -224,4 +323,23 @@ test("wallet events refresh same-network accounts and clear stale network state"
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(getZcashConnectionSnapshot().account, null);
   assert.equal(getZcashConnectionSnapshot().selected, null);
+});
+
+test("provider disconnect clears wallet authority without affecting Zerant sign-in", async () => {
+  let onChange: (() => void) | null = null;
+  let authorized = true;
+  const account = { providerId: "noir-event", providerName: "Testnet Noir", shieldedAddress: "utest1event", transparentAddress: "tmEvent", accountCount: 1 };
+  const adapter: ZcashWalletAdapter = {
+    ...fakeAdapter("noir-event"),
+    connect: async () => account,
+    existingConnection: async () => authorized ? account : null,
+    subscribeConnectionChanges: (handler) => { onChange = handler; return () => { onChange = null; }; },
+  };
+  await connectConnector(injectedConnector(adapter), "zcash:testnet");
+  authorized = false;
+  (onChange as (() => void) | null)?.();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(getZcashConnectionSnapshot().account, null);
+  assert.equal(getZcashConnectionSnapshot().selected, null);
+  assert.equal(getZcashConnectionSnapshot().status, "idle");
 });

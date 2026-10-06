@@ -117,13 +117,21 @@ showing wallet choices, so selecting Noir does not perform another network fetch
 before opening the wallet approval request. This keeps the approval-producing RPC
 as close as possible to the user's click.
 
-Silent `zcash_getAccounts` is reserved for restoring an existing site authorization.
-A rejected or closed interactive approval is surfaced as that original wallet result;
-Zerant does not immediately issue a second recovery RPC that could mask or race the
-approval lifecycle. Connection grants only the wallet capabilities the user approves
-and never grants Zerant sign-in or spending consent. No wallet balance, transaction
-history, or key is persisted by this change. Testnet settlement remains unsupported
-without an authorized named-transaction observer.
+Silent `zcash_getAccounts` is reserved for explicit restoration and recovery logic.
+Fresh connection discovery is passive: mounting the connection surface and opening the
+wallet chooser do not request accounts or authorization. A rejected or closed
+interactive approval is surfaced as that original wallet result; Zerant does not
+immediately issue a second recovery RPC that could mask or race the approval lifecycle.
+Starting a new explicit connection removes any listener from a previously connected
+wallet before the interactive request, so old provider events cannot start silent
+account refreshes during approval. An account lookup already in flight cannot
+replace a newer wallet connection when it finishes. Noir instructions, permission reset, and
+connection details are secondary disclosures in the UI; the chooser and its
+approval result remain the primary path.
+Connection grants only the wallet capabilities the user approves and never grants
+Zerant sign-in or spending consent. No wallet balance, transaction history, or key is
+persisted by this change. Testnet settlement remains unsupported without an authorized
+named-transaction observer.
 
 Direct browser wallet sessions are admitted only after the returned account
 addresses identify the configured Zcash network locally. A mainnet Noir extension
