@@ -1,6 +1,8 @@
 // Browser-level Noir connection check using an isolated, simulated provider.
 // This never grants wallet authority or submits a payment. A real extension
 // approval still needs a human test on the configured Zcash network.
+// NOIR_EXTENSION_DIR may point to an unpacked official Testnet Noir build; in
+// that mode a fresh profile checks detection and the empty-wallet response only.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -9,11 +11,14 @@ import { join } from "node:path";
 
 const baseUrl = process.argv[2] ?? "http://localhost:3000";
 const browserBinary = process.env.CHROMIUM_BIN ?? "google-chrome";
+const extensionDir = process.env.NOIR_EXTENSION_DIR;
 const profile = await mkdtemp(join(tmpdir(), "zerant-wallet-smoke-"));
-const browser = spawn(browserBinary, [
+const browserArgs = [
   "--headless=new", "--no-first-run", "--no-default-browser-check",
   "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank",
-], { stdio: "ignore" });
+];
+if (extensionDir) browserArgs.unshift(`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`);
+const browser = spawn(browserBinary, browserArgs, { stdio: "ignore" });
 
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
@@ -99,7 +104,7 @@ try {
   cdp = await connectCdp(await pageSocket(port));
   await cdp.send("Page.enable");
   await cdp.send("Runtime.enable");
-  await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: simulatedProvider });
+  if (!extensionDir) await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: simulatedProvider });
 
   async function evaluate(expression) {
     const result = await cdp.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
@@ -126,7 +131,22 @@ try {
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 });
   }
 
-  for (const [scenario, outcome] of [
+  if (extensionDir) {
+    await cdp.send("Page.navigate", { url: `${baseUrl}/vault` });
+    await waitFor("document.readyState === 'complete' && !!window.noirwallet");
+    await waitFor(`(() => {
+      const button = [...document.querySelectorAll("button")].find((element) => element.textContent?.includes("Choose sign-in wallet"));
+      return !!button && Object.keys(button).some((key) => key.startsWith("__reactProps$"));
+    })()`);
+    await clickButton("Choose sign-in wallet");
+    await waitFor(`!![...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Noir Wallet"))`);
+    console.log("Official extension: provider detected; chooser displays Noir Wallet.");
+    await clickButton("Noir Wallet");
+    await waitFor("document.body.innerText.includes('No wallets available to authorize')");
+    const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then((response) => response.json());
+    console.log("Browser targets after Connect:", targets.map((target) => `${target.type}: ${target.url.startsWith("chrome-extension://") ? "wallet extension" : target.url.startsWith(baseUrl) ? "Zerant" : "other"}`).join(", "));
+    console.log("Zerant result:", (await evaluate("document.body.innerText")).slice(-400));
+  } else for (const [scenario, outcome] of [
     ["success", "Wallet connected"],
     ["reject", "closed or rejected"],
     ["mainnet", "does not match Zerant"],

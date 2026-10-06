@@ -2,6 +2,8 @@
 
 This runbook is for the hackathon submission, screenshots, and recorded demo. It is intentionally short and uses only flows that are implemented in the current product.
 
+The current [public walkthrough](assets/demo-public-walkthrough.mp4) is a 50-second recording of the live landing page and signed-out product routes. It does not show an authenticated credential, holder consent, Noir approval, or payment submission. Record those with real accounts and an onboarded Testnet Noir wallet before presenting a complete product demo.
+
 ## Demo goal
 
 Show one coherent story:
