@@ -199,7 +199,7 @@ The web app reaches the Rust service through a private Vercel service binding. D
 
 ## Demo
 
-Use [docs/DEMO.md](docs/DEMO.md) for the exact judging flow, screenshot checklist, and demo-video script.
+Use [docs/DEMO.md](docs/DEMO.md) for the exact judging flow, screenshot checklist, and demo-video script. The ready-to-paste Colosseum project copy, architecture summary, links, and final submission checklist are in [docs/COLOSSEUM_SUBMISSION.md](docs/COLOSSEUM_SUBMISSION.md).
 
 Recommended short demo path:
 
@@ -214,6 +214,7 @@ Recommended short demo path:
 
 ## Documentation
 
+- [Hackathon submission pack](docs/SUBMISSION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Demo and screenshot runbook](docs/DEMO.md)
 - [Protocol](docs/PROTOCOL.md)
