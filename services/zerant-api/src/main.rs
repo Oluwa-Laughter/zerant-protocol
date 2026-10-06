@@ -4778,6 +4778,7 @@ async fn create_issuer_schema(
     enforce_account_rate_limit(&state.db, account, "credential_schema_create", 20).await?;
     let access = issuer_access(&state.db, account).await?;
     require_issuer_role(&access, &["owner", "admin"])?;
+    require_active_issuer(&access)?;
 
     let display_name = input.display_name.trim().to_owned();
     let description = input.description.trim().to_owned();
@@ -8726,6 +8727,7 @@ async fn rotate_issuer_key(
     enforce_account_rate_limit(&state.db, account, "issuer_key_rotate", 3).await?;
     let access = issuer_access(&state.db, account).await?;
     require_issuer_role(&access, &["owner", "admin"])?;
+    require_active_issuer(&access)?;
 
     let new_key_row_id = Uuid::new_v4();
     let new_key_id = format!("key-{}", Uuid::new_v4().simple());
@@ -11138,6 +11140,18 @@ mod tests {
             .find("0036_safe_verifier_retirement.sql")
             .expect("0036 wired");
         assert!(issuer < verifier);
+    }
+
+    #[test]
+    fn retired_issuer_blocks_new_trust_but_allows_maintenance() {
+        let retired = IssuerAccess {
+            profile_id: Uuid::nil(),
+            owner_account_id: Uuid::nil(),
+            role: "owner".into(),
+            retired_at: Some(OffsetDateTime::UNIX_EPOCH),
+        };
+        assert!(require_active_issuer(&retired).is_err());
+        assert!(require_issuer_role(&retired, &["owner", "admin"]).is_ok());
     }
 
     #[test]
