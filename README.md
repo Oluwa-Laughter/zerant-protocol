@@ -78,13 +78,25 @@ fixtures/                Shared protocol fixtures
 scripts/                 Validation and operational helpers
 ```
 
-The main workspace routes are `/app`, `/vault`, `/requests`, `/activity`, `/zcash`, `/issuer`, `/verifier`, and `/account`. `/issuers` is the public issuer directory; `/pay/[id]` displays a bounded public invoice request. A public invoice does not identify its owner or certify payment.
+The main workspace routes are `/app`, `/vault`, `/requests`, `/activity`, `/zcash`, `/issuer`, `/verifier`, and `/account`. Long operational areas use direct routes: `/zcash/payments`, `/zcash/invoices`, `/zcash/wallet`, `/zcash/address`; `/issuer/team`, `/issuer/schemas`, `/issuer/issue`, `/issuer/security`, `/issuer/activity`; and `/verifier/requests`, `/verifier/integrations`, `/verifier/security`. `/issuers` is the public issuer directory; `/pay/[id]` displays a bounded public invoice request. A public invoice does not identify its owner or certify payment.
 
 ## Wallet access on testnet
 
 Noir Wallet has separate mainnet and testnet extension builds. Zerant can detect an installed Noir provider without receiving account authorization. Selecting it explicitly calls Noir's interactive connection method; Zerant accepts a returned account only if its addresses match the configured testnet. A detected mainnet extension cannot be switched into testnet by Zerant. The [Noir developer guide](https://docs.zknoir.com/developers/) explains how to obtain the official testnet build.
 
 Wallet connection does not sign in to Zerant, approve a proof, or authorize spending. Wallet sign-in uses a separate challenge and signature when supported. A ZEC payment requires separate wallet approval. A validated ZIP-321 request can also be handed to a compatible testnet wallet without a live browser connection. Zerant never requests a seed phrase, spending key, wallet balance, or transaction history for identity.
+
+### What the Zcash building blocks mean
+
+| Building block | Role in Zerant | Current boundary |
+| --- | --- | --- |
+| Zcash wallet/developer RPC | Private service-side readiness, capability discovery and narrowly bound observation | Never exposed to the browser; an RPC response is not settlement proof |
+| ZIP-321 payment URI | Portable payment handoff containing the exact reviewed recipient, amount and optional memo | Supported now; the complete request is preserved and handed to a compatible wallet |
+| PCZT | A reviewable transaction package boundary for future wallet and shared-approval work | Parsed or documented where supported; not a Zerant spending key or settlement claim |
+| FROST | Future shared approval for an organization or treasury | Not a live Zerant signing product; no shares are stored in the credential vault |
+| Account abstraction | A possible future wallet product, not an identity shortcut | Zerant IDs do not control funds; making them spend would require an explicit custodial or smart-wallet design |
+
+Zerant does not depend on WalletConnect. Direct browser adapters are optional. The reliable fallback is to review the request in Zerant and open or copy its ZIP-321 URI in a compatible Zcash testnet wallet.
 
 ## Run and verify
 

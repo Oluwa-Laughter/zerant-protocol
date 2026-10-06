@@ -63,7 +63,7 @@ No signing, secure vault, protocol verification, Zcash integration, ZK, or mainn
 ### Zcash product integration — active
 
 - capability-routed wallet connection with registered injected providers and derived Zcash authentication
-- optional WalletConnect-compatible Zcash mainnet session (no WalletConnect identity signing)
+- review whether a maintained Zcash remote-session standard is useful after testnet payment handoff and observation are stable; WalletConnect is not part of the current product route
 - ZecAuth wallet-app authentication handoff and passkey-independent wallet connection
 - ZIP-316 address validation and ZIP-321 payment request handling
 - account-owned shareable Zcash invoice requests with public capability links, cancellation, expiry, bounded retention and export

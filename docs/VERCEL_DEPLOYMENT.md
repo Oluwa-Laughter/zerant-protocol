@@ -45,7 +45,7 @@ If `ZERANT_PUBLIC_ORIGIN` is absent, preview deployments use Vercel's deployment
 
 Do not create `ZERANT_API_ORIGIN` manually. Vercel injects it from the `web -> backend` service binding.
 
-Do not expose any of the server variables above with a `NEXT_PUBLIC_` prefix. The optional WalletConnect project ID below is separate public client configuration.
+Do not expose any of the server variables above with a `NEXT_PUBLIC_` prefix. Wallet transport is separate public client behavior; the hosted product does not require a WalletConnect project ID.
 
 
 
@@ -113,6 +113,6 @@ The queue message contains only the verification request UUID. Webhook payloads 
 
 The current queue message retention is seven days, with bounded concurrency and application-level dead-delivery tracking.
 
-## Optional browser WalletConnect
+## Wallet transport
 
-`NEXT_PUBLIC_ZCASH_WALLETCONNECT_PROJECT_ID` is optional public client configuration, not a secret. The current Zerant WalletConnect connector is mainnet-only: it is offered only when `ZERANT_ZCASH_CHAIN=zcash:mainnet` and a project ID is configured. While Zerant is deployed with `ZERANT_ZCASH_CHAIN=zcash:testnet`, leave this value unset; the product will not offer WalletConnect even if a project ID is present. Installed injected-wallet, ZecAuth and ZIP-321 paths remain available independently. Only wallets implementing the Zcash mainnet `bip122` namespace can pair; the current connector does not authenticate a Zerant account and permits transparent payment only when the approved session advertises `zcash_transfer` and the user explicitly selects that action. The other environment variables above remain server-only.
+Zerant does not require WalletConnect. The hosted testnet product uses reviewed injected adapters when available and the canonical ZIP-321 handoff for compatible wallets without a browser adapter. No WalletConnect project ID is needed or used by product discovery. Wallet connection remains separate from Zerant account access and payment settlement.

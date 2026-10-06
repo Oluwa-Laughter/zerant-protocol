@@ -71,14 +71,15 @@ network and exact payment details visible to the user before approval.
 
 The Zcash workspace starts with payment review and exposes the complete validated
 ZIP-321 URI through an open or copy action. Its optional direct-connection chooser
-lists only detected installed providers (and a supported mainnet WalletConnect
-session when configured). Sign-in and payment choosers filter the same capability
-registry for their separate purposes. "Supported Zcash wallet" means support for
-a specific action, not membership in a brand allowlist. There is no universal
-Zcash dApp connector today. New injected providers require an explicit safe
-detector and adapter; Zerant does not scan arbitrary browser globals.
+lists only detected installed providers. WalletConnect is intentionally not offered
+by product discovery: it does not solve the hosted testnet path. Sign-in and
+payment choosers filter the same capability registry for their separate purposes.
+"Supported Zcash wallet" means support for a specific action, not membership in a
+brand allowlist. There is no universal Zcash dApp connector today. New injected
+providers require an explicit safe detector and adapter; Zerant does not scan
+arbitrary browser globals.
 
-WalletConnect requires `NEXT_PUBLIC_ZCASH_WALLETCONNECT_PROJECT_ID` and a wallet implementing the Zcash `bip122` namespace on mainnet. Before pairing it is offered only for connection, with no payment or identity capability. The session asks for `zcash_getAddress`; `zcash_transfer` is optional. Direct transparent payment appears only after an approved session advertises that method and a transparent account, and disappears on disconnect. Current reference wallets do not expose Zerant identity signing or shielded payment through WalletConnect. A remote session therefore does not sign in to Zerant. A wallet with only ZIP-321 support can still receive the exact payment request, but it cannot maintain a live dApp session through that URI.
+The historical WalletConnect adapter remains isolated in source for compatibility tests, but it is not registered in product discovery and is not a supported Zerant route. The testnet fallback is the exact ZIP-321 request, which a compatible wallet can open without a Zerant browser connection.
 
 ZecAuth is an authentication-specific handoff, not the definition of wallet support. A browser wallet may authenticate only if it provides the reviewed derived-signing method. Neither wallet connection nor a payment address creates an account identity. Direct payment is limited to exact simple requests; all richer requests use canonical ZIP-321 handoff. Wallet submission remains separate from settlement verification.
 
@@ -88,8 +89,8 @@ ZecAuth is an authentication-specific handoff, not the definition of wallet supp
 
 | Wallet / route | Injected identity signing | ZecAuth auth handoff | WalletConnect Zcash transport | ZIP-321 payment URI | Direct shielded payment | Restore connection |
 | --- | --- | --- | --- | --- | --- | --- |
-| Noir injected provider | Yes, derived mode | Unknown | Separate optional reference transport | N/A for direct adapter | Yes, including the official separate testnet extension | Yes, `getAccounts` |
-| Noir WalletConnect reference | No | Unknown | Yes, mainnet `bip122` with limited methods | Unknown | No | Yes, approved session |
+| Noir injected provider | Yes, derived mode | Unknown | Not used by Zerant discovery | N/A for direct adapter | Yes, including the official separate testnet extension | Yes, `getAccounts` |
+| Noir WalletConnect reference | No | Unknown | Not used by Zerant discovery | Unknown | No | Not used |
 | NozyWallet extension | Unknown; contract not verified for Zerant | Unknown | Unknown | Unknown | Unknown | Unknown |
 | ZecAuth-compatible wallet (unbranded) | N/A | Yes, if wallet implements draft | N/A | Unknown | Unknown | N/A |
 | ZIP-321-compatible wallet (unbranded) | N/A | N/A | N/A | Yes, if wallet implements ZIP 321 | N/A | N/A |

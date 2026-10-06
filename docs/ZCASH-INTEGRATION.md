@@ -195,7 +195,7 @@ Zerant does not read a wallet balance or transaction history before offering eit
 
 ## Browser wallet connection
 
-The browser now routes independently through explicit injected-wallet adapters, optional WalletConnect-compatible mainnet sessions, ZecAuth authentication handoff, and canonical ZIP-321 payment handoff. The current injected Noir provider is one adapter, not Zerant's wallet protocol. There is no universal Zcash dApp connector, so a wallet without a compatible injected interface, WalletConnect Zcash namespace, or supported URI handoff cannot be live-connected. WalletConnect provides connection and optional transparent transfer for sessions advertising the method; it does not authenticate Zerant accounts. No balance or history lookup is part of connect or sign-in. The native Zcash payment parser remains the authority for canonical ZIP-321 validation; direct wallet submission is separate from settlement verification.
+The browser now routes independently through explicit injected-wallet adapters, ZecAuth authentication handoff, and canonical ZIP-321 payment handoff. The current injected Noir provider is one adapter, not Zerant's wallet protocol. There is no universal Zcash dApp connector, so a wallet without a compatible injected interface or supported URI handoff cannot be live-connected. WalletConnect is intentionally not used by product discovery because its current namespace does not solve the hosted testnet flow. No balance or history lookup is part of connect or sign-in. The native Zcash payment parser remains the authority for canonical ZIP-321 validation; direct wallet submission is separate from settlement verification.
 
 ### Production light-client readiness
 

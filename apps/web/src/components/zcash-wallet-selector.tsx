@@ -26,7 +26,6 @@ export function ZcashWalletSelector({ purpose, busy = false, hideAuthHandoff = f
     if (connector.transport === "uri_handoff") return purpose === "connection"
       ? "Review a payment request first; this option does not connect a wallet"
       : "Open the complete reviewed Zcash payment request in a compatible wallet";
-    if (connector.transport === "walletconnect") return "Pair a compatible remote wallet";
     if (connector.capabilities.has("identitySigning")) return activeChain === "zcash:testnet"
       ? "Installed wallet · Zerant testnet requires the Testnet Noir Wallet build"
       : "Installed wallet · supports Zerant sign-in";

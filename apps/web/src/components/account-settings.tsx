@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { PasskeyManager, type PasskeyView } from "@/components/passkey-manager";
 import { SessionManager, type AccountSessionView } from "@/components/session-manager";
 import { ZcashSignInManager, type LinkedZcashMethod } from "@/components/zcash-sign-in-manager";
+import { WorkspaceSectionNav } from "@/components/workspace-section-nav";
 
 export type AccountSummary = {
   zerant_id: string;
@@ -83,6 +84,7 @@ export function AccountSettings({
   initialPasskeys,
   initialSessions,
   initialZcashMethods,
+  activeSection,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
@@ -90,6 +92,7 @@ export function AccountSettings({
   initialPasskeys: PasskeyView[];
   initialSessions: AccountSessionView[];
   initialZcashMethods: LinkedZcashMethod[];
+  activeSection?: "overview" | "access" | "sessions" | "data";
 }) {
   const router = useRouter();
   const [confirmText, setConfirmText] = useState("");
@@ -97,6 +100,8 @@ export function AccountSettings({
   const [passkeyCount, setPasskeyCount] = useState(initialPasskeys.length);
   const [zcashMethodCount, setZcashMethodCount] = useState(initialZcashMethods.length);
   const [sessionCount, setSessionCount] = useState(initialSessions.length);
+  const showAllSections = activeSection === undefined;
+  const showSection = (section: "access" | "sessions" | "data") => showAllSections || activeSection === section;
 
   async function downloadExport() {
     setStatus("Preparing your Zerant data…");
@@ -194,6 +199,18 @@ export function AccountSettings({
         </p>
       </section>
 
+      {activeSection !== undefined ? (
+        <WorkspaceSectionNav
+          activeHref={activeSection === "overview" ? "/account" : `/account/${activeSection}`}
+          items={[
+            { href: "/account", label: "Overview" },
+            { href: "/account/access", label: "Access methods" },
+            { href: "/account/sessions", label: "Sessions" },
+            { href: "/account/data", label: "Data and deletion" },
+          ]}
+        />
+      ) : null}
+
       <section className="account-security-overview" aria-label="Account security overview">
         <div className="account-security-heading">
           <div><p className="eyebrow">Access overview</p><h2>Know how your Zerant account can be opened.</h2></div>
@@ -208,7 +225,15 @@ export function AccountSettings({
         <p className="small muted">Zerant does not build a device, location, payment-address, balance, or wallet-history profile from these access methods.</p>
       </section>
 
-      <section className="account-grid">
+      {activeSection === "overview" ? (
+        <section className="workspace-route-cards" aria-label="Account sections">
+          <Link href="/account/access"><strong>Access methods</strong><span>Manage passkeys and optional Zcash sign-in.</span></Link>
+          <Link href="/account/sessions"><strong>Sessions</strong><span>Review and revoke active Zerant sessions.</span></Link>
+          <Link href="/account/data"><strong>Data and deletion</strong><span>Export your data or remove your account.</span></Link>
+        </section>
+      ) : null}
+
+      <section className={activeSection === "overview" ? "account-grid" : showAllSections ? "account-grid" : "account-grid account-grid-section"}>
         <article className="account-card">
           <p className="eyebrow">Your Zerant ID</p>
           <h2>{summary.zerant_id}</h2>
@@ -244,22 +269,22 @@ export function AccountSettings({
           </article>
         ) : null}
 
-        <PasskeyManager initialPasskeys={initialPasskeys} onCountChange={setPasskeyCount} />
+        {showSection("access") ? <PasskeyManager initialPasskeys={initialPasskeys} onCountChange={setPasskeyCount} /> : null}
 
-        <ZcashSignInManager initialMethods={initialZcashMethods} onCountChange={setZcashMethodCount} />
+        {showSection("access") ? <ZcashSignInManager initialMethods={initialZcashMethods} onCountChange={setZcashMethodCount} /> : null}
 
-        <SessionManager initialSessions={initialSessions} onCountChange={setSessionCount} />
+        {showSection("sessions") ? <SessionManager initialSessions={initialSessions} onCountChange={setSessionCount} /> : null}
 
-        <article className="account-card">
+        {showSection("data") ? <article className="account-card">
           <p className="eyebrow">Export</p>
           <h2>Take your Zerant data with you.</h2>
           <p className="muted">
             Download your private credentials, account activity, and saved payment details as a portable JSON file. Keep it private.
           </p>
           <Button onClick={downloadExport}>Download my data</Button>
-        </article>
+        </article> : null}
 
-        <article className="account-card account-card-danger">
+        {showSection("data") ? <article className="account-card account-card-danger">
           <p className="eyebrow">Delete account</p>
           <h2>Remove your personal Zerant account.</h2>
 
@@ -297,7 +322,7 @@ export function AccountSettings({
               Active organizational ownership must be transferred before the account can be deleted. Retiring a verifier closes new work and removes that verifier as a deletion blocker; issuer ownership still requires transfer.
             </p>
           )}
-        </article>
+        </article> : null}
       </section>
 
       {status ? <p className="vault-status neutral" role="status">{status}</p> : null}

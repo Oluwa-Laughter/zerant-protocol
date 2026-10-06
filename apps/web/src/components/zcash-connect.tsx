@@ -184,7 +184,6 @@ export function ZcashConnect({ purpose, onConnected }: { purpose: "identity" | "
         <Button variant="secondary" onClick={() => void checkWalletApproval()} disabled={busy}>Check approval</Button>
       </div>
     </div> : null}
-    {!allowSignIn && connection.displayUri ? <div className="wallet-connect-option"><h3>Pair in your wallet</h3><p className="small muted">Only WalletConnect-compatible Zcash wallets can approve this request.</p><textarea readOnly aria-label="WalletConnect pairing URI" value={connection.displayUri} rows={3} /><Button variant="secondary" onClick={() => void navigator.clipboard.writeText(connection.displayUri!).then(() => setStatus("Connection link copied."), () => setStatus("Copy failed. Select the connection link above."))}>Copy connection link</Button></div> : null}
     {connection.activeChain === "zcash:testnet" && !connection.account ? (
       <details className="noir-connect-checklist">
         <summary>How to approve in Testnet Noir</summary>

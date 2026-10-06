@@ -1,15 +1,21 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { VerifierWorkspace } from "@/components/verifier-workspace";
 import { loadVerifierWorkspaceData } from "@/app/verifier/data";
 
-export const metadata: Metadata = {
-  title: "Verify",
-  description: "Request narrow private proofs with Zerant.",
-};
-
 export const dynamic = "force-dynamic";
 
-export default async function VerifierPage() {
+const sections = ["requests", "integrations", "security"] as const;
+type VerifierSection = (typeof sections)[number];
+
+export const metadata: Metadata = {
+  title: "Verifier workspace",
+  description: "Manage one verifier workspace section at a time.",
+};
+
+export default async function VerifierSectionPage({ params }: { params: Promise<{ section: string }> }) {
+  const { section } = await params;
+  if (!sections.includes(section as VerifierSection)) notFound();
   const data = await loadVerifierWorkspaceData();
   return <VerifierWorkspace
     authenticated={data.authenticated}
@@ -20,6 +26,6 @@ export default async function VerifierPage() {
     initialKeys={data.keys}
     initialApiKeys={data.apiKeys}
     initialWebhooks={data.webhooks}
-    activeSection="overview"
+    activeSection={section as VerifierSection}
   />;
 }

@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { WorkspaceSectionNav } from "@/components/workspace-section-nav";
 
 export type IssuerProfile = {
   display_name: string;
@@ -121,6 +122,7 @@ export function IssuerWorkspace({
   initialTeamInvitations,
   initialMyInvitations,
   initialActivity,
+  activeSection,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
@@ -133,6 +135,7 @@ export function IssuerWorkspace({
   initialTeamInvitations: IssuerInvitation[];
   initialMyInvitations: IssuerInvitation[];
   initialActivity: IssuerActivityPage;
+  activeSection?: "overview" | "team" | "schemas" | "security" | "activity" | "issue";
 }) {
   const [profile, setProfile] = useState<IssuerProfile | null>(initialProfile);
   const [issued, setIssued] = useState<IssuedCredential[]>(initialIssued);
@@ -182,6 +185,10 @@ export function IssuerWorkspace({
   );
   const currentRole = currentMember?.role ?? null;
   const issuerRetired = Boolean(profile?.retired_at);
+  const showAllSections = activeSection === undefined;
+  const showSection = (section: Exclude<NonNullable<typeof activeSection>, "overview">) =>
+    showAllSections || activeSection === section;
+  const sectionHref = (path: string, anchor: string) => showAllSections ? anchor : path;
   const canManageTeam = currentRole === "owner" || currentRole === "admin";
   const canInviteTeam = canManageTeam && !issuerRetired;
   const canInviteSuccessor = issuerRetired && currentRole === "owner";
@@ -781,6 +788,20 @@ export function IssuerWorkspace({
         </section>
       ) : null}
 
+      {activeSection !== undefined ? (
+        <WorkspaceSectionNav
+          activeHref={activeSection === "overview" ? "/issuer" : `/issuer/${activeSection}`}
+          items={[
+            { href: "/issuer", label: "Overview" },
+            { href: "/issuer/team", label: "Team" },
+            { href: "/issuer/schemas", label: "Credential types" },
+            { href: "/issuer/issue", label: "Issue credentials" },
+            { href: "/issuer/security", label: "Security" },
+            { href: "/issuer/activity", label: "History" },
+          ]}
+        />
+      ) : null}
+
       <section className="issuer-progress" aria-label="Issuer setup and issuance progress">
         <div className="issuer-progress-heading">
           <div><p className="eyebrow">Issuance flow</p><h2>From organization setup to a live credential.</h2></div>
@@ -792,12 +813,12 @@ export function IssuerWorkspace({
             <div><strong>Organization</strong><span>{profile.display_name}</span></div>
             <span className="issuer-progress-state">Complete</span>
           </article>
-          <a className={activeSchemas.length ? "issuer-progress-step complete" : "issuer-progress-step current"} href="#credential-types">
+          <a className={activeSchemas.length ? "issuer-progress-step complete" : "issuer-progress-step current"} href={sectionHref("/issuer/schemas", "#credential-types")}>
             <span className="issuer-progress-number">02</span>
             <div><strong>Credential type</strong><span>{activeSchemas.length ? `${activeSchemas.length} active type${activeSchemas.length === 1 ? "" : "s"}` : "Define what your organization can prove"}</span></div>
             <span className="issuer-progress-state">{activeSchemas.length ? "Ready" : "Next"}</span>
           </a>
-          <a className={issued.length ? "issuer-progress-step complete" : activeSchemas.length ? "issuer-progress-step current" : "issuer-progress-step"} href="#issue-credential">
+          <a className={issued.length ? "issuer-progress-step complete" : activeSchemas.length ? "issuer-progress-step current" : "issuer-progress-step"} href={sectionHref("/issuer/issue", "#issue-credential")}>
             <span className="issuer-progress-number">03</span>
             <div><strong>Issue privately</strong><span>{issued.length ? `${issued.length} credential${issued.length === 1 ? "" : "s"} delivered` : "Send to a holder Zerant ID"}</span></div>
             <span className="issuer-progress-state">{issued.length ? "Active" : activeSchemas.length ? "Next" : "Waiting"}</span>
@@ -810,7 +831,17 @@ export function IssuerWorkspace({
         </div>
       </section>
 
-      <section className="issuer-team-section">
+      {activeSection === "overview" ? (
+        <section className="workspace-route-cards" aria-label="Issuer workspace sections">
+          <Link href="/issuer/team"><strong>Team</strong><span>Invite people and assign bounded responsibilities.</span></Link>
+          <Link href="/issuer/schemas"><strong>Credential types</strong><span>Define the claims your organization can issue.</span></Link>
+          <Link href="/issuer/issue"><strong>Issue credentials</strong><span>Send one reviewed credential to a Zerant ID.</span></Link>
+          <Link href="/issuer/security"><strong>Security</strong><span>Rotate keys and manage issuer lifecycle.</span></Link>
+          <Link href="/issuer/activity"><strong>History</strong><span>Review important organization changes.</span></Link>
+        </section>
+      ) : null}
+
+      {showSection("team") ? <section className="issuer-team-section">
         <div className="section-heading">
           <p className="eyebrow">Organization team</p>
           <h2>Separate responsibilities without sharing accounts.</h2>
@@ -924,9 +955,9 @@ export function IssuerWorkspace({
             </article>
           )}
         </div>
-      </section>
+      </section> : null}
 
-      <section className="issuer-security-section">
+      {showSection("security") ? <section className="issuer-security-section">
         <article className="issuer-panel">
           <p className="eyebrow">Issuer security</p>
           <h2>Keep your issuing authority healthy.</h2>
@@ -986,9 +1017,9 @@ export function IssuerWorkspace({
             )}
           </div>
         </article>
-      </section>
+      </section> : null}
 
-      <section className="issuer-schema-section" id="credential-types">
+      {showSection("schemas") ? <section className="issuer-schema-section" id="credential-types">
         <article className="issuer-panel">
           <p className="eyebrow">Credential types</p>
           <h2>Define trust once. Reuse it consistently.</h2>
@@ -1126,9 +1157,9 @@ export function IssuerWorkspace({
             )}
           </div>
         </article>
-      </section>
+      </section> : null}
 
-      {currentRole === "owner" ? (
+      {showSection("security") && currentRole === "owner" ? (
         <section className="issuer-retirement-section">
           <div className="section-heading">
             <p className="eyebrow">Organization lifecycle</p>
@@ -1156,7 +1187,7 @@ export function IssuerWorkspace({
         </section>
       ) : null}
 
-      <section className="issuer-activity-section">
+      {showSection("activity") ? <section className="issuer-activity-section">
         <div className="section-heading">
           <p className="eyebrow">Organization history</p>
           <h2>See the important changes made by your team.</h2>
@@ -1210,9 +1241,9 @@ export function IssuerWorkspace({
             {activityLoading ? "Loading…" : "Load older activity"}
           </Button>
         ) : null}
-      </section>
+      </section> : null}
 
-      <section className="issuer-grid" id="issue-credential">
+      {showSection("issue") ? <section className="issuer-grid" id="issue-credential">
         <article className="issuer-panel">
           <p className="eyebrow">Issue credential</p>
           <h2>Send a trusted credential.</h2>
@@ -1322,7 +1353,7 @@ export function IssuerWorkspace({
             )}
           </div>
         </article>
-      </section>
+      </section> : null}
     </main>
   );
 }

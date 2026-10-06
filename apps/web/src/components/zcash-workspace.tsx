@@ -7,6 +7,7 @@ import { ZcashConnect } from "@/components/zcash-connect";
 import { ZcashPaymentRequestReview } from "@/components/zcash-payment-request-review";
 import { ZcashInvoiceManager } from "@/components/zcash-invoice-manager";
 import { ZcashLiveStatus } from "@/components/zcash-live-status";
+import { WorkspaceSectionNav } from "@/components/workspace-section-nav";
 import type { WorkspaceSession, WorkspaceZcash, WorkspaceZcashNetwork } from "@/components/product-workspace";
 
 function readinessCopy(network: WorkspaceZcashNetwork, zcash: WorkspaceZcash) {
@@ -17,13 +18,16 @@ function readinessCopy(network: WorkspaceZcashNetwork, zcash: WorkspaceZcash) {
   return { label: "Unavailable", title: "Zcash network connection unavailable.", body: "Private credentials still work, but Zcash network actions are unavailable." };
 }
 
-export function ZcashWorkspace({ session, zcash, network }: { session: WorkspaceSession; zcash: WorkspaceZcash; network: WorkspaceZcashNetwork }) {
+export function ZcashWorkspace({ session, zcash, network, activeSection }: { session: WorkspaceSession; zcash: WorkspaceZcash; network: WorkspaceZcashNetwork; activeSection?: "overview" | "payments" | "invoices" | "wallet" | "address" }) {
   const authenticated = Boolean(session?.authenticated);
   const [liveNetwork, setLiveNetwork] = useState<WorkspaceZcashNetwork>(network);
   const readiness = readinessCopy(liveNetwork, zcash);
   const networkActionsReady = liveNetwork
     ? liveNetwork.network_actions_enabled
     : Boolean(zcash);
+  const showAllSections = activeSection === undefined;
+  const showOverview = showAllSections || activeSection === "overview";
+  const showSection = (section: "payments" | "invoices" | "wallet" | "address") => showAllSections || activeSection === section;
 
   return (
     <main id="main" className="product-app zcash-workspace-page">
@@ -36,16 +40,29 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         <span className="pill">{authenticated ? "Zerant account connected" : "Sign-in required"}</span>
       </section>
 
+      {activeSection !== undefined ? (
+        <WorkspaceSectionNav
+          activeHref={activeSection === "overview" ? "/zcash" : `/zcash/${activeSection}`}
+          items={[
+            { href: "/zcash", label: "Overview" },
+            { href: "/zcash/payments", label: "Payments" },
+            { href: "/zcash/invoices", label: "Invoices" },
+            { href: "/zcash/wallet", label: "Wallet access" },
+            { href: "/zcash/address", label: "Address check" },
+          ]}
+        />
+      ) : null}
+
       <ZcashLiveStatus authenticated={authenticated} network={liveNetwork} onNetworkUpdate={setLiveNetwork} />
 
-      <nav className="zcash-shortcuts" aria-label="Zcash tools">
-        <a href="#zcash-payment-review">Prepare or review a payment</a>
-        <a href="#zcash-invoices">Request ZEC</a>
-        <a href="#zcash-address-inspector">Check a Zcash address</a>
-        {authenticated ? <a href="#zcash-wallet-actions">Connect a testnet wallet</a> : null}
-      </nav>
+      {showAllSections ? <nav className="zcash-shortcuts" aria-label="Zcash tools">
+        {activeSection === undefined ? <a href="#zcash-payment-review">Prepare or review a payment</a> : <Link href="/zcash/payments">Prepare or review a payment</Link>}
+        {activeSection === undefined ? <a href="#zcash-invoices">Request ZEC</a> : <Link href="/zcash/invoices">Request ZEC</Link>}
+        {activeSection === undefined ? <a href="#zcash-address-inspector">Check a Zcash address</a> : <Link href="/zcash/address">Check a Zcash address</Link>}
+        {authenticated ? (activeSection === undefined ? <a href="#zcash-wallet-actions">Connect a testnet wallet</a> : <Link href="/zcash/wallet">Connect a testnet wallet</Link>) : null}
+      </nav> : null}
 
-      <section className="zcash-wallet-setup" aria-labelledby="zcash-testnet-wallet-title">
+      {showOverview ? <section className="zcash-wallet-setup" aria-labelledby="zcash-testnet-wallet-title">
         <div className="section-heading">
           <p className="eyebrow">Testnet wallet setup</p>
           <h2 id="zcash-testnet-wallet-title">Use a wallet that is actually on Zcash testnet.</h2>
@@ -66,9 +83,9 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
           </article>
         </div>
         <p className="small muted">Wallet installation and payment approval stay outside Zerant. Never enter a recovery phrase, spending key, or wallet password into Zerant.</p>
-      </section>
+      </section> : null}
 
-      <section className="workspace-grid zcash-overview-grid" aria-label="Zcash status">
+      {showOverview ? <section className="workspace-grid zcash-overview-grid" aria-label="Zcash status">
         <article className="workspace-card workspace-card-primary">
           <div className="workspace-card-top">
             <div><p className="eyebrow">Network</p><h2>{readiness.title}</h2></div>
@@ -93,7 +110,16 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
             <span>Prepared</span><span>Submitted</span><span>Seen</span><span>Mined · depth</span>
           </div>
         </article>
-      </section>
+      </section> : null}
+
+      {activeSection === "overview" ? (
+        <section className="workspace-route-cards" aria-label="Zcash workspace sections">
+          <Link href="/zcash/payments"><strong>Payments</strong><span>Review a payment and hand it to a compatible wallet.</span></Link>
+          <Link href="/zcash/invoices"><strong>Invoices</strong><span>Create a shareable request for a specific amount.</span></Link>
+          <Link href="/zcash/wallet"><strong>Wallet access</strong><span>Connect only when the wallet supports Zcash testnet.</span></Link>
+          <Link href="/zcash/address"><strong>Address check</strong><span>Inspect a destination before using it in a request.</span></Link>
+        </section>
+      ) : null}
 
       {!authenticated ? (
         <section className="workspace-wallet">
@@ -106,14 +132,14 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         </section>
       ) : null}
 
-      <ZcashPaymentRequestReview
+      {showSection("payments") ? <ZcashPaymentRequestReview
         enabled={authenticated}
         observationAvailable={Boolean(liveNetwork?.network_actions_enabled)}
-      />
+      /> : null}
 
-      <ZcashInvoiceManager enabled={authenticated} />
+      {showSection("invoices") ? <ZcashInvoiceManager enabled={authenticated} /> : null}
 
-      {authenticated ? (
+      {authenticated && showSection("wallet") ? (
         <section id="zcash-wallet-actions" className="workspace-wallet" aria-label="Zcash wallet access">
           <div className="workspace-wallet-heading">
             <p className="eyebrow">Optional direct connection</p>
@@ -125,7 +151,7 @@ export function ZcashWorkspace({ session, zcash, network }: { session: Workspace
         </section>
       ) : null}
 
-      <ZcashAddressInspector enabled={authenticated} />
+      {showSection("address") ? <ZcashAddressInspector enabled={authenticated} /> : null}
     </main>
   );
 }

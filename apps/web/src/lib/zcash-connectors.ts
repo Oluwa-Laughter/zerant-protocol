@@ -133,10 +133,11 @@ export function discoverZcashConnectors(
   candidates?: ZcashConnector[],
   displayUri: (uri: string) => void = () => {},
 ): ZcashConnector[] {
+  void walletConnectProjectId;
+  void displayUri;
   const available = candidates ?? [
     ...getInjectedZcashWallets().map(injectedConnector),
     ...[...registered.values()].map((factory) => factory()).filter((value): value is ZcashConnector => value !== null),
-    ...(activeChain === "zcash:mainnet" && walletConnectProjectId.trim() ? [walletConnectConnector(walletConnectProjectId, displayUri)] : []),
     zip321Connector(),
   ];
   const priority: Record<WalletAvailability, number> = {
@@ -144,7 +145,10 @@ export function discoverZcashConnectors(
   };
   const best = new Map<string, ZcashConnector>();
   for (const connector of available) {
-    if (connector.transport === "walletconnect" && (activeChain !== "zcash:mainnet" || !walletConnectProjectId.trim())) continue;
+    // Zerant does not use WalletConnect for product flows. Its current Zcash
+    // namespace is mainnet-oriented and cannot solve the testnet wallet path;
+    // reviewed injected adapters and ZIP-321 handoff remain the supported routes.
+    if (connector.transport === "walletconnect") continue;
     if (!valid(connector) || !supportsPurpose(connector, purpose)) continue;
     const prior = best.get(connector.walletId);
     if (!prior || priority[connector.availability] < priority[prior.availability]) best.set(connector.walletId, connector);

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { WorkspaceSectionNav } from "@/components/workspace-section-nav";
 
 export type VerifierProfile = {
   display_name: string;
@@ -120,6 +121,7 @@ export function VerifierWorkspace({
   initialKeys,
   initialApiKeys,
   initialWebhooks,
+  activeSection,
 }: {
   authenticated: boolean;
   backendAvailable: boolean;
@@ -129,6 +131,7 @@ export function VerifierWorkspace({
   initialKeys: VerifierKeyView[];
   initialApiKeys: VerifierApiKeyView[];
   initialWebhooks: VerifierWebhookView[];
+  activeSection?: "overview" | "requests" | "integrations" | "security";
 }) {
   const availableSchemas = useMemo(
     () =>
@@ -173,6 +176,10 @@ export function VerifierWorkspace({
   const [retireConfirm, setRetireConfirm] = useState("");
   const [retiring, setRetiring] = useState(false);
   const [retired, setRetired] = useState(Boolean(initialProfile?.retired_at));
+  const showAllSections = activeSection === undefined;
+  const showSection = (section: "requests" | "integrations" | "security") =>
+    showAllSections || activeSection === section;
+  const sectionHref = (path: string, anchor: string) => showAllSections ? anchor : path;
 
   const selectedSchema = availableSchemas.find((schema) => schema.id === schemaId);
   const pendingRequestCount = requests.filter((request) => request.status === "pending").length;
@@ -631,6 +638,18 @@ export function VerifierWorkspace({
         </section>
       ) : null}
 
+      {activeSection !== undefined ? (
+        <WorkspaceSectionNav
+          activeHref={activeSection === "overview" ? "/verifier" : `/verifier/${activeSection}`}
+          items={[
+            { href: "/verifier", label: "Overview" },
+            { href: "/verifier/requests", label: "Requests" },
+            { href: "/verifier/integrations", label: "Integrations" },
+            { href: "/verifier/security", label: "Security" },
+          ]}
+        />
+      ) : null}
+
       <section className="verifier-progress" aria-label="Verifier request progress">
         <div className="verifier-progress-heading">
           <div><p className="eyebrow">Verification flow</p><h2>Ask for one fact. Receive one bounded result.</h2></div>
@@ -642,17 +661,17 @@ export function VerifierWorkspace({
             <div><strong>Verifier profile</strong><span>{profile.display_name}</span></div>
             <span className="verifier-progress-state">Complete</span>
           </article>
-          <a className={availableSchemas.length ? "verifier-progress-step complete" : "verifier-progress-step current"} href="#new-verification-request">
+          <a className={availableSchemas.length ? "verifier-progress-step complete" : "verifier-progress-step current"} href={sectionHref("/verifier/requests", "#new-verification-request")}>
             <span className="verifier-progress-number">02</span>
             <div><strong>Choose trusted claim</strong><span>{availableSchemas.length ? `${availableSchemas.length} credential type${availableSchemas.length === 1 ? "" : "s"} available` : "Waiting for a trusted issuer credential type"}</span></div>
             <span className="verifier-progress-state">{availableSchemas.length ? "Ready" : "Next"}</span>
           </a>
-          <a className={requests.length ? "verifier-progress-step complete" : availableSchemas.length ? "verifier-progress-step current" : "verifier-progress-step"} href="#new-verification-request">
+          <a className={requests.length ? "verifier-progress-step complete" : availableSchemas.length ? "verifier-progress-step current" : "verifier-progress-step"} href={sectionHref("/verifier/requests", "#new-verification-request")}>
             <span className="verifier-progress-number">03</span>
             <div><strong>Request proof</strong><span>{requests.length ? `${requests.length} request${requests.length === 1 ? "" : "s"} created` : "Recipient reviews the exact claim and purpose"}</span></div>
             <span className="verifier-progress-state">{requests.length ? "Active" : availableSchemas.length ? "Next" : "Waiting"}</span>
           </a>
-          <a className={approvedRequestCount ? "verifier-progress-step complete" : pendingRequestCount ? "verifier-progress-step current" : "verifier-progress-step"} href="#verification-results">
+          <a className={approvedRequestCount ? "verifier-progress-step complete" : pendingRequestCount ? "verifier-progress-step current" : "verifier-progress-step"} href={sectionHref("/verifier/requests", "#verification-results")}>
             <span className="verifier-progress-number">04</span>
             <div><strong>Bounded result</strong><span>{approvedRequestCount ? `${approvedRequestCount} verified · ${pendingRequestCount} pending` : pendingRequestCount ? `${pendingRequestCount} waiting for holder decision` : deniedOrExpiredCount ? `${deniedOrExpiredCount} denied or expired` : "No result collected yet"}</span></div>
             <span className="verifier-progress-state">{approvedRequestCount ? "Ready" : pendingRequestCount ? "Waiting" : "Pending"}</span>
@@ -660,7 +679,15 @@ export function VerifierWorkspace({
         </div>
       </section>
 
-      <section className="verifier-security-section">
+      {activeSection === "overview" ? (
+        <section className="workspace-route-cards" aria-label="Verifier workspace sections">
+          <Link href="/verifier/requests"><strong>Requests</strong><span>Ask for one bounded claim and review results.</span></Link>
+          <Link href="/verifier/integrations"><strong>Integrations</strong><span>Manage server keys and signed result webhooks.</span></Link>
+          <Link href="/verifier/security"><strong>Security</strong><span>Rotate signing keys and retire the verifier safely.</span></Link>
+        </section>
+      ) : null}
+
+      {showSection("security") ? <section className="verifier-security-section">
         <article className="verifier-panel">
           <p className="eyebrow">Verification security</p>
           <h2>Keep request signing healthy.</h2>
@@ -712,9 +739,9 @@ export function VerifierWorkspace({
             )}
           </div>
         </article>
-      </section>
+      </section> : null}
 
-      <section className="verifier-integration-section">
+      {showSection("integrations") ? <section className="verifier-integration-section">
         <article className="verifier-panel">
           <p className="eyebrow">Developer integration</p>
           <h2>Connect your server to Zerant.</h2>
@@ -831,9 +858,9 @@ export function VerifierWorkspace({
             )}
           </div>
         </article>
-      </section>
+      </section> : null}
 
-      <section className="verifier-webhook-section">
+      {showSection("integrations") ? <section className="verifier-webhook-section">
         <article className="verifier-panel">
           <p className="eyebrow">Result webhooks</p>
           <h2>Receive verification results automatically.</h2>
@@ -921,9 +948,9 @@ export function VerifierWorkspace({
             )}
           </div>
         </article>
-      </section>
+      </section> : null}
 
-      <section className="verifier-grid" id="new-verification-request">
+      {showSection("requests") ? <section className="verifier-grid" id="new-verification-request">
         <article className="verifier-panel">
           <p className="eyebrow">New request</p>
           <h2>What do you need to verify?</h2>
@@ -1060,9 +1087,9 @@ export function VerifierWorkspace({
             )}
           </div>
         </article>
-      </section>
+      </section> : null}
 
-      <section className="verifier-retirement" aria-labelledby="verifier-retirement-title">
+      {showSection("security") ? <section className="verifier-retirement" aria-labelledby="verifier-retirement-title">
         <div>
           <p className="eyebrow">Verifier lifecycle</p>
           <h2 id="verifier-retirement-title">{retired ? "This verifier is retired." : "Retire this verifier safely."}</h2>
@@ -1077,7 +1104,7 @@ export function VerifierWorkspace({
             {retiring ? "Retiring…" : "Retire verifier profile"}
           </Button>
         </> : null}
-      </section>
+      </section> : null}
     </main>
   );
 }

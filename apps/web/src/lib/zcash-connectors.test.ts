@@ -35,11 +35,11 @@ test("default sign-in discovery does not advertise draft portable ZecAuth", () =
   }
 });
 
-test("WalletConnect is connection-only before mainnet pairing", () => {
+test("WalletConnect is not offered by product discovery", () => {
   for (const purpose of ["connection", "payment", "identity"] as const) {
     assert.equal(discoverZcashConnectors(purpose, testnet, "project").some((choice) => choice.transport === "walletconnect"), false);
     assert.equal(discoverZcashConnectors(purpose, mainnet, "").some((choice) => choice.transport === "walletconnect"), false);
-    assert.equal(discoverZcashConnectors(purpose, mainnet, "project").some((choice) => choice.transport === "walletconnect"), purpose === "connection");
+    assert.equal(discoverZcashConnectors(purpose, mainnet, "project").some((choice) => choice.transport === "walletconnect"), false);
   }
 });
 
