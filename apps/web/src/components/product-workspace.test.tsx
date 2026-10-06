@@ -38,7 +38,7 @@ test("signed-in workspace links into the dedicated Zcash workspace", () => {
       session={{ authenticated: true, identity: "test-identity", scopes: [] }}
       zcash={null}
       zcashNetwork={null}
-      attention={{ activeCredentials: 3, pendingRequests: 2, preparedPayments: 1, submittedPayments: 3, unseenSubmittedPayments: 1, networkSeenPayments: 2, depthReachedPayments: 1, forkedPayments: 0 }}
+      attention={{ activeCredentials: 3, pendingRequests: 2, preparedPayments: 1, submittedPayments: 3, unseenSubmittedPayments: 1, networkSeenPayments: 2, depthReachedPayments: 1, forkedPayments: 0, openInvoices: 2 }}
     />,
   );
 
@@ -47,6 +47,8 @@ test("signed-in workspace links into the dedicated Zcash workspace", () => {
   assert.ok(html.includes("Your Zerant activity at a glance."));
   assert.ok(html.includes("Waiting for your decision"));
   assert.ok(html.includes("2 seen on network · 1 depth reached · 1 unseen"));
+  assert.ok(html.includes("2</span><strong>open invoices"));
+  assert.ok(html.includes('href="/zcash#zcash-invoices"'));
   assert.equal(html.includes('id="zcash-wallet-actions"'), false);
   assert.equal(html.includes('id="zcash-payment-review"'), false);
 });
@@ -88,7 +90,7 @@ test("workspace surfaces forked Zcash submissions as attention", () => {
       session={{ authenticated: true, identity: "test-identity", scopes: [] }}
       zcash={null}
       zcashNetwork={null}
-      attention={{ activeCredentials: 0, pendingRequests: 0, preparedPayments: 0, submittedPayments: 1, unseenSubmittedPayments: 0, networkSeenPayments: 0, depthReachedPayments: 0, forkedPayments: 1 }}
+      attention={{ activeCredentials: 0, pendingRequests: 0, preparedPayments: 0, submittedPayments: 1, unseenSubmittedPayments: 0, networkSeenPayments: 0, depthReachedPayments: 0, forkedPayments: 1, openInvoices: 0 }}
     />,
   );
   assert.ok(html.includes("1 transaction no longer on the best chain"));

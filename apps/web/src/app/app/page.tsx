@@ -29,12 +29,13 @@ export default async function AppPage() {
     const sessionResponse = await fetchZerantBackend("/v1/session", cookieHeader);
     if (sessionResponse?.ok) {
       session = (await sessionResponse.json()) as NonNullable<WorkspaceSession>;
-      const [zcashResponse, networkResponse, credentialResponse, requestResponse, paymentResponse] = await Promise.all([
+      const [zcashResponse, networkResponse, credentialResponse, requestResponse, paymentResponse, invoiceResponse] = await Promise.all([
         fetchZerantBackend("/v1/zcash/status", cookieHeader),
         fetchZerantBackend("/v1/zcash/network/readiness", cookieHeader),
         fetchZerantBackend("/v1/credentials", cookieHeader),
         fetchZerantBackend("/v1/holder/requests", cookieHeader),
         fetchZerantBackend("/v1/zcash/payments", cookieHeader),
+        fetchZerantBackend("/v1/zcash/invoices", cookieHeader),
       ]);
       if (zcashResponse?.ok) {
         zcash = (await zcashResponse.json()) as NonNullable<WorkspaceZcash>;
@@ -54,6 +55,10 @@ export default async function AppPage() {
         ? await paymentResponse.json() as { items?: Array<{ state: string; network_state?: string | null; confirmations?: number | null; min_confirmations?: number }> }
         : { items: [] };
       const paymentItems = Array.isArray(paymentPage.items) ? paymentPage.items : [];
+      const invoicePage = invoiceResponse?.ok
+        ? await invoiceResponse.json() as { items?: Array<{ state: string }> }
+        : { items: [] };
+      const invoiceItems = Array.isArray(invoicePage.items) ? invoicePage.items : [];
       const submitted = paymentItems.filter((item) => item.state === "submitted");
       attention = {
         activeCredentials: credentials.filter((item) => !item.revoked).length,
@@ -64,6 +69,7 @@ export default async function AppPage() {
         networkSeenPayments: submitted.filter((item) => item.network_state === "mempool" || item.network_state === "mined").length,
         depthReachedPayments: submitted.filter((item) => item.network_state === "mined" && (item.confirmations ?? 0) >= (item.min_confirmations ?? Number.MAX_SAFE_INTEGER)).length,
         forkedPayments: submitted.filter((item) => item.network_state === "forked").length,
+        openInvoices: invoiceItems.filter((item) => item.state === "open").length,
       };
     }
   } catch {

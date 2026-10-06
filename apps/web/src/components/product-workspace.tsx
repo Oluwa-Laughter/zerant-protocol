@@ -37,6 +37,7 @@ export type WorkspaceAttention = {
   networkSeenPayments: number;
   depthReachedPayments: number;
   forkedPayments: number;
+  openInvoices: number;
 };
 
 export function ProductWorkspace({
@@ -112,6 +113,11 @@ export function ProductWorkspace({
               <span className="workspace-attention-value">{attention?.submittedPayments ?? 0}</span>
               <strong>submitted payment{attention?.submittedPayments === 1 ? "" : "s"}</strong>
               <span>{paymentAttentionDetail}</span>
+            </Link>
+            <Link className={attention?.openInvoices ? "workspace-attention-card pending-state" : "workspace-attention-card"} href="/zcash#zcash-invoices">
+              <span className="workspace-attention-value">{attention?.openInvoices ?? 0}</span>
+              <strong>open invoice{attention?.openInvoices === 1 ? "" : "s"}</strong>
+              <span>{attention?.openInvoices ? "Shareable Zcash requests still open" : "No open Zcash invoices"}</span>
             </Link>
           </div>
         </section>
