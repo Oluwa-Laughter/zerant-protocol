@@ -343,11 +343,13 @@ pub(super) async fn create(
     }
 
     let row = tx
-        .query_one(
+        .query_opt(
             "INSERT INTO zcash_payout_destinations
          (id, issuer_profile_id, subject_account_id, network, transparent_only,
           ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version, state, expires_at)
          VALUES ($1,$2,$3,$4,FALSE,$5,$6,$7,$8,$9,'active',NOW() + ($10 * INTERVAL '1 day'))
+         ON CONFLICT (issuer_profile_id, subject_account_id) WHERE state = 'active'
+         DO NOTHING
          RETURNING id, subject_account_id, network, state, ciphertext, data_nonce,
                    wrapped_dek, wrap_nonce, key_version, created_at, expires_at, withdrawn_at",
             &[
@@ -364,7 +366,8 @@ pub(super) async fn create(
             ],
         )
         .await
-        .map_err(|_| ApiError::Unavailable)?;
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::Conflict)?;
 
     tx.execute(
         "INSERT INTO trust_events(account_id, event_type, object_id, label, context, counterparty)
@@ -564,6 +567,21 @@ mod tests {
         assert!(!valid_purpose("x"));
         assert!(!valid_purpose(&"x".repeat(161)));
         assert!(!valid_purpose("bad\ncontext"));
+    }
+
+    #[test]
+    fn one_active_payout_migration_is_relationship_scoped_and_scrubs_duplicates() {
+        let migration = include_str!("../migrations/0043_one_active_payout_per_relationship.sql");
+        for required in [
+            "PARTITION BY issuer_profile_id, subject_account_id",
+            "state = 'expired'",
+            "ciphertext = NULL",
+            "wrapped_dek = NULL",
+            "CREATE UNIQUE INDEX",
+            "WHERE state = 'active'",
+        ] {
+            assert!(migration.contains(required), "{required}");
+        }
     }
 
     #[test]

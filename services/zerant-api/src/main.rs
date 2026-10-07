@@ -10991,6 +10991,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "0042_private_payout_destinations.sql",
         include_str!("../migrations/0042_private_payout_destinations.sql"),
     ),
+    (
+        "0043_one_active_payout_per_relationship.sql",
+        include_str!("../migrations/0043_one_active_payout_per_relationship.sql"),
+    ),
 ];
 
 async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {

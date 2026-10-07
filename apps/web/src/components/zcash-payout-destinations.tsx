@@ -91,7 +91,7 @@ export function ZcashPayoutDestinations({ enabled }: { enabled: boolean }) {
         }
         if (response.status === 403) throw new Error("This organization no longer has an active credential relationship with your Zerant account.");
         if (response.status === 404) throw new Error("That organization is no longer available.");
-        if (response.status === 409) throw new Error("Too many payout details are already active. Withdraw an old one or wait for it to expire.");
+        if (response.status === 409) throw new Error("An active payout destination already exists for this organization, or your active limit is reached. Withdraw the current share or wait for it to expire before sharing another.");
         if (response.status === 429) throw new Error("You are sharing payout details too quickly. Try again shortly.");
         throw new Error("Zerant could not share this payout destination.");
       }
