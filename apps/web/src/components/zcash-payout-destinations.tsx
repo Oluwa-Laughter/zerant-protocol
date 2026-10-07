@@ -37,6 +37,7 @@ export function ZcashPayoutDestinations({ enabled }: { enabled: boolean }) {
     ? "Share a shielded-capable Zcash receive address with one organization."
     : "Sign in to share private payout details.");
   const [busy, setBusy] = useState(false);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "failed">(enabled ? "loading" : "ready");
 
   const activeCount = useMemo(() => items.filter((item) => item.state === "active").length, [items]);
 
@@ -56,6 +57,7 @@ export function ZcashPayoutDestinations({ enabled }: { enabled: boolean }) {
       const nextIssuers = Array.isArray(page.organizations) ? page.organizations : [];
       setItems(Array.isArray(page.items) ? page.items : []);
       setIssuers(nextIssuers);
+      setLoadState("ready");
       setIssuerId((current) =>
         nextIssuers.some((issuer) => issuer.issuer_id === current)
           ? current
@@ -65,7 +67,10 @@ export function ZcashPayoutDestinations({ enabled }: { enabled: boolean }) {
         setStatus("No active issuer relationship is eligible for private payout sharing yet.");
       }
     }).catch(() => {
-      if (active) setStatus("Private payout details could not be loaded.");
+      if (active) {
+        setLoadState("failed");
+        setStatus("Private payout details could not be loaded. Refresh the page to try again.");
+      }
     });
     return () => { active = false; };
   }, [enabled]);
@@ -140,7 +145,7 @@ export function ZcashPayoutDestinations({ enabled }: { enabled: boolean }) {
       <div className="zcash-invoice-create">
         <label htmlFor="payout-organization">Organization</label>
         <select id="payout-organization" value={issuerId} onChange={(event) => setIssuerId(event.target.value)} disabled={!enabled || busy || issuers.length === 0}>
-          {issuers.length === 0 ? <option value="">No eligible organizations yet</option> : null}
+          {issuers.length === 0 ? <option value="">{loadState === "loading" ? "Loading eligible organizations…" : loadState === "failed" ? "Organizations unavailable" : "No eligible organizations yet"}</option> : null}
           {issuers.map((issuer) => <option key={issuer.issuer_id} value={issuer.issuer_id}>{issuer.display_name}</option>)}
         </select>
         <p className="small muted">Only active issuer organizations with a current, non-revoked credential relationship appear here. This keeps payout routing attached to an existing trust relationship instead of creating an open inbox.</p>
@@ -177,7 +182,7 @@ export function ZcashPayoutDestinations({ enabled }: { enabled: boolean }) {
 
       <div className="workspace-card">
         <p className="eyebrow">Active sharing</p>
-        <h3>{activeCount} active payout destination{activeCount === 1 ? "" : "s"}</h3>
+        <h3>{loadState === "loading" ? "Loading payout details…" : loadState === "failed" ? "Payout details unavailable" : `${activeCount} active payout destination${activeCount === 1 ? "" : "s"}`}</h3>
         <p className="small muted">Only the selected organization&apos;s authorized operators can retrieve an active destination. Withdrawn and expired records no longer expose the address or purpose.</p>
       </div>
 

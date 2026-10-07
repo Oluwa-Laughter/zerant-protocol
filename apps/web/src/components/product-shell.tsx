@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
+import { MobileMenu } from "@/components/mobile-menu";
 
 const productRoutes = ["/app", "/vault", "/requests", "/activity", "/zcash", "/issuer", "/verifier", "/account"];
 
@@ -78,12 +79,15 @@ export function ProductShell({ children }: { children: React.ReactNode }) {
             </Link>
             <span className="product-mobile-network">Zcash testnet</span>
           </div>
-          <Link href="/account" className="product-mobile-account">Account settings</Link>
+          <MobileMenu signOut groups={[
+            { label: "Your workspace", items: primaryItems },
+            { label: "Organizations", items: organizationItems },
+            { label: "Account", items: [
+              { href: "/account", label: "Account settings" },
+              { href: "/", label: "Back to landing page" },
+            ] },
+          ]} />
         </header>
-        <div className="product-mobile-nav" aria-label="Workspace navigation">
-          {[...primaryItems, ...organizationItems].map((item) => <NavItem key={item.href} {...item} pathname={pathname} />)}
-          <Link className="product-nav-link" href="/">Landing page</Link>
-        </div>
         <div className="product-content">{children}</div>
       </div>
     </div>

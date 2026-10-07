@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ZcashAddressInspector } from "@/components/zcash-address-inspector";
-import { ZcashConnect } from "@/components/zcash-connect";
 import { ZcashPaymentRequestReview } from "@/components/zcash-payment-request-review";
 import { ZcashInvoiceManager } from "@/components/zcash-invoice-manager";
 import { ZcashPayoutDestinations } from "@/components/zcash-payout-destinations";
@@ -19,7 +18,7 @@ function readinessCopy(network: WorkspaceZcashNetwork, zcash: WorkspaceZcash) {
   return { label: "Unavailable", title: "Zcash network connection unavailable.", body: "Private credentials still work, but Zcash network actions are unavailable." };
 }
 
-export function ZcashWorkspace({ session, zcash, network, activeSection }: { session: WorkspaceSession; zcash: WorkspaceZcash; network: WorkspaceZcashNetwork; activeSection?: "overview" | "payments" | "invoices" | "payouts" | "wallet" | "address" }) {
+export function ZcashWorkspace({ session, zcash, network, activeSection }: { session: WorkspaceSession; zcash: WorkspaceZcash; network: WorkspaceZcashNetwork; activeSection?: "overview" | "payments" | "invoices" | "payouts" | "address" }) {
   const authenticated = Boolean(session?.authenticated);
   const [liveNetwork, setLiveNetwork] = useState<WorkspaceZcashNetwork>(network);
   const readiness = readinessCopy(liveNetwork, zcash);
@@ -28,15 +27,15 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
     : Boolean(zcash);
   const showAllSections = activeSection === undefined;
   const showOverview = showAllSections || activeSection === "overview";
-  const showSection = (section: "payments" | "invoices" | "payouts" | "wallet" | "address") => activeSection === section || (showAllSections && section !== "wallet");
+  const showSection = (section: "payments" | "invoices" | "payouts" | "address") => activeSection === section || showAllSections;
 
   return (
     <main id="main" className="product-app zcash-workspace-page">
       <section className="app-heading workspace-intro">
         <div>
           <p className="eyebrow">Zerant on Zcash · Testnet</p>
-          <h1>Pay with a Zcash testnet wallet.</h1>
-          <p>Prepare and review a payment in Zerant. Then open its payment link, scan its QR code, or copy the exact details into your testnet wallet. Browser connection is optional.</p>
+          <h1>Zcash actions, with your wallet in control.</h1>
+          <p>Prepare and review exact testnet payment details in Zerant. Open the reviewed link, scan its QR code, or copy the details into your Zcash wallet for approval.</p>
         </div>
         <span className="pill">{authenticated ? "Zerant account connected" : "Sign-in required"}</span>
       </section>
@@ -63,11 +62,11 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
         {activeSection === undefined ? <a href="#zcash-address-inspector">Check a Zcash address</a> : <Link href="/zcash/address">Check a Zcash address</Link>}
       </nav> : null}
 
-      {showOverview ? <section className="zcash-wallet-setup" aria-labelledby="zcash-testnet-wallet-title">
+      {showOverview ? <section className="zcash-wallet-setup" aria-labelledby="zcash-wallet-handoff-title">
         <div className="section-heading">
-          <p className="eyebrow">Testnet wallet setup</p>
-          <h2 id="zcash-testnet-wallet-title">Bring a Zcash testnet wallet.</h2>
-          <p className="muted">Zerant works with a compatible wallet through a standard Zcash payment link. You can also use the exact recipient and amount in a testnet wallet that cannot open the link.</p>
+          <p className="eyebrow">External wallet handoff</p>
+          <h2 id="zcash-wallet-handoff-title">Review here. Approve in your wallet.</h2>
+          <p className="muted">Zerant prepares exact Zcash testnet payment details. Open the reviewed ZIP-321 request, scan its QR code, or copy the recipient and amount into a compatible wallet.</p>
         </div>
         <div className="zcash-wallet-setup-grid">
           <article className="workspace-card">
@@ -127,9 +126,9 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
           <div className="workspace-wallet-heading">
             <p className="eyebrow">Account required</p>
             <h2>Sign in before using private Zcash actions.</h2>
-            <p className="muted">Passkey access is available even when wallet sign-in is not.</p>
+            <p className="muted">Passkey access is independent of any Zcash wallet.</p>
           </div>
-          <Link className="button" href="/vault">Choose a sign-in method →</Link>
+          <Link className="button" href="/vault">Continue with passkey →</Link>
         </section>
       ) : null}
 
@@ -141,18 +140,6 @@ export function ZcashWorkspace({ session, zcash, network, activeSection }: { ses
       {showSection("invoices") ? <ZcashInvoiceManager enabled={authenticated} /> : null}
 
       {showSection("payouts") ? <ZcashPayoutDestinations enabled={authenticated} /> : null}
-
-      {authenticated && showSection("wallet") ? (
-        <section id="zcash-wallet-actions" className="workspace-wallet" aria-label="Zcash wallet access">
-          <div className="workspace-wallet-heading">
-            <p className="eyebrow">Optional direct connection</p>
-            <h2>Connect a wallet only if it supports this network.</h2>
-            <p className="muted">Zerant uses Zcash testnet. The Noir extension from the Chrome Store is mainnet and cannot pay a testnet request. A separate Testnet Noir build is available from Noir. You can use a compatible wallet through <Link href="/zcash/payments">payment review</Link> without connecting it to Zerant.</p>
-          </div>
-          <ZcashConnect purpose="connection" />
-          <p className="small muted wallet-compatibility-note">A Zcash address identifies a payment destination. It does not connect a wallet or give Zerant spending authority.</p>
-        </section>
-      ) : null}
 
       {showSection("address") ? <ZcashAddressInspector enabled={authenticated} /> : null}
     </main>

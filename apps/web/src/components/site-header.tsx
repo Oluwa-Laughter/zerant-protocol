@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { MobileMenu } from "@/components/mobile-menu";
 
 export function SiteHeader() {
   return (
@@ -12,6 +13,12 @@ export function SiteHeader() {
         <Link href="/issuers">Trusted issuers</Link>
         <Link href="/app" className="nav-app">Open Zerant <span aria-hidden="true">→</span></Link>
       </nav>
+      <MobileMenu groups={[{ label: "Explore", items: [
+        { href: "/", label: "Landing page" },
+        { href: "/#how-it-works", label: "How it works" },
+        { href: "/issuers", label: "Trusted issuers" },
+        { href: "/app", label: "Open Zerant" },
+      ] }]} />
     </header>
   );
 }

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { WorkspaceZcashNetwork } from "@/components/product-workspace";
-import { useZcashConnection } from "@/lib/zcash-connection";
 
 export function ZcashLiveStatus({
   authenticated,
@@ -14,11 +13,9 @@ export function ZcashLiveStatus({
   network: WorkspaceZcashNetwork;
   onNetworkUpdate?: (network: WorkspaceZcashNetwork) => void;
 }) {
-  const connection = useZcashConnection();
   const [refreshedNetwork, setRefreshedNetwork] = useState<WorkspaceZcashNetwork>(null);
   const [refreshingNetwork, setRefreshingNetwork] = useState(false);
   const lastNetworkRefresh = useRef(0);
-  const walletConnected = connection.status === "connected" && Boolean(connection.account);
   const liveNetwork = refreshedNetwork ?? network;
   const networkReady = liveNetwork?.state === "ready";
 
@@ -56,18 +53,12 @@ export function ZcashLiveStatus({
     };
   }, [authenticated, refreshNetwork]);
 
-  const walletLabel = walletConnected
-    ? connection.account?.providerName ?? "Zcash wallet"
-    : connection.status === "connecting"
-      ? "Waiting for wallet approval"
-      : "Wallet not connected";
-
   return (
     <section className="zcash-live-status" aria-label="Zcash workflow status">
       <div className="zcash-live-status-head">
         <div>
           <p className="eyebrow">Live workflow</p>
-          <h2>From Zerant account to Zcash payment.</h2>
+          <h2>From payment details to wallet approval.</h2>
         </div>
         <div className="zcash-live-network-actions">
           <span className={networkReady ? "zcash-live-network is-ready" : "zcash-live-network"}>
@@ -84,19 +75,19 @@ export function ZcashLiveStatus({
           <div><strong>Zerant account</strong><span>{authenticated ? "Connected" : "Sign in required"}</span></div>
         </article>
         <span className="zcash-flow-line" aria-hidden="true" />
-        <article className={walletConnected ? "zcash-flow-step is-complete" : connection.status === "connecting" ? "zcash-flow-step is-active" : "zcash-flow-step"}>
+        <article className="zcash-flow-step">
           <span className="zcash-flow-number">02</span>
-          <div><strong>Testnet wallet</strong><span>{walletLabel}</span></div>
+          <div><strong>Prepare</strong><span>Enter exact testnet payment details</span></div>
         </article>
         <span className="zcash-flow-line" aria-hidden="true" />
         <article className="zcash-flow-step is-next">
           <span className="zcash-flow-number">03</span>
-          <div><strong>Private payment</strong><span>Prepare and review exact details</span></div>
+          <div><strong>Review and open</strong><span>Approve in your external wallet</span></div>
         </article>
         <span className="zcash-flow-line" aria-hidden="true" />
         <article className="zcash-flow-step is-next">
           <span className="zcash-flow-number">04</span>
-          <div><strong>Track submission</strong><span>Saved by Zerant; settlement remains separate</span></div>
+          <div><strong>Track</strong><span>Submission and network observation stay separate</span></div>
         </article>
       </div>
     </section>

@@ -25,17 +25,18 @@ const zcash = {
   chain_height: 1,
 };
 
-test("dedicated Zcash workspace owns wallet and payment actions", () => {
+test("dedicated Zcash workspace prepares external wallet payment handoff", () => {
   const html = renderToStaticMarkup(<ZcashWorkspace session={session} zcash={zcash} network={network} />);
   assert.ok(html.includes("Zerant on Zcash · Testnet"));
   assert.ok(html.includes("Your Zerant ID is not a Zcash address."));
   assert.ok(html.includes("Live workflow"));
-  assert.ok(html.includes("From Zerant account to Zcash payment."));
+  assert.ok(html.includes("From payment details to wallet approval."));
   assert.ok(html.includes("Refresh network"));
-  assert.ok(html.includes("Track submission"));
+  assert.ok(html.includes("Track"));
+  assert.equal(html.includes("Wallet not connected"), false);
 
-  assert.ok(html.includes("Testnet wallet setup"));
-  assert.ok(html.includes("Bring a Zcash testnet wallet."));
+  assert.ok(html.includes("External wallet handoff"));
+  assert.ok(html.includes("Review here. Approve in your wallet."));
   assert.ok(html.includes("Open, scan, or copy"));
   assert.ok(html.includes("Get the recipient’s testnet address"));
   assert.equal(html.includes('id="zcash-wallet-actions"'), false);
@@ -56,7 +57,7 @@ test("dedicated Zcash workspace owns wallet and payment actions", () => {
 test("signed-out Zcash workspace directs users to account access", () => {
   const html = renderToStaticMarkup(<ZcashWorkspace session={null} zcash={null} network={null} />);
   assert.ok(html.includes("Sign in before using private Zcash actions."));
-  assert.ok(html.includes("Choose a sign-in method"));
+  assert.ok(html.includes("Continue with passkey"));
   assert.equal(html.includes('id="zcash-wallet-actions"'), false);
   assert.equal(html.includes('href="#zcash-wallet-actions"'), false);
 });

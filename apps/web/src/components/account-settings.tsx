@@ -180,9 +180,9 @@ export function AccountSettings({
         <section className="account-hero">
           <p className="eyebrow">Account</p>
           <h1>Manage your Zerant data.</h1>
-          <p>Connect to Zerant to export or manage your account.</p>
+          <p>Sign in with a passkey to export or manage your account.</p>
           <Link href="/vault" className="button">
-            Connect to Zerant <span aria-hidden="true">→</span>
+            Continue with passkey <span aria-hidden="true">→</span>
           </Link>
         </section>
       </main>
@@ -222,7 +222,7 @@ export function AccountSettings({
         <div className="account-security-grid">
           <div><strong>{security.accessMethods}</strong><span>sign-in method{security.accessMethods === 1 ? "" : "s"}</span></div>
           <div><strong>{security.passkeys}</strong><span>passkey{security.passkeys === 1 ? "" : "s"}</span></div>
-          <div><strong>{security.zcashMethods}</strong><span>Zcash sign-in method{security.zcashMethods === 1 ? "" : "s"}</span></div>
+          {security.zcashMethods > 0 ? <div><strong>{security.zcashMethods}</strong><span>older Zcash sign-in method{security.zcashMethods === 1 ? "" : "s"}</span></div> : null}
           <div><strong>{security.activeSessions}</strong><span>active session{security.activeSessions === 1 ? "" : "s"}</span></div>
         </div>
         <p className="small muted">Zerant does not build a device, location, payment-address, balance, or wallet-history profile from these access methods.</p>
@@ -230,7 +230,7 @@ export function AccountSettings({
 
       {activeSection === "overview" ? (
         <section className="workspace-route-cards" aria-label="Account sections">
-          <Link href="/account/access"><strong>Access methods</strong><span>Manage passkeys and optional Zcash sign-in.</span></Link>
+          <Link href="/account/access"><strong>Access methods</strong><span>Manage passkeys and review any older linked methods.</span></Link>
           <Link href="/account/sessions"><strong>Sessions</strong><span>Review and revoke active Zerant sessions.</span></Link>
           <Link href="/account/data"><strong>Data and deletion</strong><span>Export your data or remove your account.</span></Link>
         </section>
@@ -274,7 +274,7 @@ export function AccountSettings({
 
         {showSection("access") ? <PasskeyManager initialPasskeys={initialPasskeys} onCountChange={setPasskeyCount} /> : null}
 
-        {showSection("access") ? <ZcashSignInManager initialMethods={initialZcashMethods} onCountChange={setZcashMethodCount} /> : null}
+        {showSection("access") && initialZcashMethods.length > 0 ? <ZcashSignInManager initialMethods={initialZcashMethods} onCountChange={setZcashMethodCount} /> : null}
 
         {showSection("sessions") ? <SessionManager initialSessions={initialSessions} onCountChange={setSessionCount} /> : null}
 

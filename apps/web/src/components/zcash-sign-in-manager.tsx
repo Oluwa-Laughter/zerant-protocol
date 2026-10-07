@@ -2,10 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ZcashWalletSelector } from "@/components/zcash-wallet-selector";
-import { type ZcashConnector } from "@/lib/zcash-connectors";
-import { connectConnector, getZcashConnectionSnapshot } from "@/lib/zcash-connection";
-import { completeWalletAppLink, removeWalletMessageMethod, removeZecAuthMethod, startWalletAppLink, submitZcashLink } from "@/lib/zcash-link";
+import { removeWalletMessageMethod, removeZecAuthMethod } from "@/lib/zcash-link";
 
 export type LinkedZcashMethod = {
   method: "zecauth" | "wallet_message";
@@ -13,6 +10,8 @@ export type LinkedZcashMethod = {
   created_at: string;
 };
 
+// Existing access methods remain removable. New account access is passkey-first;
+// payment handoff never creates a linked sign-in method.
 export function ZcashSignInManager({
   initialMethods,
   onCountChange,
@@ -25,18 +24,6 @@ export function ZcashSignInManager({
   const [busy, setBusy] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
 
-  async function refreshMethods() {
-    const refreshed = await fetch("/api/zerant/account/zcash/methods", {
-      credentials: "same-origin", cache: "no-store",
-    });
-    if (refreshed.ok) {
-      const next = (await refreshed.json()) as LinkedZcashMethod[];
-      setMethods(next);
-      onCountChange?.(next.length);
-    }
-    return refreshed.status;
-  }
-
   async function removeMethod(method: LinkedZcashMethod) {
     if (busy) return;
     setBusy(true);
@@ -44,141 +31,56 @@ export function ZcashSignInManager({
       const response = method.method === "zecauth"
         ? await removeZecAuthMethod()
         : await removeWalletMessageMethod(method.chain ?? "");
-      if (response.ok) {
-        setPendingRemoval(null);
-        const refreshStatus = await refreshMethods();
-        setStatus(refreshStatus === 401
-          ? "Removed. Sign in again with another method."
-          : "Zcash sign-in removed. Other Zcash-authenticated sessions were signed out.");
-      } else {
+      if (!response.ok) {
         setStatus(response.status === 409
-          ? "Add a passkey or another sign-in method before removing your last access method."
-          : response.status === 404
-            ? "That sign-in method is no longer linked. Refresh this page."
-            : response.status === 401 || response.status === 403
-              ? "Sign in again to remove a Zcash sign-in method."
-              : "Could not remove this Zcash sign-in method.");
-      }
-    } catch {
-      setStatus("Could not remove this Zcash sign-in method.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function linkWalletApp() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const uri = await startWalletAppLink(window.location.origin);
-      setHandoffUri(uri);
-      setStatus("Open this request in a ZecAuth-compatible wallet, then return here to check approval.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not open the Zcash wallet app.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function checkWalletAppApproval() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const response = await completeWalletAppLink();
-      if (response.status === 202) {
-        setStatus("No wallet app approval is ready yet. Approve it in your wallet, then check again.");
-      } else if (response.ok) {
-        await refreshMethods();
-        setStatus("Zcash sign-in linked to this Zerant account.");
-      } else {
-        setStatus(response.status === 409
-          ? "This Zcash sign-in is already linked elsewhere, or this account has a different wallet sign-in."
-          : "This request expired or your recent sign-in ended. Sign in again and retry.");
-      }
-    } catch {
-      setStatus("Could not check wallet app approval.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function linkWallet(wallet: ZcashConnector) {
-    if (busy) return;
-    setBusy(true);
-    try {
-      if (!wallet.capabilities.has("identitySigning") || !wallet.signIdentityChallenge || !wallet.connect) throw new Error("Wallet cannot sign this request.");
-      setStatus("Approve the Zcash sign-in request in your wallet.");
-      const chain = getZcashConnectionSnapshot().activeChain;
-      if (!chain) throw new Error("Zcash network configuration is still loading. Reopen the wallet menu and try again.");
-      await connectConnector(wallet, chain);
-      const result = await submitZcashLink(wallet);
-      if (result.stage === "challenge") {
-        setStatus(result.response.status === 403 ? "Sign in again to link a Zcash wallet." : "Could not start Zcash sign-in linking.");
+          ? "Add a passkey before removing your last account access method."
+          : response.status === 401 || response.status === 403
+            ? "Sign in again to remove this access method."
+            : "This access method could not be removed. Try again.");
         return;
       }
-      const verified = result.response;
-      if (!verified.ok) {
-        setStatus(verified.status === 409
-          ? "This Zcash sign-in is already linked elsewhere, or this account has a different wallet sign-in."
-          : verified.status === 401 || verified.status === 403
-            ? "This request expired or your recent sign-in ended. Sign in again and retry."
-            : "Could not link this Zcash sign-in.");
-        return;
+      setPendingRemoval(null);
+      const refreshed = await fetch("/api/zerant/account/zcash/methods", {
+        credentials: "same-origin", cache: "no-store",
+      });
+      if (refreshed.ok) {
+        const next = (await refreshed.json()) as LinkedZcashMethod[];
+        setMethods(next);
+        onCountChange?.(next.length);
       }
-      await refreshMethods();
-      setStatus("Zcash sign-in linked to this Zerant account.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Wallet approval was not completed.");
+      setStatus("Zcash sign-in removed. Other sessions using it were signed out.");
+    } catch {
+      setStatus("This access method could not be removed. Try again.");
     } finally {
       setBusy(false);
     }
   }
 
-  const [handoffUri, setHandoffUri] = useState("");
-
-  function selectWallet(wallet: ZcashConnector) {
-    if (wallet.transport === "walletconnect") return;
-    if (wallet.capabilities.has("zecAuth")) void linkWalletApp();
-    else void linkWallet(wallet);
-  }
+  if (!methods.length) return null;
 
   return (
     <article className="account-card">
-      <p className="eyebrow">Zcash sign-in</p>
-      <h2>Linked sign-in methods</h2>
-      {methods.length ? (
-        <ul>
-          {methods.map((method) => (
-            <li key={`${method.method}:${method.chain ?? ""}`}>
-              {method.method === "zecauth" ? "ZecAuth" : "Wallet message"}
-              {method.chain ? ` · ${method.chain.replace("zcash:", "")}` : ""}
-              {` · added ${new Date(method.created_at).toLocaleDateString()}`}
-              {pendingRemoval === `${method.method}:${method.chain ?? ""}` ? (
-                <div className="account-access-confirm">
-                  <span className="small muted">Remove this sign-in method?</span>
-                  <div className="vault-actions wrap">
-                    <Button variant="secondary" onClick={() => void removeMethod(method)} disabled={busy}>Confirm</Button>
-                    <Button variant="secondary" onClick={() => setPendingRemoval(null)} disabled={busy}>Cancel</Button>
-                  </div>
+      <p className="eyebrow">Previously linked access</p>
+      <h2>Older Zcash sign-in methods</h2>
+      <p className="muted">These methods can still open your account until you remove them. Payments use a separate wallet handoff and do not link a sign-in method.</p>
+      <ul>
+        {methods.map((method) => {
+          const key = `${method.method}:${method.chain ?? ""}`;
+          const label = method.method === "zecauth" ? "ZecAuth" : "Wallet message";
+          return <li key={key}>
+            {label}{method.chain ? ` · ${method.chain.replace("zcash:", "")}` : ""}
+            {pendingRemoval === key ? (
+              <div className="account-access-confirm">
+                <span className="small muted">Remove this sign-in method?</span>
+                <div className="vault-actions wrap">
+                  <Button variant="secondary" onClick={() => void removeMethod(method)} disabled={busy}>Confirm removal</Button>
+                  <Button variant="secondary" onClick={() => setPendingRemoval(null)} disabled={busy}>Cancel</Button>
                 </div>
-              ) : (
-                <Button variant="secondary" onClick={() => setPendingRemoval(`${method.method}:${method.chain ?? ""}`)} disabled={busy} aria-label={`Remove ${method.method === "zecauth" ? "ZecAuth" : `${method.chain?.replace("zcash:", "")} wallet message`} sign-in`}>Remove</Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      ) : <p className="muted">No Zcash sign-in method is linked yet.</p>}
-      <p className="muted">Linking lets you sign in to this same Zerant account. It does not connect payment information.</p>
-      <p className="muted">Removing a method stops it from accessing this Zerant account and signs out all Zcash-authenticated sessions for security. Add a passkey or another sign-in method first if this is your last one. To change keys, remove the old method, then link the new one.</p>
-      <ZcashWalletSelector purpose="identity" busy={busy} onSelect={selectWallet} />
-      {handoffUri ? <div className="wallet-handoff">
-        <textarea readOnly aria-label="ZecAuth link request URI" value={handoffUri} rows={3} />
-        <div className="vault-actions wrap">
-          <Button variant="secondary" onClick={() => window.location.assign(handoffUri)}>Open in wallet</Button>
-          <Button variant="secondary" onClick={() => navigator.clipboard.writeText(handoffUri).then(() => setStatus("Request URI copied."), () => setStatus("Copy failed. Select the URI above."))}>Copy request</Button>
-          <Button variant="secondary" onClick={checkWalletAppApproval} disabled={busy}>Check approval</Button>
-        </div>
-      </div> : null}
+              </div>
+            ) : <Button variant="secondary" onClick={() => setPendingRemoval(key)} disabled={busy} aria-label={`Remove ${label} sign-in`}>Remove</Button>}
+          </li>;
+        })}
+      </ul>
       {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
     </article>
   );

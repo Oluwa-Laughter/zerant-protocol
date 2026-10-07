@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ZcashConnect } from "@/components/zcash-connect";
 import { PasskeyAccess } from "@/components/passkey-access";
 
 export type ServerVaultSession = {
@@ -141,16 +140,14 @@ export function ServerCredentialVault({
       <main id="main" className="vault-page">
         <section className="vault-hero">
           <p className="eyebrow">Private credentials</p>
-          <h1>Build trust without building a public profile.</h1>
+          <h1>Welcome to Zerant.</h1>
           <p>
-            Create a private Zerant account with a passkey, or sign in to an existing
-            account. Your Zcash wallet is optional and stays separate.
+            Access your private trust workspace with a passkey. Your Zerant account
+            stays separate from your Zcash wallet and payment history.
           </p>
         </section>
         <section className="account-access-options" aria-label="Choose how to enter Zerant">
           <PasskeyAccess onConnected={() => window.location.reload()} />
-          <div className="account-access-divider"><span>Optional wallet sign-in</span></div>
-          <ZcashConnect purpose="identity" onConnected={() => window.location.reload()} />
         </section>
       </main>
     );

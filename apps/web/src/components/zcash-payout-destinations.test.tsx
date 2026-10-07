@@ -16,6 +16,8 @@ test("private payout sharing keeps payment destination separate from identity", 
   assert.equal(html.includes("seed phrase"), true);
   assert.equal(html.includes("wallet history"), true);
   assert.equal(html.includes("Connect wallet"), false);
+  assert.ok(html.includes("Loading eligible organizations…"));
+  assert.equal(html.includes("No eligible organizations yet"), false);
 });
 
 test("signed-out payout sharing remains account-gated", () => {
