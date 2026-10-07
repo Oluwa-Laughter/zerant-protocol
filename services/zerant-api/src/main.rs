@@ -11035,22 +11035,116 @@ const MIGRATIONS: &[(&str, &str)] = &[
 
 async fn run_migrations(pool: &Pool) -> Result<(), ApiError> {
     const MIGRATION_LOCK_ID: i64 = 9_248_177_301;
-    let client = db_client(pool).await?;
+    let mut client = db_client(pool).await.inspect_err(|_| {
+        tracing::error!(stage = "database_connection", "startup failed");
+    })?;
     client
         .query_one("SELECT pg_advisory_lock($1)", &[&MIGRATION_LOCK_ID])
         .await
-        .map_err(|_| ApiError::Unavailable)?;
+        .map_err(|error| {
+            tracing::error!(stage = "migration_lock", sqlstate = ?error.code(), "startup failed");
+            ApiError::Unavailable
+        })?;
 
     let result = async {
-        for (_, migration) in MIGRATIONS {
-            client
-                .batch_execute(migration)
+        client
+            .batch_execute(
+                "CREATE TABLE IF NOT EXISTS zerant_schema_migrations (
+                    name TEXT PRIMARY KEY,
+                    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )",
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+
+        // Earlier deployments replayed every SQL file on every cold start. Only
+        // baseline schemas with a known final marker; a partially applied legacy
+        // migration must be repaired explicitly instead of silently skipped.
+        let ledger_count: i64 = client
+            .query_one("SELECT COUNT(*) FROM zerant_schema_migrations", &[])
+            .await
+            .map_err(|_| ApiError::Unavailable)?
+            .get(0);
+        if ledger_count == 0 {
+            let legacy = client
+                .query_one(
+                    "SELECT
+                        to_regclass('public.accounts') IS NOT NULL,
+                        to_regclass('public.zcash_payout_destinations') IS NOT NULL,
+                        EXISTS (SELECT 1 FROM pg_indexes
+                            WHERE schemaname = 'public'
+                              AND indexname = 'zcash_payout_destinations_one_active_relationship_idx'),
+                        EXISTS (SELECT 1 FROM pg_constraint
+                            WHERE conname = 'issuer_events_event_type_check'
+                              AND pg_get_constraintdef(oid) LIKE '%payout_destination_received%'),
+                        EXISTS (SELECT 1 FROM pg_trigger
+                            WHERE tgname = 'zcash_invoices_audit_cancel' AND NOT tgisinternal)",
+                    &[],
+                )
                 .await
                 .map_err(|_| ApiError::Unavailable)?;
+            let has_accounts: bool = legacy.get(0);
+            let baseline = if legacy.get::<_, bool>(2) {
+                43
+            } else if legacy.get::<_, bool>(1) || legacy.get::<_, bool>(3) {
+                42
+            } else if legacy.get::<_, bool>(4) {
+                41
+            } else if has_accounts {
+                tracing::error!(stage = "legacy_migration_baseline", "unrecognized existing schema");
+                return Err(ApiError::Unavailable);
+            } else {
+                0
+            };
+            if baseline > 0 {
+                let tx = client.transaction().await.map_err(|_| ApiError::Unavailable)?;
+                for (name, _) in MIGRATIONS.iter().take(baseline) {
+                    tx.execute(
+                        "INSERT INTO zerant_schema_migrations(name) VALUES ($1)",
+                        &[name],
+                    )
+                    .await
+                    .map_err(|_| ApiError::Unavailable)?;
+                }
+                tx.commit().await.map_err(|_| ApiError::Unavailable)?;
+                tracing::info!(baseline, "recorded existing schema migration baseline");
+            }
+        }
+
+        let rows = client
+            .query("SELECT name FROM zerant_schema_migrations", &[])
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+        let applied: BTreeSet<String> = rows.iter().map(|row| row.get(0)).collect();
+        if applied.iter().any(|name| !MIGRATIONS.iter().any(|(known, _)| known == name)) {
+            tracing::error!(stage = "migration_ledger", "unknown migration recorded");
+            return Err(ApiError::Unavailable);
+        }
+        let mut found_gap = false;
+        for (name, migration) in MIGRATIONS {
+            if applied.contains(*name) {
+                if found_gap {
+                    tracing::error!(stage = "migration_ledger", "noncontiguous migration history");
+                    return Err(ApiError::Unavailable);
+                }
+                continue;
+            }
+            found_gap = true;
+            let tx = client.transaction().await.map_err(|_| ApiError::Unavailable)?;
+            tx.batch_execute(migration).await.map_err(|error| {
+                tracing::error!(migration = name, sqlstate = ?error.code(), "startup migration failed");
+                ApiError::Unavailable
+            })?;
+            tx.execute(
+                "INSERT INTO zerant_schema_migrations(name) VALUES ($1)",
+                &[name],
+            )
+            .await
+            .map_err(|_| ApiError::Unavailable)?;
+            tx.commit().await.map_err(|_| ApiError::Unavailable)?;
         }
         Ok(())
-    }
-    .await;
+    }.await;
 
     let _ = client
         .query_one("SELECT pg_advisory_unlock($1)", &[&MIGRATION_LOCK_ID])
@@ -11204,6 +11298,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn applied_migrations_are_not_replayed_after_new_audit_events() {
+        let Ok(database_url) = env::var("ZERANT_TEST_DATABASE_URL") else {
+            return;
+        };
+        let config = tokio_postgres::Config::from_str(&database_url).unwrap();
+        let manager = Manager::from_config(
+            config,
+            NoTls,
+            ManagerConfig {
+                recycling_method: RecyclingMethod::Fast,
+            },
+        );
+        let db = Pool::builder(manager).max_size(4).build().unwrap();
+        run_migrations(&db).await.unwrap();
+        let client = db_client(&db).await.unwrap();
+        let account = Uuid::new_v4();
+        let handle = format!("zr_{}", account.simple());
+        client
+            .execute(
+                "INSERT INTO accounts(id, public_handle) VALUES ($1, $2)",
+                &[&account, &handle],
+            )
+            .await
+            .unwrap();
+        client
+            .execute(
+                "INSERT INTO trust_events(account_id, event_type, object_id, label)
+             VALUES ($1, 'zcash_payout_shared', $2, 'Migration test')",
+                &[&account, &handle],
+            )
+            .await
+            .unwrap();
+
+        run_migrations(&db).await.unwrap();
+        let applied: i64 = client
+            .query_one("SELECT COUNT(*) FROM zerant_schema_migrations", &[])
+            .await
+            .unwrap()
+            .get(0);
+        assert_eq!(applied as usize, MIGRATIONS.len());
+        let retained: i64 = client.query_one(
+            "SELECT COUNT(*) FROM trust_events WHERE account_id = $1 AND event_type = 'zcash_payout_shared'",
+            &[&account],
+        ).await.unwrap().get(0);
+        assert_eq!(retained, 1);
+    }
 
     #[test]
     fn issued_credential_timestamps_serialize_as_rfc3339_strings() {
