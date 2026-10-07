@@ -138,20 +138,20 @@ export function ProductWorkspace({
             Your credentials follow your Zerant account instead of being trapped in one browser.
           </p>
           <Link className="button" href="/vault">
-            {authenticated ? "Open credential vault" : "Choose a sign-in method"} <span aria-hidden="true">→</span>
+            {authenticated ? "Open credential vault" : "Continue with passkey"} <span aria-hidden="true">→</span>
           </Link>
         </article>
 
         <article className="workspace-card">
           <p className="eyebrow">Private identity</p>
-          <h2>{authenticated ? "Identity connected." : "Not connected."}</h2>
+          <h2>{authenticated ? "Identity ready." : "Sign-in required."}</h2>
           <p className="muted">
             {authenticated
               ? "Your Zerant identity is connected without exposing your payment address."
-              : "Sign in with a passkey or compatible wallet. Your Zerant account stays separate from the keys controlling your funds."}
+              : "Sign in with your passkey. Payment approval stays in an external Zcash wallet only when you choose to pay."}
           </p>
           <div className={authenticated ? "workspace-state ready" : "workspace-state"}>
-            <span />{authenticated ? "Private identity connected" : "Connection required"}
+            <span />{authenticated ? "Private identity ready" : "Passkey sign-in required"}
           </div>
         </article>
 
@@ -204,7 +204,7 @@ export function ProductWorkspace({
                   ? "Protected mode"
                   : zcash
                     ? "Zcash ready"
-                    : "Not connected"}
+                    : "Network unavailable"}
           </div>
           <Link className="text-link" href="/zcash">Prepare a Zcash payment <span aria-hidden="true">→</span></Link>
         </article>

@@ -30,6 +30,9 @@ test("workspace renders server and Zcash boundaries without browser-local persis
     assert.equal(html.includes(forbidden), false, "browser-local or seeded data leaked: " + forbidden);
   }
   assert.equal(html.includes('id="zcash-wallet-actions"'), false);
+  assert.ok(html.includes("Continue with passkey"));
+  assert.ok(html.includes("Passkey sign-in required"));
+  assert.equal(html.includes("passkey or compatible wallet"), false);
 });
 
 test("signed-in workspace links into the dedicated Zcash workspace", () => {
