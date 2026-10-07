@@ -8,5 +8,6 @@ test("passkey access offers account-free sign-in with Zerant ID fallback", () =>
   assert.ok(html.includes("Create a Zerant account"));
   assert.ok(html.includes("Continue with passkey"));
   assert.ok(html.includes("Use Zerant ID instead"));
+  assert.ok(html.includes("Some valid passkeys are not discoverable"));
   assert.ok(html.includes("Continue with Zerant ID"));
 });

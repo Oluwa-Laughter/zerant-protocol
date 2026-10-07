@@ -27,12 +27,20 @@ type AuthenticationStart = {
 function passkeyError(error: unknown): string {
   if (error instanceof TypeError) return "Zerant could not reach the service. Check your connection and try again.";
   const message = error instanceof Error ? error.message : "";
-  if (/not allowed|cancel|abort/i.test(message)) return "Passkey prompt closed. You can try again.";
+  if (/not allowed|cancel|abort/i.test(message)) {
+    return "Passkey prompt closed or no discoverable passkey was available. Try again or use your Zerant ID below.";
+  }
   if (/not found|no credential|no passkey/i.test(message)) return "No matching passkey was found on this device. Try your Zerant ID below.";
   if (/not supported/i.test(message)) {
     return "This browser or device does not support passkeys.";
   }
   return "The passkey request could not be completed. Try again.";
+}
+
+function shouldOfferIdFallback(error: unknown): boolean {
+  if (error instanceof TypeError) return false;
+  const message = error instanceof Error ? error.message : "";
+  return /not allowed|cancel|abort|not found|no credential|no passkey/i.test(message);
 }
 
 function serverError(status: number, step: "start" | "finish"): string {
@@ -48,6 +56,7 @@ export function PasskeyAccess({ onConnected }: { onConnected?: () => void }) {
   const [zerantId, setZerantId] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showIdFallback, setShowIdFallback] = useState(false);
 
   async function createAccount() {
     if (busy) return;
@@ -123,12 +132,14 @@ export function PasskeyAccess({ onConnected }: { onConnected?: () => void }) {
       });
       if (!finishResponse.ok) {
         setStatus(serverError(finishResponse.status, "finish"));
+        if (finishResponse.status === 401 || finishResponse.status === 404) setShowIdFallback(true);
         return;
       }
       setStatus("Signed in.");
       onConnected?.();
     } catch (error) {
       setStatus(passkeyError(error));
+      if (shouldOfferIdFallback(error)) setShowIdFallback(true);
     } finally {
       setBusy(false);
     }
@@ -204,9 +215,14 @@ export function PasskeyAccess({ onConnected }: { onConnected?: () => void }) {
           {busy ? "Waiting for passkey…" : "Continue with passkey"}
         </Button>
         <Button variant="secondary" onClick={createAccount} disabled={busy}>Create a Zerant account</Button>
-        <details className="passkey-id-fallback">
+        <details
+          className="passkey-id-fallback"
+          open={showIdFallback}
+          onToggle={(event) => setShowIdFallback(event.currentTarget.open)}
+        >
           <summary>Use Zerant ID instead</summary>
           <div className="passkey-signin">
+          <p className="small muted">Some valid passkeys are not discoverable until Zerant knows which account to check.</p>
           <label htmlFor="passkey-zerant-id">Already have an account? Enter your Zerant ID</label>
           <input
             id="passkey-zerant-id"
