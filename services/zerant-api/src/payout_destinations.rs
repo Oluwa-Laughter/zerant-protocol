@@ -98,8 +98,11 @@ pub(super) struct PayoutExportView {
     state: String,
     recipient: Option<String>,
     purpose: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     withdrawn_at: Option<OffsetDateTime>,
 }
 
@@ -129,8 +132,11 @@ pub(super) struct HolderPayoutView {
     state: String,
     recipient: Option<String>,
     purpose: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     withdrawn_at: Option<OffsetDateTime>,
 }
 
@@ -140,8 +146,11 @@ pub(super) struct IssuerPayoutView {
     network: String,
     state: String,
     purpose: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     withdrawn_at: Option<OffsetDateTime>,
 }
 

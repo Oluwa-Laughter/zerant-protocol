@@ -16,8 +16,11 @@ pub(super) struct InvoiceExportView {
     amount_zat: i64,
     network: String,
     state: String,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     cancelled_at: Option<OffsetDateTime>,
 }
 
@@ -84,8 +87,11 @@ pub(super) struct InvoiceView {
     amount_zat: i64,
     network: String,
     state: String,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     cancelled_at: Option<OffsetDateTime>,
     payment_uri: Option<String>,
 }
@@ -96,6 +102,7 @@ pub(super) struct PublicInvoiceView {
     amount_zat: i64,
     network: String,
     state: String,
+    #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
     payment_uri: Option<String>,
     transparent_only: bool,

@@ -38,12 +38,16 @@ pub(super) struct PaymentExportView {
     min_confirmations: i32,
     state: String,
     txid: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     submitted_at: Option<OffsetDateTime>,
     network_state: Option<String>,
     observed_height: Option<i64>,
     confirmations: Option<i64>,
+    #[serde(with = "time::serde::rfc3339::option")]
     observed_at: Option<OffsetDateTime>,
 }
 
@@ -135,12 +139,16 @@ pub(super) struct PaymentView {
     min_confirmations: i32,
     state: String,
     txid: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     submitted_at: Option<OffsetDateTime>,
     network_state: Option<String>,
     observed_height: Option<i64>,
     confirmations: Option<i64>,
+    #[serde(with = "time::serde::rfc3339::option")]
     observed_at: Option<OffsetDateTime>,
     payment_uri: Option<String>,
     transparent_only: bool,

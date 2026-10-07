@@ -870,7 +870,9 @@ struct RegisterVerifier {
 struct VerifierProfileView {
     display_name: String,
     origin: String,
+    #[serde(with = "time::serde::rfc3339::option")]
     retired_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
 }
 
@@ -884,7 +886,9 @@ struct RotateVerifierKey {
 struct VerifierKeyView {
     active: bool,
     compromised: bool,
+    #[serde(with = "time::serde::rfc3339")]
     valid_from: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     retired_at: Option<OffsetDateTime>,
 }
 
@@ -902,8 +906,11 @@ struct VerifierApiKeyView {
     name: String,
     key_prefix: String,
     scopes: Vec<String>,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     last_used_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339::option")]
     expires_at: Option<OffsetDateTime>,
     revoked: bool,
 }
@@ -926,7 +933,9 @@ struct VerifierWebhookView {
     id: Uuid,
     name: String,
     url: String,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
     last_delivery_at: Option<OffsetDateTime>,
     disabled: bool,
     pending_deliveries: i64,
@@ -971,7 +980,9 @@ struct VerificationPolicyView {
     version: i32,
     active: bool,
     supersedes_policy_id: Option<Uuid>,
+    #[serde(with = "time::serde::rfc3339::option")]
     retired_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
 }
 
@@ -1026,7 +1037,9 @@ struct HolderRequestView {
     credential_name: Option<String>,
     claim_type: String,
     context: String,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
 }
 
@@ -1049,7 +1062,9 @@ struct VerifierRequestView {
     context: String,
     status: String,
     verified: bool,
+    #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
 }
 
@@ -1107,7 +1122,9 @@ struct VerifierHumanProofView {
     claim_type: String,
     value: Value,
     context: Option<String>,
+    #[serde(with = "time::serde::rfc3339")]
     decided_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     proof_expires_at: OffsetDateTime,
 }
 
