@@ -9,7 +9,8 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --recipe-path recipe.json
+# Cook only the package this container ships; path dependencies are included automatically.
+RUN cargo chef cook --release --package zerant-api --recipe-path recipe.json
 COPY . .
 RUN cargo build --release -p zerant-api \
     && cp target/release/zerant-api /tmp/zerant-api
