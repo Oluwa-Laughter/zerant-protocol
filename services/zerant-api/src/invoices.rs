@@ -214,7 +214,7 @@ pub(super) async fn create(
     let row = client
         .query_one(
             &format!(
-                "INSERT INTO zcash_invoices(id, account_id, request_digest, recipient, amount_zat, network, state, expires_at)\n                 VALUES ($1, $2, $3, $4, $5, $6, 'open', NOW() + ($7 * INTERVAL '1 hour'))\n                 RETURNING {VIEW_COLUMNS}"
+                "INSERT INTO zcash_invoices(id, account_id, request_digest, recipient, amount_zat, network, state, expires_at)\n                 VALUES ($1, $2, $3, $4, $5, $6, 'open', NOW() + ($7::bigint * INTERVAL '1 hour'))\n                 RETURNING {VIEW_COLUMNS}"
             ),
             &[
                 &id,
@@ -331,6 +331,14 @@ mod tests {
         );
         assert_eq!(format_amount_zec(1).as_deref(), Some("0.00000001"));
         assert!(format_amount_zec(0).is_none());
+    }
+
+    #[test]
+    fn invoice_ttl_parameter_is_explicitly_typed_for_postgres() {
+        let source = include_str!("invoices.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        assert!(production.contains("$7::bigint * INTERVAL '1 hour'"));
+        assert!(!production.contains("$7 * INTERVAL '1 hour'"));
     }
 
     #[test]

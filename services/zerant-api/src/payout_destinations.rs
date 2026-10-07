@@ -384,7 +384,7 @@ pub(super) async fn create(
             "INSERT INTO zcash_payout_destinations
          (id, issuer_profile_id, subject_account_id, network, transparent_only,
           ciphertext, data_nonce, wrapped_dek, wrap_nonce, key_version, state, expires_at)
-         VALUES ($1,$2,$3,$4,FALSE,$5,$6,$7,$8,$9,'active',NOW() + ($10 * INTERVAL '1 day'))
+         VALUES ($1,$2,$3,$4,FALSE,$5,$6,$7,$8,$9,'active',NOW() + ($10::bigint * INTERVAL '1 day'))
          ON CONFLICT (issuer_profile_id, subject_account_id) WHERE state = 'active'
          DO NOTHING
          RETURNING id, subject_account_id, network, state, ciphertext, data_nonce,
@@ -723,6 +723,14 @@ mod tests {
             assert!(sql.contains("expires_at > NOW()"));
         }
         assert!(ELIGIBLE_PAYOUT_ORGANIZATIONS_SQL.contains("p.retired_at IS NULL"));
+    }
+
+    #[test]
+    fn payout_ttl_parameter_is_explicitly_typed_for_postgres() {
+        let source = include_str!("payout_destinations.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        assert!(production.contains("$10::bigint * INTERVAL '1 day'"));
+        assert!(!production.contains("$10 * INTERVAL '1 day'"));
     }
 
     #[test]
