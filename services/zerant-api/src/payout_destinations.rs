@@ -66,7 +66,6 @@ pub(super) struct HolderPayoutView {
 #[derive(Serialize)]
 pub(super) struct IssuerPayoutView {
     id: Uuid,
-    holder_zerant_id: String,
     network: String,
     state: String,
     recipient: Option<String>,
@@ -174,7 +173,6 @@ fn issuer_view(state: &AppState, row: &Row) -> Result<IssuerPayoutView, ApiError
     let secret = decrypted_secret(state, row)?;
     Ok(IssuerPayoutView {
         id: row.get("id"),
-        holder_zerant_id: row.get("holder_zerant_id"),
         network: row.get("network"),
         state: row.get("state"),
         recipient: secret.as_ref().map(|value| value.recipient.clone()),
@@ -222,6 +220,25 @@ pub(super) async fn export(
         });
     }
     Ok((items, complete))
+}
+
+async fn record_private_holder_issuer_event(
+    tx: &Transaction<'_>,
+    issuer_profile_id: Uuid,
+    event_type: &str,
+    object_id: &str,
+    network: &str,
+) -> Result<(), ApiError> {
+    tx.execute(
+        "INSERT INTO issuer_events
+         (issuer_profile_id, actor_account_id, actor_zerant_id, event_type,
+          object_id, label, context, counterparty)
+         VALUES ($1,NULL,'private-holder',$2,$3,'Private payout destination',$4,NULL)",
+        &[&issuer_profile_id, &event_type, &object_id, &network],
+    )
+    .await
+    .map_err(|_| ApiError::Unavailable)?;
+    Ok(())
 }
 
 pub(super) async fn create(
@@ -316,26 +333,13 @@ pub(super) async fn create(
     .await
     .map_err(|_| ApiError::Unavailable)?;
 
-    let holder_handle: Option<String> = tx
-        .query_one(
-            "SELECT public_handle FROM accounts WHERE id = $1",
-            &[&account],
-        )
-        .await
-        .map_err(|_| ApiError::Unavailable)?
-        .get(0);
     let audit_id = id.to_string();
-    record_issuer_event(
+    record_private_holder_issuer_event(
         &tx,
         issuer_profile_id,
-        account,
-        IssuerEvent {
-            event_type: "payout_destination_received",
-            object_id: &audit_id,
-            label: "Private payout destination",
-            context: Some(&state.zcash_chain),
-            counterparty: holder_handle.as_deref(),
-        },
+        "payout_destination_received",
+        &audit_id,
+        &state.zcash_chain,
     )
     .await?;
     tx.commit().await.map_err(|_| ApiError::Unavailable)?;
@@ -396,11 +400,10 @@ pub(super) async fn list_issuer(
     expire_issuer_due(&client, access.profile_id).await?;
     let rows = client
         .query(
-            "SELECT d.id, d.subject_account_id, a.public_handle AS holder_zerant_id,
+            "SELECT d.id, d.subject_account_id,
                 d.network, d.state, d.ciphertext, d.data_nonce, d.wrapped_dek,
                 d.wrap_nonce, d.key_version, d.created_at, d.expires_at, d.withdrawn_at
          FROM zcash_payout_destinations d
-         JOIN accounts a ON a.id = d.subject_account_id
          WHERE d.issuer_profile_id = $1
          ORDER BY d.created_at DESC, d.id DESC LIMIT $2",
             &[&access.profile_id, &MAX_PAYOUT_RECORDS],
@@ -466,26 +469,13 @@ pub(super) async fn withdraw(
     .await
     .map_err(|_| ApiError::Unavailable)?;
 
-    let holder_handle: Option<String> = tx
-        .query_one(
-            "SELECT public_handle FROM accounts WHERE id = $1",
-            &[&account],
-        )
-        .await
-        .map_err(|_| ApiError::Unavailable)?
-        .get(0);
     let audit_id = id.to_string();
-    record_issuer_event(
+    record_private_holder_issuer_event(
         &tx,
         issuer_profile_id,
-        account,
-        IssuerEvent {
-            event_type: "payout_destination_withdrawn",
-            object_id: &audit_id,
-            label: "Private payout destination",
-            context: Some(&network),
-            counterparty: holder_handle.as_deref(),
-        },
+        "payout_destination_withdrawn",
+        &audit_id,
+        &network,
     )
     .await?;
     tx.commit().await.map_err(|_| ApiError::Unavailable)?;

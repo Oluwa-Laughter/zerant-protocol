@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 
 export type IssuerPayoutDestination = {
   id: string;
-  holder_zerant_id: string;
   network: string;
   state: "active" | "withdrawn" | "expired";
   recipient: string | null;
@@ -98,8 +97,8 @@ export function IssuerPayoutInbox({ enabled }: { enabled: boolean }) {
           <article className={"zcash-invoice-card state-" + item.state} key={item.id}>
             <div className="zcash-invoice-card-top">
               <div>
-                <span className="eyebrow">Holder</span>
-                <strong className="mono">{item.holder_zerant_id}</strong>
+                <span className="eyebrow">Private payout reference</span>
+                <strong className="mono">{item.id.slice(0, 8)}</strong>
               </div>
               <span className="request-status">{item.state === "active" ? "Private · active" : item.state}</span>
             </div>

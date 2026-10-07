@@ -168,3 +168,37 @@ test("ownership transfer is only offered to admins", () => {
   assert.equal((html.match(/Transfer ownership/g) ?? []).length, 1);
   assert.ok(html.includes("only eligible ownership successors"));
 });
+
+
+test("private payout activity does not expose a reusable holder identifier", () => {
+  const html = renderToStaticMarkup(<IssuerWorkspace
+    authenticated={true}
+    backendAvailable={true}
+    currentZerantId="zr_111111111111111111111111"
+    initialProfile={profile}
+    initialIssued={[]}
+    initialSchemas={[]}
+    initialKeys={[]}
+    initialTeam={[{ zerant_id: "zr_111111111111111111111111", role: "owner", owner: true, joined_at: profile.created_at }]}
+    initialTeamInvitations={[]}
+    initialMyInvitations={[]}
+    initialActivity={{
+      items: [{
+        id: 7,
+        event_type: "payout_destination_received",
+        actor_zerant_id: "private-holder",
+        object_id: "12345678-1234-1234-1234-123456789abc",
+        label: "Private payout destination",
+        context: "zcash:testnet",
+        counterparty: null,
+        created_at: profile.created_at,
+      }],
+      next_cursor: null,
+    }}
+    activeSection="activity"
+  />);
+
+  assert.ok(html.includes("By private holder"));
+  assert.equal(html.includes("private-holder"), false);
+  assert.equal(html.includes("zr_holder"), false);
+});

@@ -1220,9 +1220,13 @@ export function IssuerWorkspace({
                   </time>
                 </div>
                 <div className="issuer-activity-meta">
-                  <span>
-                    By <span className="mono">{event.actor_zerant_id}</span>
-                  </span>
+                  {event.event_type.startsWith("payout_destination_") ? (
+                    <span>By private holder</span>
+                  ) : (
+                    <span>
+                      By <span className="mono">{event.actor_zerant_id}</span>
+                    </span>
+                  )}
                   {event.context ? <span>{event.context}</span> : null}
                   {event.counterparty ? (
                     <span>
