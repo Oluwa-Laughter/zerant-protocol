@@ -809,7 +809,9 @@ struct IssuedCredentialView {
     credential_schema_id: Option<Uuid>,
     claim_type: String,
     context: String,
+    #[serde(with = "time::serde::rfc3339")]
     issued_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
     revoked: bool,
 }
@@ -11185,6 +11187,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issued_credential_timestamps_serialize_as_rfc3339_strings() {
+        let issued_at = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+        let expires_at = OffsetDateTime::from_unix_timestamp(1_700_086_400).unwrap();
+        let value = serde_json::to_value(IssuedCredentialView {
+            credential_id: "cred_demo".into(),
+            holder_zerant_id: "zr_000000000000000000000000".into(),
+            credential_schema_id: None,
+            claim_type: "credential.demo".into(),
+            context: "demo".into(),
+            issued_at,
+            expires_at,
+            revoked: false,
+        })
+        .unwrap();
+
+        assert!(value["issued_at"].is_string());
+        assert!(value["expires_at"].is_string());
+    }
 
     #[test]
     fn stored_credential_expiry_is_derived_from_private_credential_timestamp() {
