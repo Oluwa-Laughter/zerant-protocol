@@ -5,7 +5,7 @@ import { loadZcashWorkspaceData } from "@/app/zcash/data";
 
 export const dynamic = "force-dynamic";
 
-const sections = ["payments", "invoices", "wallet", "address"] as const;
+const sections = ["payments", "invoices", "payouts", "wallet", "address"] as const;
 type ZcashSection = (typeof sections)[number];
 
 export const metadata: Metadata = {

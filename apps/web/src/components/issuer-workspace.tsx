@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { WorkspaceSectionNav } from "@/components/workspace-section-nav";
+import { IssuerPayoutInbox } from "@/components/issuer-payout-inbox";
 
 export type IssuerProfile = {
   display_name: string;
@@ -105,6 +106,8 @@ function activityTitle(type: string): string {
     credential_schema_retired: "Credential type retired",
     credential_issued: "Credential issued",
     credential_revoked: "Credential revoked",
+    payout_destination_received: "Private payout destination received",
+    payout_destination_withdrawn: "Private payout destination withdrawn",
     issuer_retired: "Issuer retired",
   };
   return labels[type] ?? "Organization activity";
@@ -135,7 +138,7 @@ export function IssuerWorkspace({
   initialTeamInvitations: IssuerInvitation[];
   initialMyInvitations: IssuerInvitation[];
   initialActivity: IssuerActivityPage;
-  activeSection?: "overview" | "team" | "schemas" | "security" | "activity" | "issue";
+  activeSection?: "overview" | "team" | "schemas" | "payouts" | "security" | "activity" | "issue";
 }) {
   const [profile, setProfile] = useState<IssuerProfile | null>(initialProfile);
   const [issued, setIssued] = useState<IssuedCredential[]>(initialIssued);
@@ -197,6 +200,8 @@ export function IssuerWorkspace({
   const canManageSchemas = (currentRole === "owner" || currentRole === "admin") && !issuerRetired;
   const canIssue =
     !issuerRetired && (currentRole === "owner" || currentRole === "admin" || currentRole === "issuer");
+  const canViewPrivatePayouts =
+    currentRole === "owner" || currentRole === "admin" || currentRole === "issuer";
 
   const revokedIssued = issued.filter((item) => item.revoked).length;
   const activeIssued = issued.length - revokedIssued;
@@ -796,6 +801,7 @@ export function IssuerWorkspace({
             { href: "/issuer/team", label: "Team" },
             { href: "/issuer/schemas", label: "Credential types" },
             { href: "/issuer/issue", label: "Issue credentials" },
+            { href: "/issuer/payouts", label: "Payout inbox" },
             { href: "/issuer/security", label: "Security" },
             { href: "/issuer/activity", label: "History" },
           ]}
@@ -836,10 +842,13 @@ export function IssuerWorkspace({
           <Link href="/issuer/team"><strong>Team</strong><span>Invite people and assign bounded responsibilities.</span></Link>
           <Link href="/issuer/schemas"><strong>Credential types</strong><span>Define the claims your organization can issue.</span></Link>
           <Link href="/issuer/issue"><strong>Issue credentials</strong><span>Send one reviewed credential to a Zerant ID.</span></Link>
+          <Link href="/issuer/payouts"><strong>Payout inbox</strong><span>Receive temporary private Zcash destinations from holders.</span></Link>
           <Link href="/issuer/security"><strong>Security</strong><span>Rotate keys and manage issuer lifecycle.</span></Link>
           <Link href="/issuer/activity"><strong>History</strong><span>Review important organization changes.</span></Link>
         </section>
       ) : null}
+
+      {showSection("payouts") ? <IssuerPayoutInbox enabled={canViewPrivatePayouts} /> : null}
 
       {showSection("team") ? <section className="issuer-team-section">
         <div className="section-heading">

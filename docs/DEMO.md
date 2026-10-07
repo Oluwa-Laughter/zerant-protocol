@@ -19,8 +19,9 @@ Use the deployed production build and prepare:
 - one active credential type;
 - one credential issued to the holder;
 - one verifier application;
-- Testnet Noir Wallet unlocked and available;
-- a testnet recipient/payment request that you are comfortable demonstrating.
+- one shielded-capable Zcash testnet receive address for the holder;
+- a testnet payment request that you are comfortable demonstrating;
+- Testnet Noir Wallet only if you want to show the optional final wallet-approval step.
 
 Do not show private keys, seed phrases, environment variables, database credentials, raw credential signatures, or wallet history.
 
@@ -74,29 +75,36 @@ Do not expose the full source credential.
 
 Explain that denial would produce no credential response.
 
-### 1:35–2:30 — Zcash payment boundary
+### 1:35–2:10 — Private payout destination
 
-Open `/zcash`.
+Open `/zcash/payouts` as the holder.
 
-Prepare a Zcash payment:
+Show:
 
-1. enter recipient;
-2. enter amount;
-3. review the canonical request;
-4. show the privacy warning/state;
-5. choose Testnet Noir Wallet;
-6. approve the connection in Noir;
-7. approve the payment in Noir.
+1. the selected organization;
+2. a shielded-capable testnet receive address;
+3. the short payout purpose;
+4. the seven-day expiry and withdrawal language.
+
+Share it, then open `/issuer/payouts` as an authorized organization operator and show the private payout inbox.
 
 Explain:
 
-> Sign-in is optional, but a payment still needs wallet authorization. Zerant prepares and validates the request; the wallet keeps the spending keys and approves the transaction.
+> This address is payment routing data, not the holder's Zerant identity. It is encrypted, shared only with this organization for the stated purpose, and disappears from the active record after withdrawal or expiry.
 
-After the wallet returns a transaction ID, show Zerant's saved payment card.
+### 2:10–2:40 — Zcash payment boundary
 
-Call out the state as **submitted/pending verification**, not settled.
+From the organization payout inbox, copy the active destination and open `/zcash/payments`. Prepare and review the exact payment amount.
 
-### 2:30–2:50 — Shareable invoice
+Show the ZIP-321 link/QR or exact manual handoff. A live browser wallet connection is **not required** to prepare or hand off the payment. If Testnet Noir is stable during recording, you may also show its separate approval step.
+
+Explain:
+
+> Zerant handles trust, consent, and private payout routing. The wallet still keeps the spending keys and separately authorizes any transaction.
+
+If a wallet returns a transaction ID, show Zerant's saved payment card and call the state **submitted/pending verification**, not settled.
+
+### 2:40–2:55 — Shareable invoice
 
 Create or open one invoice.
 
@@ -104,7 +112,7 @@ Show the public `/pay/[id]` page.
 
 Explain that the public page exposes the payment request, not the account's credential history.
 
-### 2:50–3:00 — Close
+### 2:55–3:00 — Close
 
 End with:
 
@@ -137,29 +145,37 @@ Filename:
 
 `docs/assets/screenshots/06-holder-consent.png`
 
-### 07 — Noir Wallet approval
+### 07 — Private payout sharing
 
-Capture the Noir approval window while Zerant is requesting the connection or payment. Do not expose seed phrases, wallet history, or unrelated account data.
-
-Filename:
-
-`docs/assets/screenshots/07-noir-approval.png`
-
-### 08 — Submitted payment
-
-Capture the saved payment card showing the wallet-returned transaction ID and Zerant's submitted/pending network state.
+Capture the holder's `/zcash/payouts` review showing organization, purpose, privacy boundary, and expiry. Do not expose a real address outside the safe demo account.
 
 Filename:
 
-`docs/assets/screenshots/08-payment-submitted.png`
+`docs/assets/screenshots/07-private-payout.png`
 
-### 09 — Public invoice
+### 08 — Organization payout inbox
+
+Capture `/issuer/payouts` showing the holder relationship, purpose, and private organization-only handling.
+
+Filename:
+
+`docs/assets/screenshots/08-payout-inbox.png`
+
+### 09 — Payment review
+
+Capture the exact reviewed Zcash payment request/ZIP-321 handoff. If you also record a successful wallet submission, capture the submitted txid as an additional frame.
+
+Filename:
+
+`docs/assets/screenshots/09-payment-review.png`
+
+### 10 — Public invoice
 
 If an invoice is part of the recorded demo, capture its shareable public page.
 
 Filename:
 
-`docs/assets/screenshots/09-public-invoice.png`
+`docs/assets/screenshots/10-public-invoice.png`
 
 ## Screenshot quality rules
 
@@ -172,16 +188,16 @@ Filename:
 - Prefer product states with short realistic data so the interface is readable.
 - Do not crop away status labels that explain whether something is prepared, submitted, or verified.
 
-## Demo failure fallback
+## Demo payment fallback
 
-If direct Noir payment approval fails during recording:
+The core demo does not depend on a live browser-wallet connection. If direct Noir approval is unavailable during recording:
 
 1. keep the validated payment visible;
-2. show that Noir is detected;
-3. use the portable reviewed ZIP-321 payment link;
-4. explain that Zerant supports portable wallet handoff independently of account sign-in.
+2. show the exact reviewed ZIP-321 link/QR or manual destination and amount;
+3. explain that a compatible testnet wallet can complete the payment independently of Zerant sign-in;
+4. stop before claiming submission unless a wallet actually returns a valid transaction ID.
 
-Do not claim a transaction succeeded if the wallet did not return a valid transaction ID.
+Do not fabricate a txid or call a prepared request paid/settled.
 
 ## Submission checklist
 

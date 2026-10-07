@@ -63,17 +63,19 @@ export function accountExportCompletionMessage(payload: {
   activity_complete?: boolean;
   payments_complete?: boolean;
   invoices_complete?: boolean;
+  payout_destinations_complete?: boolean;
 }): string {
   const missing: string[] = [];
   if (payload.activity_complete === false) missing.push("older account activity");
   if (payload.payments_complete === false) missing.push("older Zcash payments");
   if (payload.invoices_complete === false) missing.push("older Zcash invoices");
+  if (payload.payout_destinations_complete === false) missing.push("older private payout records");
   if (!missing.length) return "Your Zerant data export is ready.";
   const items = missing.length === 1
     ? missing[0]
     : missing.length === 2
       ? `${missing[0]} and ${missing[1]}`
-      : `${missing[0]}, ${missing[1]}, and ${missing[2]}`;
+      : `${missing.slice(0, -1).join(", ")}, and ${missing[missing.length - 1]}`;
   return `Export ready. ${items[0].toUpperCase()}${items.slice(1)} are not included in this file; use the relevant Zerant history pages for paginated history.`;
 }
 
@@ -122,6 +124,7 @@ export function AccountSettings({
       activity_complete?: boolean;
       payments_complete?: boolean;
       invoices_complete?: boolean;
+      payout_destinations_complete?: boolean;
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
@@ -279,7 +282,7 @@ export function AccountSettings({
           <p className="eyebrow">Export</p>
           <h2>Take your Zerant data with you.</h2>
           <p className="muted">
-            Download your private credentials, account activity, and saved payment details as a portable JSON file. Keep it private.
+            Download your private credentials, account activity, saved payment details, and active private payout destinations as a portable JSON file. Keep it private.
           </p>
           <Button onClick={downloadExport}>Download my data</Button>
         </article> : null}
@@ -291,7 +294,7 @@ export function AccountSettings({
           {summary.can_delete ? (
             <>
               <p className="muted">
-                This permanently removes your personal Zerant ID, stored credentials, sessions
+                This permanently removes your personal Zerant ID, stored credentials, private payout records, sessions
                 and account activity. This cannot be undone.
               </p>
               <label htmlFor="delete-confirm">Type DELETE to confirm</label>

@@ -84,6 +84,14 @@ prevention step and never grants authority. It requests no wallet information.
 
 ## Load-bearing decisions
 
+### Private organization-scoped payout destinations (2026-10-07)
+
+A Zcash receive address is payment routing data, not Zerant identity. An authenticated holder may explicitly share one shielded-capable destination with one active issuer organization for a short stated payout purpose. The service validates the configured Zcash network and rejects transparent-only destinations for this privacy-preserving flow. The address and purpose are encrypted together under the separate `payout-destination` envelope-encryption domain and are never added to credentials, public issuer metadata, or generic verifier results.
+
+Only the holder and organization members with owner, admin, or issuer responsibility can retrieve an active destination. Auditors do not receive the private payload. The organization inbox intentionally does not put the address into a URL or automatically create a transaction; an operator copies it into the separate Zcash payment review, preserving the distinction between identity/eligibility, payment destination, and spending authority. New submissions to retired issuers are rejected.
+
+An active destination expires after seven days and can be withdrawn sooner. Expiry and withdrawal null the ciphertext, nonces, wrapped DEK, and key version; the retention job performs expiry scrubbing even if neither party revisits the UI and deletes dead lifecycle metadata after 30 days. The payout family participates in vault-key rotation under its own AAD scope, account deletion cascades its rows, and active records appear in the holder's recent-authentication data export. Audit ledgers store lifecycle metadata only, never the address or purpose.
+
 ### Resume a prepared Zcash payment (2026-10-05)
 
 An authenticated account may reopen only its own unexpired prepared payment.

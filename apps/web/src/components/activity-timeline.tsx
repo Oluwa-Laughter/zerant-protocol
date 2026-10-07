@@ -56,6 +56,8 @@ function eventTitle(type: string): string {
     case "zcash_payment_submitted": return "Zcash payment submitted";
     case "zcash_invoice_created": return "Zcash invoice created";
     case "zcash_invoice_cancelled": return "Zcash invoice cancelled";
+    case "zcash_payout_shared": return "Private payout destination shared";
+    case "zcash_payout_withdrawn": return "Private payout sharing withdrawn";
     default: return "Trust activity";
   }
 }

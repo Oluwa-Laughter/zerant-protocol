@@ -14,6 +14,7 @@ struct Family {
     // and re-encrypts child rows in one transaction.
     lock: &'static str,
     prefix: &'static str,
+    scope: &'static str,
 }
 
 const FAMILIES: &[Family] = &[
@@ -25,6 +26,7 @@ const FAMILIES: &[Family] = &[
         account: "t.account_id",
         lock: "t",
         prefix: "",
+        scope: "credential",
     },
     Family {
         name: "account_credential_keys",
@@ -34,6 +36,7 @@ const FAMILIES: &[Family] = &[
         account: "t.account_id",
         lock: "t",
         prefix: "",
+        scope: "credential",
     },
     Family {
         name: "issuer_profiles",
@@ -43,6 +46,7 @@ const FAMILIES: &[Family] = &[
         account: "t.account_id",
         lock: "t",
         prefix: "",
+        scope: "credential",
     },
     Family {
         name: "issuer_signing_keys",
@@ -52,6 +56,7 @@ const FAMILIES: &[Family] = &[
         account: "p.account_id",
         lock: "t, p",
         prefix: "",
+        scope: "credential",
     },
     Family {
         name: "verifier_profiles",
@@ -61,6 +66,7 @@ const FAMILIES: &[Family] = &[
         account: "t.account_id",
         lock: "t",
         prefix: "",
+        scope: "credential",
     },
     Family {
         name: "verifier_signing_keys",
@@ -70,6 +76,7 @@ const FAMILIES: &[Family] = &[
         account: "p.account_id",
         lock: "t, p",
         prefix: "",
+        scope: "credential",
     },
     Family {
         name: "holder_pairwise_keys",
@@ -79,6 +86,7 @@ const FAMILIES: &[Family] = &[
         account: "t.holder_account_id",
         lock: "t",
         prefix: "",
+        scope: "credential",
     },
     Family {
         name: "verifier_webhooks",
@@ -88,6 +96,7 @@ const FAMILIES: &[Family] = &[
         account: "p.account_id",
         lock: "t, p",
         prefix: "",
+        scope: "credential",
     },
     Family {
         name: "verification_responses",
@@ -97,6 +106,17 @@ const FAMILIES: &[Family] = &[
         account: "p.account_id",
         lock: "t, p",
         prefix: "response_",
+        scope: "credential",
+    },
+    Family {
+        name: "zcash_payout_destinations",
+        table: "zcash_payout_destinations",
+        source: "zcash_payout_destinations t",
+        id: "t.id",
+        account: "t.subject_account_id",
+        lock: "t",
+        prefix: "",
+        scope: "payout-destination",
     },
 ];
 
@@ -128,14 +148,15 @@ fn parse_args(args: &[String]) -> Result<(&str, i32, i64), ApiError> {
 
 fn reencrypt(
     cipher: &VaultCipher,
+    scope: &str,
     account: Uuid,
     record: &CredentialRow,
 ) -> Result<EncryptedCredential, ApiError> {
     if record.key_version == cipher.active_key_version() {
         return Err(ApiError::Invalid);
     }
-    let mut plaintext = cipher.decrypt(account, record)?;
-    let encrypted = cipher.encrypt(account, record.id, &plaintext);
+    let mut plaintext = cipher.decrypt_scoped(scope, account, record)?;
+    let encrypted = cipher.encrypt_scoped(scope, account, record.id, &plaintext);
     plaintext.fill(0);
     encrypted
 }
@@ -220,7 +241,7 @@ async fn migrate_batch(
                 created_at: OffsetDateTime::UNIX_EPOCH,
                 updated_at: OffsetDateTime::UNIX_EPOCH,
             };
-            let encrypted = reencrypt(cipher, account, &record)?;
+            let encrypted = reencrypt(cipher, family.scope, account, &record)?;
             let sql = format!(
                 "UPDATE {} SET {}ciphertext = $1, {}data_nonce = $2, {}wrapped_dek = $3, {}wrap_nonce = $4, {}key_version = $5 WHERE {} = $6 AND {}key_version = $7",
                 family.table,
@@ -309,7 +330,7 @@ mod tests {
         binding: Option<(&str, Uuid)>,
     ) {
         let encrypted = old
-            .encrypt(aad_account, id, family.name.as_bytes())
+            .encrypt_scoped(family.scope, aad_account, id, family.name.as_bytes())
             .unwrap();
         let columns = format!(
             "{}ciphertext, {}data_nonce, {}wrapped_dek, {}wrap_nonce, {}key_version",
@@ -367,6 +388,7 @@ mod tests {
             include_str!("../migrations/0012_issuer_key_lifecycle.sql"),
             include_str!("../migrations/0013_verifier_key_lifecycle.sql"),
             include_str!("../migrations/0020_verifier_webhooks.sql"),
+            include_str!("../migrations/0042_private_payout_destinations.sql"),
         ];
         let schema = migrations.join("\n");
         for table in [
@@ -379,12 +401,14 @@ mod tests {
             "holder_pairwise_keys",
             "verifier_webhooks",
             "verification_requests",
+            "zcash_payout_destinations",
         ] {
             assert!(FAMILIES.iter().any(|family| family.table == table));
             assert!(schema.contains(&format!("CREATE TABLE IF NOT EXISTS {table}")));
         }
-        assert_eq!(FAMILIES.len(), 9);
-        assert_eq!(FAMILIES.last().unwrap().prefix, "response_");
+        assert_eq!(FAMILIES.len(), 10);
+        assert_eq!(FAMILIES[8].prefix, "response_");
+        assert_eq!(FAMILIES.last().unwrap().scope, "payout-destination");
     }
 
     #[test]
@@ -393,29 +417,47 @@ mod tests {
         let old = cipher(1, true);
         let active = cipher(2, true);
         let without_old = cipher(2, false);
-        for (index, _family) in FAMILIES.iter().enumerate() {
+        for (index, family) in FAMILIES.iter().enumerate() {
             let id = Uuid::from_u128(index as u128 + 1);
-            let original = row(id, old.encrypt(account, id, b"private-record").unwrap());
+            let original = row(
+                id,
+                old.encrypt_scoped(family.scope, account, id, b"private-record")
+                    .unwrap(),
+            );
             assert_eq!(
-                active.decrypt(account, &original).unwrap(),
+                active
+                    .decrypt_scoped(family.scope, account, &original)
+                    .unwrap(),
                 b"private-record"
             );
-            assert!(reencrypt(&without_old, account, &original).is_err());
-            let mut changed_ciphertext =
-                row(id, old.encrypt(account, id, b"private-record").unwrap());
+            assert!(reencrypt(&without_old, family.scope, account, &original).is_err());
+            let mut changed_ciphertext = row(
+                id,
+                old.encrypt_scoped(family.scope, account, id, b"private-record")
+                    .unwrap(),
+            );
             changed_ciphertext.ciphertext[0] ^= 1;
-            assert!(reencrypt(&active, account, &changed_ciphertext).is_err());
-            let mut changed_wrap = row(id, old.encrypt(account, id, b"private-record").unwrap());
+            assert!(reencrypt(&active, family.scope, account, &changed_ciphertext).is_err());
+            let mut changed_wrap = row(
+                id,
+                old.encrypt_scoped(family.scope, account, id, b"private-record")
+                    .unwrap(),
+            );
             changed_wrap.wrapped_dek[0] ^= 1;
-            assert!(reencrypt(&active, account, &changed_wrap).is_err());
-            let migrated = row(id, reencrypt(&active, account, &original).unwrap());
+            assert!(reencrypt(&active, family.scope, account, &changed_wrap).is_err());
+            let migrated = row(
+                id,
+                reencrypt(&active, family.scope, account, &original).unwrap(),
+            );
             assert_eq!(migrated.key_version, 2);
             assert_ne!(migrated.ciphertext, original.ciphertext);
             assert_eq!(
-                without_old.decrypt(account, &migrated).unwrap(),
+                without_old
+                    .decrypt_scoped(family.scope, account, &migrated)
+                    .unwrap(),
                 b"private-record"
             );
-            assert!(reencrypt(&active, account, &migrated).is_err());
+            assert!(reencrypt(&active, family.scope, account, &migrated).is_err());
         }
     }
 
@@ -481,7 +523,8 @@ mod tests {
              CREATE TABLE verifier_signing_keys (id UUID PRIMARY KEY, verifier_profile_id UUID, ciphertext BYTEA, data_nonce BYTEA, wrapped_dek BYTEA, wrap_nonce BYTEA, key_version INTEGER);
              CREATE TABLE holder_pairwise_keys (id UUID PRIMARY KEY, holder_account_id UUID, ciphertext BYTEA, data_nonce BYTEA, wrapped_dek BYTEA, wrap_nonce BYTEA, key_version INTEGER);
              CREATE TABLE verifier_webhooks (id UUID PRIMARY KEY, verifier_profile_id UUID, ciphertext BYTEA, data_nonce BYTEA, wrapped_dek BYTEA, wrap_nonce BYTEA, key_version INTEGER);
-             CREATE TABLE verification_requests (id UUID PRIMARY KEY, verifier_profile_id UUID, response_ciphertext BYTEA, response_data_nonce BYTEA, response_wrapped_dek BYTEA, response_wrap_nonce BYTEA, response_key_version INTEGER);"
+             CREATE TABLE verification_requests (id UUID PRIMARY KEY, verifier_profile_id UUID, response_ciphertext BYTEA, response_data_nonce BYTEA, response_wrapped_dek BYTEA, response_wrap_nonce BYTEA, response_key_version INTEGER);
+             CREATE TABLE zcash_payout_destinations (id UUID PRIMARY KEY, subject_account_id UUID, ciphertext BYTEA, data_nonce BYTEA, wrapped_dek BYTEA, wrap_nonce BYTEA, key_version INTEGER);"
         ).await.unwrap();
         let credential_owner = Uuid::new_v4();
         let issuer_owner = Uuid::new_v4();
@@ -566,6 +609,13 @@ mod tests {
                 "id",
                 Some(("verifier_profile_id", verifier_profile)),
             ),
+            (
+                &FAMILIES[9],
+                Uuid::new_v4(),
+                holder_owner,
+                "id",
+                Some(("subject_account_id", holder_owner)),
+            ),
         ];
         for (family, id, account, id_column, binding) in cases {
             insert_test_record(&client, &old, family, id, account, id_column, binding).await;
@@ -573,7 +623,7 @@ mod tests {
         }
 
         let initial = inventory(&pool, 1).await.unwrap();
-        assert_eq!(initial.iter().map(|(_, count)| count).sum::<i64>(), 11);
+        assert_eq!(initial.iter().map(|(_, count)| count).sum::<i64>(), 12);
         assert_eq!(initial[0].1, 3);
         assert!(initial.iter().skip(1).all(|(_, count)| *count == 1));
         let mut batches = Vec::new();
@@ -626,7 +676,9 @@ mod tests {
             };
             assert_eq!(record.key_version, 2, "{}", family.name);
             assert_eq!(
-                active_only.decrypt(account, &record).unwrap(),
+                active_only
+                    .decrypt_scoped(family.scope, account, &record)
+                    .unwrap(),
                 family.name.as_bytes(),
                 "{}",
                 family.name

@@ -34,6 +34,8 @@ flowchart LR
 
 A wallet-returned transaction ID means **submitted**, not paid or settled. The hosted testnet observer can report network status and confirmation depth for a named transaction, but it cannot independently prove a shielded recipient and exact amount. Zerant does not issue a verified payment claim from that status alone. The normal payment flow uses a reviewed ZIP-321 link or QR code without a browser wallet connection. A simple single payment also shows the exact recipient and amount for manual entry in a testnet wallet; richer requests retain the complete link.
 
+For organization payouts, a holder can separately share a **temporary private payout destination**. Zerant validates that it is shielded-capable on the configured Zcash network, encrypts the address and purpose under a payout-specific envelope-encryption domain, and reveals it only to authorized operators of the selected issuer organization. The address expires after seven days or can be withdrawn earlier; expiry and withdrawal scrub the encrypted secret. A payout destination is not a Zerant identity attribute, credential claim, or spending authorization.
+
 ## Architecture
 
 ```mermaid
@@ -78,7 +80,7 @@ fixtures/                Shared protocol fixtures
 scripts/                 Validation and operational helpers
 ```
 
-The main workspace routes are `/app`, `/vault`, `/requests`, `/activity`, `/zcash`, `/issuer`, `/verifier`, and `/account`. Long operational areas use direct routes: `/zcash/payments`, `/zcash/invoices`, `/zcash/wallet`, `/zcash/address`; `/issuer/team`, `/issuer/schemas`, `/issuer/issue`, `/issuer/security`, `/issuer/activity`; and `/verifier/requests`, `/verifier/integrations`, `/verifier/security`. `/issuers` is the public issuer directory; `/pay/[id]` displays a bounded public invoice request. A public invoice does not identify its owner or certify payment.
+The main workspace routes are `/app`, `/vault`, `/requests`, `/activity`, `/zcash`, `/issuer`, `/verifier`, and `/account`. Long operational areas use direct routes: `/zcash/payments`, `/zcash/invoices`, `/zcash/payouts`, `/zcash/wallet`, `/zcash/address`; `/issuer/team`, `/issuer/schemas`, `/issuer/issue`, `/issuer/payouts`, `/issuer/security`, `/issuer/activity`; and `/verifier/requests`, `/verifier/integrations`, `/verifier/security`. `/issuers` is the public issuer directory; `/pay/[id]` displays a bounded public invoice request. A public invoice does not identify its owner or certify payment.
 
 ## Wallet access on testnet
 
@@ -123,7 +125,7 @@ The deployed web app reaches the Rust backend through private Vercel service bin
 
 ## Privacy and limits
 
-Zerant stores credentials and workflow state on the server under its existing envelope encryption architecture. It keeps Zerant identity separate from wallet addresses and limits verifier results to the approved claim. Issuer honesty, device compromise, traffic correlation, and coercion remain outside what signed minimal disclosure can solve. Pairwise identifiers reduce obvious cross-application linking but do not guarantee unlinkability.
+Zerant stores credentials and workflow state on the server under its existing envelope encryption architecture. It keeps Zerant identity separate from wallet addresses and limits verifier results to the approved claim. Active private payout destinations use a distinct encryption domain, are organization-scoped, are included in holder data export while active, and are scrubbed on withdrawal or expiry. Issuer honesty, device compromise, traffic correlation, and coercion remain outside what signed minimal disclosure can solve. Pairwise identifiers reduce obvious cross-application linking but do not guarantee unlinkability.
 
 The production configuration remains on **testnet**. Network readiness is not a payment receipt. Exact shielded settlement verification for hosted testnet payments requires an authorized recipient-side observation path and is not currently asserted by Zerant. PCZT and FROST code marks capability boundaries; it is not a live shared-control signing product.
 

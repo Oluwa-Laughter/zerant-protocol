@@ -20,7 +20,7 @@ Zerant is a privacy-preserving trust layer for Zcash applications that lets issu
 
 ## Short description
 
-Zerant helps applications verify one fact without collecting a person’s full identity, credential history, wallet address, balance, or transaction history. Issuers create signed credentials, holders keep them private under a Zerant ID, and verifiers request one purpose-bound claim. Zcash payments remain a separate wallet-approved capability, with ZIP-321 review, Noir Wallet support, invoices, and bounded payment tracking.
+Zerant helps applications verify one fact without collecting a person’s full identity, credential history, wallet address, balance, or transaction history. Issuers create signed credentials, holders keep them private under a Zerant ID, and verifiers request one purpose-bound claim. Holders can also share a temporary encrypted payout destination with one organization without turning the address into identity. Zcash payments remain a separate wallet-approved capability, with ZIP-321 review, optional Noir Wallet support, invoices, and bounded payment tracking.
 
 ## Problem
 
@@ -103,6 +103,8 @@ A wallet connection never becomes automatic proof consent, and proof consent nev
 - prepared/submitted payment tracking;
 - bounded transaction observation;
 - shareable Zcash invoices;
+- temporary encrypted, organization-scoped private payout destinations;
+- shielded-only payout-address validation, seven-day expiry, withdrawal, and retention scrubbing;
 - Z3/Zallet capability and regtest integration boundaries.
 
 ## Architecture
@@ -126,6 +128,7 @@ Zerant intentionally does not claim more privacy than it implements.
 Current guarantees and boundaries:
 
 - wallet address, balance, and transaction history are not generic Zerant identity fields;
+- a payout address can be shared temporarily with one organization without becoming a credential or public profile field;
 - denial emits no credential result;
 - verifier requests are purpose-, audience-, expiry-, and replay-bound;
 - proofs/results are verifier-specific;
@@ -181,8 +184,11 @@ This prevents the common mistake of turning a payment wallet into a universal ap
 4. **Zcash integration is honest about settlement.**
    A wallet-returned txid is not overstated as exact shielded settlement proof.
 
-5. **The system is implemented as real product infrastructure.**
-   It includes issuer governance, revocation, passkeys, verifier APIs, signed webhooks, invoices, payment tracking, deployment, and tests—not only a mock UI.
+5. **Private payouts preserve the identity boundary.**
+   A holder can give one organization a temporary shielded receive address without turning the address into their Zerant identity or a public credential field.
+
+6. **The system is implemented as real product infrastructure.**
+   It includes issuer governance, revocation, passkeys, verifier APIs, signed webhooks, invoices, private payout routing, payment tracking, deployment, and tests—not only a mock UI.
 
 ## Recommended 3-minute demo
 
@@ -208,17 +214,15 @@ Switch to the holder request view, preview the disclosure, and approve it.
 
 Return to the verifier and show only the resulting claim.
 
-### 1:25–2:25 — Zcash payment boundary
+### 1:25–1:55 — Private payout routing
 
-Open the Zcash workspace.
+Open `/zcash/payouts` as the holder and share a shielded-capable testnet destination with the issuer organization for a short purpose. Then open `/issuer/payouts` as the organization and show the private payout inbox.
 
-Prepare a testnet payment.
+Explain that this destination is encrypted organization-scoped payment routing data, not a credential, public profile field, or Zerant identity attribute. It expires after seven days or can be withdrawn sooner.
 
-Show the exact recipient/amount and privacy review.
+### 1:55–2:25 — Zcash payment boundary
 
-Connect Testnet Noir Wallet.
-
-Approve the wallet request.
+Copy the active destination into `/zcash/payments`, enter the amount, and review the exact request. Show the ZIP-321 link/QR or manual handoff. A browser wallet connection is optional for preparation; the actual wallet still keeps the spending keys and authorizes any transaction separately.
 
 If a real testnet payment is submitted, show the saved transaction ID and label it as submitted/pending verification—not automatically settled.
 

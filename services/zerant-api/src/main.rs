@@ -64,6 +64,7 @@ use zerant_zcash::{
 mod invoices;
 mod passkey_discoverable;
 mod payments;
+mod payout_destinations;
 mod vault_rotation;
 
 const SESSION_COOKIE: &str = "zerant_session";
@@ -366,6 +367,8 @@ struct RetentionMaintenanceSummary {
     deleted_expired_payments: u64,
     expired_invoices: u64,
     deleted_expired_invoices: u64,
+    expired_payout_destinations: u64,
+    deleted_payout_destinations: u64,
 }
 
 #[derive(Serialize)]
@@ -501,6 +504,8 @@ struct AccountExport {
     payments_complete: bool,
     invoices: Vec<invoices::InvoiceExportView>,
     invoices_complete: bool,
+    payout_destinations: Vec<payout_destinations::PayoutExportView>,
+    payout_destinations_complete: bool,
 }
 
 #[derive(Deserialize)]
@@ -1315,18 +1320,19 @@ impl VaultCipher {
         self.keys.has_version(version)
     }
 
-    fn data_aad(account_id: Uuid, credential_id: Uuid, key_version: i32) -> Vec<u8> {
-        format!("zerant:credential:data:v1:{account_id}:{credential_id}:{key_version}").into_bytes()
+    fn scoped_data_aad(scope: &str, owner_id: Uuid, record_id: Uuid, key_version: i32) -> Vec<u8> {
+        format!("zerant:{scope}:data:v1:{owner_id}:{record_id}:{key_version}").into_bytes()
     }
 
-    fn key_aad(account_id: Uuid, credential_id: Uuid, key_version: i32) -> Vec<u8> {
-        format!("zerant:credential:key:v1:{account_id}:{credential_id}:{key_version}").into_bytes()
+    fn scoped_key_aad(scope: &str, owner_id: Uuid, record_id: Uuid, key_version: i32) -> Vec<u8> {
+        format!("zerant:{scope}:key:v1:{owner_id}:{record_id}:{key_version}").into_bytes()
     }
 
-    fn encrypt(
+    fn encrypt_scoped(
         &self,
-        account_id: Uuid,
-        credential_id: Uuid,
+        scope: &str,
+        owner_id: Uuid,
+        record_id: Uuid,
         plaintext: &[u8],
     ) -> Result<EncryptedCredential, ApiError> {
         let mut dek_bytes = [0_u8; 32];
@@ -1338,8 +1344,8 @@ impl VaultCipher {
 
         let dek = Aes256Gcm::new_from_slice(&dek_bytes).map_err(|_| ApiError::Unavailable)?;
         let key_version = self.active_key_version();
-        let data_aad = Self::data_aad(account_id, credential_id, key_version);
-        let key_aad = Self::key_aad(account_id, credential_id, key_version);
+        let data_aad = Self::scoped_data_aad(scope, owner_id, record_id, key_version);
+        let key_aad = Self::scoped_key_aad(scope, owner_id, record_id, key_version);
 
         let ciphertext = dek
             .encrypt(
@@ -1365,34 +1371,54 @@ impl VaultCipher {
         })
     }
 
-    fn decrypt(&self, account_id: Uuid, row: &CredentialRow) -> Result<Vec<u8>, ApiError> {
-        if row.data_nonce.len() != 12 || row.wrap_nonce.len() != 12 {
+    fn encrypt(
+        &self,
+        account_id: Uuid,
+        credential_id: Uuid,
+        plaintext: &[u8],
+    ) -> Result<EncryptedCredential, ApiError> {
+        self.encrypt_scoped("credential", account_id, credential_id, plaintext)
+    }
+
+    fn decrypt_scoped(
+        &self,
+        scope: &str,
+        owner_id: Uuid,
+        record: &CredentialRow,
+    ) -> Result<Vec<u8>, ApiError> {
+        if record.data_nonce.len() != 12 || record.wrap_nonce.len() != 12 {
             return Err(ApiError::Unavailable);
         }
 
-        let key_aad = Self::key_aad(account_id, row.id, row.key_version);
-        let mut dek_bytes =
-            self.keys
-                .unwrap(row.key_version, &row.wrap_nonce, &row.wrapped_dek, &key_aad)?;
-
+        let key_aad = Self::scoped_key_aad(scope, owner_id, record.id, record.key_version);
+        let mut dek_bytes = self.keys.unwrap(
+            record.key_version,
+            &record.wrap_nonce,
+            &record.wrapped_dek,
+            &key_aad,
+        )?;
         if dek_bytes.len() != 32 {
             dek_bytes.fill(0);
             return Err(ApiError::Unavailable);
         }
 
         let dek = Aes256Gcm::new_from_slice(&dek_bytes).map_err(|_| ApiError::Unavailable)?;
-        let data_aad = Self::data_aad(account_id, row.id, row.key_version);
+        let data_aad = Self::scoped_data_aad(scope, owner_id, record.id, record.key_version);
         let plaintext = dek
             .decrypt(
-                row.data_nonce.as_slice().into(),
+                record.data_nonce.as_slice().into(),
                 Payload {
-                    msg: &row.ciphertext,
+                    msg: &record.ciphertext,
                     aad: &data_aad,
                 },
             )
             .map_err(|_| ApiError::Unavailable);
         dek_bytes.fill(0);
         plaintext
+    }
+
+    fn decrypt(&self, account_id: Uuid, row: &CredentialRow) -> Result<Vec<u8>, ApiError> {
+        self.decrypt_scoped("credential", account_id, row)
     }
 }
 
@@ -4249,9 +4275,11 @@ async fn export_account(
 
     let (payments, payments_complete) = payments::export(&state.db, account).await?;
     let (invoices, invoices_complete) = invoices::export(&state.db, account).await?;
+    let (payout_destinations, payout_destinations_complete) =
+        payout_destinations::export(&state, account).await?;
 
     Ok(Json(AccountExport {
-        export_version: 3,
+        export_version: 4,
         generated_at: OffsetDateTime::now_utc(),
         zerant_id: zerant_id.ok_or(ApiError::Unavailable)?,
         credentials,
@@ -4261,6 +4289,8 @@ async fn export_account(
         payments_complete,
         invoices,
         invoices_complete,
+        payout_destinations,
+        payout_destinations_complete,
     }))
 }
 
@@ -6072,6 +6102,7 @@ async fn issuer_directory(
              FROM issuer_profiles p
              LEFT JOIN credential_schemas s
                ON s.issuer_profile_id = p.id AND s.active = TRUE
+             WHERE p.retired_at IS NULL
              ORDER BY p.display_name ASC, s.display_name ASC
              LIMIT 1024",
             &[],
@@ -10258,6 +10289,8 @@ async fn retention_maintenance_internal(
             deleted_expired_payments: 0,
             expired_invoices: 0,
             deleted_expired_invoices: 0,
+            expired_payout_destinations: 0,
+            deleted_payout_destinations: 0,
         }));
     }
 
@@ -10445,6 +10478,37 @@ async fn retention_maintenance_internal(
         .await
         .map_err(|_| ApiError::Unavailable)?;
 
+    let expired_payout_destinations = tx
+        .execute(
+            "WITH due AS (
+                SELECT id FROM zcash_payout_destinations
+                WHERE state = 'active' AND expires_at <= NOW()
+                ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED
+             )
+             UPDATE zcash_payout_destinations p
+             SET state = 'expired', ciphertext = NULL, data_nonce = NULL,
+                 wrapped_dek = NULL, wrap_nonce = NULL, key_version = NULL
+             FROM due WHERE p.id = due.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
+    let deleted_payout_destinations = tx
+        .execute(
+            "WITH due AS (
+                SELECT id FROM zcash_payout_destinations
+                WHERE state IN ('expired', 'withdrawn')
+                  AND COALESCE(withdrawn_at, expires_at) <= NOW() - INTERVAL '30 days'
+                ORDER BY COALESCE(withdrawn_at, expires_at)
+                LIMIT $1 FOR UPDATE SKIP LOCKED
+             )
+             DELETE FROM zcash_payout_destinations p USING due WHERE p.id = due.id",
+            &[&RETENTION_BATCH_LIMIT],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+
     let summary = serde_json::json!({
         "expired_requests": expired_requests,
         "sessions": sessions,
@@ -10457,6 +10521,8 @@ async fn retention_maintenance_internal(
         "deleted_expired_payments": deleted_expired_payments,
         "expired_invoices": expired_invoices,
         "deleted_expired_invoices": deleted_expired_invoices,
+        "expired_payout_destinations": expired_payout_destinations,
+        "deleted_payout_destinations": deleted_payout_destinations,
     });
     tx.execute(
         "INSERT INTO maintenance_job_state(job, last_success_at, last_summary, updated_at)
@@ -10485,6 +10551,8 @@ async fn retention_maintenance_internal(
         deleted_expired_payments,
         expired_invoices,
         deleted_expired_invoices,
+        expired_payout_destinations,
+        deleted_payout_destinations,
     }))
 }
 
@@ -10734,6 +10802,18 @@ fn app(state: AppState) -> Router {
             get(invoices::list).post(invoices::create),
         )
         .route("/v1/zcash/invoices/{id}/cancel", post(invoices::cancel))
+        .route(
+            "/v1/zcash/payout-destinations",
+            get(payout_destinations::list_holder).post(payout_destinations::create),
+        )
+        .route(
+            "/v1/zcash/payout-destinations/{id}/withdraw",
+            post(payout_destinations::withdraw),
+        )
+        .route(
+            "/v1/issuer/payout-destinations",
+            get(payout_destinations::list_issuer),
+        )
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -10906,6 +10986,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0041_zcash_invoices.sql",
         include_str!("../migrations/0041_zcash_invoices.sql"),
+    ),
+    (
+        "0042_private_payout_destinations.sql",
+        include_str!("../migrations/0042_private_payout_destinations.sql"),
     ),
 ];
 
@@ -11449,6 +11533,34 @@ mod tests {
         assert!(verifier_retirement_blocked(true, false));
         assert!(verifier_retirement_blocked(false, true));
         assert!(verifier_retirement_blocked(true, true));
+    }
+
+    #[test]
+    fn private_payout_migration_keeps_destination_out_of_plaintext_columns() {
+        let schema = include_str!("../migrations/0042_private_payout_destinations.sql");
+        for required in [
+            "ciphertext BYTEA",
+            "wrapped_dek BYTEA",
+            "state IN ('active', 'withdrawn', 'expired')",
+            "state = 'expired'",
+            "ciphertext IS NULL",
+            "zcash_payout_shared",
+            "payout_destination_received",
+            "issuer_retired",
+        ] {
+            assert!(schema.contains(required), "{required}");
+        }
+        for forbidden in [
+            "recipient TEXT",
+            "purpose TEXT",
+            "wallet_address",
+            "balance",
+            "transaction_history",
+            "seed",
+            "spending_key",
+        ] {
+            assert!(!schema.contains(forbidden), "{forbidden}");
+        }
     }
 
     #[test]
@@ -13563,6 +13675,57 @@ mod tests {
         let mut tampered = row;
         tampered.ciphertext[0] ^= 1;
         assert!(cipher.decrypt(account, &tampered).is_err());
+    }
+
+    #[test]
+    fn scoped_encryption_separates_payout_data_from_credentials() {
+        let cipher = VaultCipher::from_local_keys(
+            BTreeMap::from([(1, Aes256Gcm::new_from_slice(&[11_u8; 32]).unwrap())]),
+            1,
+        )
+        .unwrap();
+        let owner = Uuid::from_u128(21);
+        let record = Uuid::from_u128(22);
+        let plaintext = br#"{"recipient":"utest1example","purpose":"grant"}"#;
+        let encrypted = cipher
+            .encrypt_scoped("payout-destination", owner, record, plaintext)
+            .unwrap();
+
+        let decrypted = cipher
+            .decrypt_scoped(
+                "payout-destination",
+                owner,
+                &CredentialRow {
+                    id: record,
+                    ciphertext: encrypted.ciphertext.clone(),
+                    data_nonce: encrypted.data_nonce.clone(),
+                    wrapped_dek: encrypted.wrapped_dek.clone(),
+                    wrap_nonce: encrypted.wrap_nonce.clone(),
+                    key_version: encrypted.key_version,
+                    created_at: OffsetDateTime::UNIX_EPOCH,
+                    updated_at: OffsetDateTime::UNIX_EPOCH,
+                },
+            )
+            .unwrap();
+        assert_eq!(decrypted, plaintext);
+        assert!(
+            cipher
+                .decrypt_scoped(
+                    "credential",
+                    owner,
+                    &CredentialRow {
+                        id: record,
+                        ciphertext: encrypted.ciphertext.clone(),
+                        data_nonce: encrypted.data_nonce.clone(),
+                        wrapped_dek: encrypted.wrapped_dek.clone(),
+                        wrap_nonce: encrypted.wrap_nonce.clone(),
+                        key_version: encrypted.key_version,
+                        created_at: OffsetDateTime::UNIX_EPOCH,
+                        updated_at: OffsetDateTime::UNIX_EPOCH,
+                    },
+                )
+                .is_err()
+        );
     }
 
     #[test]

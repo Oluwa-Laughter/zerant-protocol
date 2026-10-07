@@ -232,6 +232,8 @@ export type RetentionMaintenanceSummary = {
   deleted_expired_payments: number;
   expired_invoices: number;
   deleted_expired_invoices: number;
+  expired_payout_destinations: number;
+  deleted_payout_destinations: number;
 };
 
 export async function runRetentionMaintenanceToZerant(): Promise<RetentionMaintenanceSummary> {

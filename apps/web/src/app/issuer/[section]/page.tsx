@@ -5,7 +5,7 @@ import { loadIssuerWorkspaceData } from "@/app/issuer/data";
 
 export const dynamic = "force-dynamic";
 
-const sections = ["team", "schemas", "security", "activity", "issue"] as const;
+const sections = ["team", "schemas", "payouts", "security", "activity", "issue"] as const;
 type IssuerSection = (typeof sections)[number];
 
 export const metadata: Metadata = {
