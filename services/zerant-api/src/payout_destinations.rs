@@ -10,6 +10,28 @@ const PAYOUT_TTL_DAYS: i64 = 7;
 const MAX_PAYOUT_RECORDS: i64 = 50;
 const MAX_EXPORT_PAYOUT_RECORDS: i64 = 5_000;
 const MAX_ACTIVE_PAYOUTS_PER_ACCOUNT: i64 = 25;
+const MAX_PAYOUT_ORGANIZATIONS: i64 = 256;
+
+const ACTIVE_RELATIONSHIP_EXISTS_SQL: &str = "
+    SELECT EXISTS(
+        SELECT 1
+        FROM issued_credentials c
+        WHERE c.issuer_profile_id = $1
+          AND c.subject_account_id = $2
+          AND c.revoked_at IS NULL
+          AND c.expires_at > NOW()
+    )";
+
+const ELIGIBLE_PAYOUT_ORGANIZATIONS_SQL: &str = "
+    SELECT DISTINCT p.issuer_id, p.display_name
+    FROM issuer_profiles p
+    JOIN issued_credentials c ON c.issuer_profile_id = p.id
+    WHERE c.subject_account_id = $1
+      AND c.revoked_at IS NULL
+      AND c.expires_at > NOW()
+      AND p.retired_at IS NULL
+    ORDER BY p.display_name ASC, p.issuer_id ASC
+    LIMIT $2";
 
 #[derive(Deserialize, Serialize)]
 struct PayoutSecret {
@@ -42,6 +64,13 @@ pub(super) struct PayoutExportView {
 #[derive(Serialize)]
 pub(super) struct HolderPayoutPage {
     items: Vec<HolderPayoutView>,
+    organizations: Vec<PayoutOrganizationView>,
+}
+
+#[derive(Serialize)]
+pub(super) struct PayoutOrganizationView {
+    issuer_id: String,
+    display_name: String,
 }
 
 #[derive(Serialize)]
@@ -288,6 +317,18 @@ pub(super) async fn create(
     let issuer_profile_id: Uuid = issuer.get(0);
     let issuer_name: String = issuer.get(1);
 
+    let has_active_relationship: bool = tx
+        .query_one(
+            ACTIVE_RELATIONSHIP_EXISTS_SQL,
+            &[&issuer_profile_id, &account],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .get(0);
+    if !has_active_relationship {
+        return Err(ApiError::Forbidden);
+    }
+
     let active_count: i64 = tx
         .query_one(
             "SELECT COUNT(*) FROM zcash_payout_destinations
@@ -386,7 +427,26 @@ pub(super) async fn list_holder(
         .iter()
         .map(|row| holder_view(&state, row))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(Json(HolderPayoutPage { items }))
+
+    let organization_rows = client
+        .query(
+            ELIGIBLE_PAYOUT_ORGANIZATIONS_SQL,
+            &[&account, &MAX_PAYOUT_ORGANIZATIONS],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?;
+    let organizations = organization_rows
+        .into_iter()
+        .map(|row| PayoutOrganizationView {
+            issuer_id: row.get(0),
+            display_name: row.get(1),
+        })
+        .collect();
+
+    Ok(Json(HolderPayoutPage {
+        items,
+        organizations,
+    }))
 }
 
 pub(super) async fn list_issuer(
@@ -504,6 +564,19 @@ mod tests {
         assert!(!valid_purpose("x"));
         assert!(!valid_purpose(&"x".repeat(161)));
         assert!(!valid_purpose("bad\ncontext"));
+    }
+
+    #[test]
+    fn payout_relationship_requires_live_non_revoked_issuer_trust() {
+        for sql in [
+            ACTIVE_RELATIONSHIP_EXISTS_SQL,
+            ELIGIBLE_PAYOUT_ORGANIZATIONS_SQL,
+        ] {
+            assert!(sql.contains("issued_credentials"));
+            assert!(sql.contains("revoked_at IS NULL"));
+            assert!(sql.contains("expires_at > NOW()"));
+        }
+        assert!(ELIGIBLE_PAYOUT_ORGANIZATIONS_SQL.contains("p.retired_at IS NULL"));
     }
 
     #[test]

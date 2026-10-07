@@ -43,19 +43,26 @@ export function ZcashPayoutDestinations({ enabled }: { enabled: boolean }) {
   useEffect(() => {
     if (!enabled) return;
     let active = true;
-    void Promise.all([
-      fetch("/api/zerant/issuers", { credentials: "same-origin", cache: "no-store" }),
-      fetch("/api/zerant/zcash/payout-destinations", { credentials: "same-origin", cache: "no-store" }),
-    ]).then(async ([issuerResponse, payoutResponse]) => {
+    void fetch("/api/zerant/zcash/payout-destinations", {
+      credentials: "same-origin",
+      cache: "no-store",
+    }).then(async (response) => {
       if (!active) return;
-      if (issuerResponse.ok) {
-        const nextIssuers = await issuerResponse.json() as IssuerOption[];
-        setIssuers(nextIssuers);
-        setIssuerId((current) => current || nextIssuers[0]?.issuer_id || "");
-      }
-      if (payoutResponse.ok) {
-        const page = await payoutResponse.json() as { items?: PayoutDestination[] };
-        setItems(Array.isArray(page.items) ? page.items : []);
+      if (!response.ok) throw new Error("Private payout details could not be loaded.");
+      const page = await response.json() as {
+        items?: PayoutDestination[];
+        organizations?: IssuerOption[];
+      };
+      const nextIssuers = Array.isArray(page.organizations) ? page.organizations : [];
+      setItems(Array.isArray(page.items) ? page.items : []);
+      setIssuers(nextIssuers);
+      setIssuerId((current) =>
+        nextIssuers.some((issuer) => issuer.issuer_id === current)
+          ? current
+          : nextIssuers[0]?.issuer_id || ""
+      );
+      if (nextIssuers.length === 0) {
+        setStatus("No active issuer relationship is eligible for private payout sharing yet.");
       }
     }).catch(() => {
       if (active) setStatus("Private payout details could not be loaded.");
@@ -82,6 +89,7 @@ export function ZcashPayoutDestinations({ enabled }: { enabled: boolean }) {
         if (response.status === 400) {
           throw new Error("Use a shielded-capable Zcash testnet receive address and a short purpose. Transparent-only or wrong-network addresses are not accepted here.");
         }
+        if (response.status === 403) throw new Error("This organization no longer has an active credential relationship with your Zerant account.");
         if (response.status === 404) throw new Error("That organization is no longer available.");
         if (response.status === 409) throw new Error("Too many payout details are already active. Withdraw an old one or wait for it to expire.");
         if (response.status === 429) throw new Error("You are sharing payout details too quickly. Try again shortly.");
@@ -132,16 +140,17 @@ export function ZcashPayoutDestinations({ enabled }: { enabled: boolean }) {
       <div className="zcash-invoice-create">
         <label htmlFor="payout-organization">Organization</label>
         <select id="payout-organization" value={issuerId} onChange={(event) => setIssuerId(event.target.value)} disabled={!enabled || busy || issuers.length === 0}>
-          {issuers.length === 0 ? <option value="">No active organizations available</option> : null}
+          {issuers.length === 0 ? <option value="">No eligible organizations yet</option> : null}
           {issuers.map((issuer) => <option key={issuer.issuer_id} value={issuer.issuer_id}>{issuer.display_name}</option>)}
         </select>
+        <p className="small muted">Only active issuer organizations with a current, non-revoked credential relationship appear here. This keeps payout routing attached to an existing trust relationship instead of creating an open inbox.</p>
 
         <label htmlFor="payout-recipient">Shielded-capable Zcash testnet address</label>
         <input
           id="payout-recipient"
           value={recipient}
           onChange={(event) => setRecipient(event.target.value)}
-          disabled={!enabled || busy}
+          disabled={!enabled || busy || issuers.length === 0}
           spellCheck={false}
           autoComplete="off"
           placeholder="utest1… or ztestsapling…"
@@ -153,7 +162,7 @@ export function ZcashPayoutDestinations({ enabled }: { enabled: boolean }) {
           id="payout-purpose"
           value={purpose}
           onChange={(event) => setPurpose(event.target.value)}
-          disabled={!enabled || busy}
+          disabled={!enabled || busy || issuers.length === 0}
           maxLength={160}
           autoComplete="off"
           placeholder="Contributor reward, reimbursement, grant payout…"
@@ -198,7 +207,9 @@ export function ZcashPayoutDestinations({ enabled }: { enabled: boolean }) {
         )) : (
           <div className="payment-history-empty">
             <strong>No payout details shared.</strong>
-            <p className="small muted">Use this only when an organization needs a destination to pay you after a trust or eligibility workflow.</p>
+            <p className="small muted">{issuers.length
+              ? "Use this only when an organization needs a destination to pay you after a trust or eligibility workflow."
+              : "An active credential relationship with an issuer organization is required before payout details can be shared."}</p>
           </div>
         )}
       </div>

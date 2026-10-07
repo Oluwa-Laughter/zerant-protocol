@@ -11,6 +11,8 @@ test("private payout sharing keeps payment destination separate from identity", 
   assert.ok(html.includes("Transparent-only destinations are rejected"));
   assert.ok(html.includes("expire after seven days"));
   assert.ok(html.includes("does not link the wallet to your Zerant identity"));
+  assert.ok(html.includes("current, non-revoked credential relationship"));
+  assert.ok(html.includes("open inbox"));
   assert.equal(html.includes("seed phrase"), true);
   assert.equal(html.includes("wallet history"), true);
   assert.equal(html.includes("Connect wallet"), false);
