@@ -8,7 +8,8 @@ test("organization payout inbox treats addresses as private purpose-scoped data"
   assert.ok(html.includes("Private payout inbox"));
   assert.ok(html.includes("Address ≠ Zerant identity"));
   assert.ok(html.includes("Do not copy these destinations into CRM profiles or credential claims"));
-  assert.ok(html.includes("Prepare separately"));
+  assert.ok(html.includes("Prepare directly"));
+  assert.ok(html.includes("without putting the private destination in a URL"));
   assert.ok(html.includes("seven days"));
   assert.equal(html.includes("Holder Zerant ID"), false);
   assert.equal(html.includes("holder_zerant_id"), false);

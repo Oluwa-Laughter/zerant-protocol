@@ -265,6 +265,23 @@ fn trackable_request(
     ))
 }
 
+pub(super) async fn prepare_for_account(
+    db: &Pool,
+    account: Uuid,
+    network: &str,
+    canonical_uri: &str,
+) -> Result<PaymentView, ApiError> {
+    let (recipient, amount, digest) = trackable_request(canonical_uri, network)?;
+    let client = db_client(db).await?;
+    let row = client.query_one(
+        &format!("INSERT INTO zcash_payments(id, account_id, request_digest, recipient, amount_zat, network, min_confirmations, state, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'prepared', NOW() + INTERVAL '24 hours')
+            RETURNING {VIEW_COLUMNS}"),
+        &[&Uuid::new_v4(), &account, &digest, &recipient, &amount, &network, &MIN_CONFIRMATIONS],
+    ).await.map_err(|_| ApiError::Unavailable)?;
+    Ok(view(&row))
+}
+
 pub(super) async fn prepare(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -272,15 +289,9 @@ pub(super) async fn prepare(
 ) -> Result<Json<PaymentView>, ApiError> {
     let account = account_id(&headers, &state.db).await?;
     enforce_account_rate_limit(&state.db, account, "zcash_payment_prepare", 60).await?;
-    let (recipient, amount, digest) = trackable_request(&input.canonical_uri, &state.zcash_chain)?;
-    let client = db_client(&state.db).await?;
-    let row = client.query_one(
-        &format!("INSERT INTO zcash_payments(id, account_id, request_digest, recipient, amount_zat, network, min_confirmations, state, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'prepared', NOW() + INTERVAL '24 hours')
-            RETURNING {VIEW_COLUMNS}"),
-        &[&Uuid::new_v4(), &account, &digest, &recipient, &amount, &state.zcash_chain, &MIN_CONFIRMATIONS],
-    ).await.map_err(|_| ApiError::Unavailable)?;
-    Ok(Json(view(&row)))
+    Ok(Json(
+        prepare_for_account(&state.db, account, &state.zcash_chain, &input.canonical_uri).await?,
+    ))
 }
 
 pub(super) async fn list(

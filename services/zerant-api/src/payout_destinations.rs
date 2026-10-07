@@ -83,6 +83,12 @@ pub(super) struct CreatePayoutDestinationInput {
     purpose: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct PreparePayoutPaymentInput {
+    amount_zec: String,
+}
+
 #[derive(Serialize)]
 pub(super) struct PayoutExportView {
     id: Uuid,
@@ -504,6 +510,58 @@ pub(super) async fn list_issuer(
     Ok(Json(IssuerPayoutPage { items }))
 }
 
+pub(super) async fn prepare_payment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(input): Json<PreparePayoutPaymentInput>,
+) -> Result<Json<payments::PaymentView>, ApiError> {
+    let account = account_id(&headers, &state.db).await?;
+    enforce_account_rate_limit(&state.db, account, "zcash_payout_prepare_payment", 60).await?;
+    let access = issuer_access(&state.db, account).await?;
+    require_issuer_role(&access, &["owner", "admin", "issuer"])?;
+
+    let client = db_client(&state.db).await?;
+    expire_issuer_due(&client, access.profile_id).await?;
+    let row = client
+        .query_opt(
+            "SELECT id, subject_account_id, network, state, ciphertext, data_nonce,
+                    wrapped_dek, wrap_nonce, key_version, created_at, expires_at, withdrawn_at
+             FROM zcash_payout_destinations
+             WHERE id = $1
+               AND issuer_profile_id = $2
+               AND state = 'active'
+               AND expires_at > NOW()",
+            &[&id, &access.profile_id],
+        )
+        .await
+        .map_err(|_| ApiError::Unavailable)?
+        .ok_or(ApiError::NotFound)?;
+
+    let secret = decrypted_secret(&state, &row)?.ok_or(ApiError::NotFound)?;
+    let network: String = row.get("network");
+    if network != state.zcash_chain {
+        return Err(ApiError::Invalid);
+    }
+    let expected_network = expected_network(&state.zcash_chain)?;
+    let summary = zerant_zcash::zip321::create_payment_request(
+        &secret.recipient,
+        input.amount_zec.trim(),
+        expected_network,
+    )
+    .map_err(|_| ApiError::Invalid)?;
+
+    Ok(Json(
+        payments::prepare_for_account(
+            &state.db,
+            account,
+            &state.zcash_chain,
+            &summary.canonical_uri,
+        )
+        .await?,
+    ))
+}
+
 pub(super) async fn withdraw(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -591,6 +649,21 @@ mod tests {
         assert!(!valid_purpose("x"));
         assert!(!valid_purpose(&"x".repeat(161)));
         assert!(!valid_purpose("bad\ncontext"));
+    }
+
+    #[test]
+    fn payout_payment_preparation_uses_active_private_record_only() {
+        let source = include_str!("payout_destinations.rs");
+        for required in [
+            "zcash_payout_prepare_payment",
+            "issuer_profile_id = $2",
+            "state = 'active'",
+            "expires_at > NOW()",
+            "payments::prepare_for_account",
+            "create_payment_request",
+        ] {
+            assert!(source.contains(required), "{required}");
+        }
     }
 
     #[test]

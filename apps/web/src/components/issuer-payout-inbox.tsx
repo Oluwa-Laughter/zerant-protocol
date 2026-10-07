@@ -21,6 +21,9 @@ export function IssuerPayoutInbox({ enabled }: { enabled: boolean }) {
     ? "Only active, privately shared payout destinations are usable."
     : "Your organization role cannot access private payout destinations.");
   const [loading, setLoading] = useState(false);
+  const [preparingId, setPreparingId] = useState<string | null>(null);
+  const [preparedPayoutId, setPreparedPayoutId] = useState<string | null>(null);
+  const [amountDrafts, setAmountDrafts] = useState<Record<string, string>>({});
 
   async function refresh(announce = false) {
     if (!enabled || loading) return;
@@ -61,6 +64,39 @@ export function IssuerPayoutInbox({ enabled }: { enabled: boolean }) {
     }
   }
 
+  async function preparePayout(id: string) {
+    const amount = (amountDrafts[id] ?? "").trim();
+    if (!enabled || preparingId || !amount) return;
+    setPreparingId(id);
+    setStatus("Preparing a Zcash payment from this private payout destination…");
+    try {
+      const response = await fetch(
+        "/api/zerant/issuer/payout-destinations/" + encodeURIComponent(id) + "/prepare-payment",
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ amount_zec: amount }),
+        },
+      );
+      if (!response.ok) {
+        if (response.status === 400) throw new Error("Enter a positive ZEC amount with no more than eight decimal places.");
+        if (response.status === 401) throw new Error("Your Zerant session has ended. Sign in again and retry.");
+        if (response.status === 403) throw new Error("Your organization role cannot prepare payouts.");
+        if (response.status === 404) throw new Error("This payout destination is no longer active. Refresh the inbox.");
+        if (response.status === 429) throw new Error("You are preparing payouts too quickly. Try again shortly.");
+        throw new Error("Zerant could not prepare this payout.");
+      }
+      await response.json();
+      setPreparedPayoutId(id);
+      setPreparingId(null);
+      setStatus("Payment prepared from the private payout destination. Review the saved payment before opening a wallet.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Zerant could not prepare this payout.");
+      setPreparingId(null);
+    }
+  }
+
   const active = items.filter((item) => item.state === "active");
 
   return (
@@ -86,9 +122,9 @@ export function IssuerPayoutInbox({ enabled }: { enabled: boolean }) {
         </article>
         <article className="workspace-card">
           <p className="eyebrow">Payment execution</p>
-          <h3>Prepare separately</h3>
-          <p className="muted">Copy an active destination into Zerant&apos;s payment review. The wallet still authorizes the transaction and the txid remains a separate payment record.</p>
-          <Link className="text-link" href="/zcash/payments">Open payment review →</Link>
+          <h3>Prepare directly</h3>
+          <p className="muted">Enter an amount on the active payout record. Zerant prepares the same tracked ZIP-321 payment without putting the private destination in a URL. Wallet approval remains separate.</p>
+          <Link className="text-link" href="/zcash/payments">Open existing payments →</Link>
         </article>
       </div>
 
@@ -110,10 +146,37 @@ export function IssuerPayoutInbox({ enabled }: { enabled: boolean }) {
                 </div>
                 <p className="small muted mono invoice-recipient-preview">{item.recipient}</p>
                 <p className="small muted">Expires {new Date(item.expires_at).toLocaleString()} · {item.network === "zcash:testnet" ? "Zcash testnet" : "Zcash mainnet"}</p>
-                <div className="vault-actions wrap">
-                  <Button variant="secondary" onClick={() => item.recipient && void copyAddress(item.recipient)}>Copy receive address</Button>
-                  <Link className="button secondary" href="/zcash/payments">Prepare payment</Link>
+                <div className="payment-submit-form">
+                  <label htmlFor={"payout-amount-" + item.id}>Payout amount</label>
+                  <p className="small muted">Preparing a payout creates a normal Zerant payment record. It does not move funds and does not authorize a wallet.</p>
+                  <div className="payment-submit-row">
+                    <input
+                      id={"payout-amount-" + item.id}
+                      value={amountDrafts[item.id] ?? ""}
+                      onChange={(event) => setAmountDrafts((current) => ({ ...current, [item.id]: event.target.value }))}
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="0.00"
+                      disabled={preparingId !== null}
+                    />
+                    <Button
+                      disabled={preparingId !== null || !(amountDrafts[item.id] ?? "").trim()}
+                      onClick={() => void preparePayout(item.id)}
+                    >
+                      {preparingId === item.id ? "Preparing…" : "Prepare payout"}
+                    </Button>
+                  </div>
+                  {preparedPayoutId === item.id ? (
+                    <div className="vault-actions wrap">
+                      <Link className="button" href="/zcash/payments">Review prepared payment →</Link>
+                    </div>
+                  ) : null}
                 </div>
+                <details className="payout-address-fallback">
+                  <summary>Manual address fallback</summary>
+                  <p className="small muted">Use this only if you intentionally need to prepare the payment elsewhere.</p>
+                  <Button variant="secondary" onClick={() => item.recipient && void copyAddress(item.recipient)}>Copy receive address</Button>
+                </details>
               </>
             ) : (
               <p className="small muted">The holder&apos;s private address and purpose have been discarded from this record.</p>

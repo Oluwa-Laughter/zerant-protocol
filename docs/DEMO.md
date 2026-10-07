@@ -94,7 +94,7 @@ Explain:
 
 ### 2:10–2:40 — Zcash payment boundary
 
-From the organization payout inbox, copy the active destination and open `/zcash/payments`. Prepare and review the exact payment amount.
+From the organization payout inbox, enter the payment amount and choose **Prepare payout**. Zerant creates the normal tracked Zcash payment from the private destination and opens `/zcash/payments` for review.
 
 Show the ZIP-321 link/QR or exact manual handoff. A live browser wallet connection is **not required** to prepare or hand off the payment. If Testnet Noir is stable during recording, you may also show its separate approval step.
 

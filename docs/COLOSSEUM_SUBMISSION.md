@@ -104,7 +104,8 @@ A wallet connection never becomes automatic proof consent, and proof consent nev
 - bounded transaction observation;
 - shareable Zcash invoices;
 - temporary encrypted, organization-scoped private payout destinations;
-- shielded-only payout-address validation, seven-day expiry, withdrawal, and retention scrubbing;
+- direct server-side payout preparation into the existing ZIP-321/payment tracker without putting the private address in a URL;
+- shielded-only payout-address validation, active-trust gating, seven-day expiry, withdrawal, trust-revocation expiry, and retention scrubbing;
 - Z3/Zallet capability and regtest integration boundaries.
 
 ## Architecture
@@ -222,7 +223,7 @@ Explain that this destination is encrypted organization-scoped payment routing d
 
 ### 1:55–2:25 — Zcash payment boundary
 
-Copy the active destination into `/zcash/payments`, enter the amount, and review the exact request. Show the ZIP-321 link/QR or manual handoff. A browser wallet connection is optional for preparation; the actual wallet still keeps the spending keys and authorizes any transaction separately.
+Enter the amount directly on the organization payout record and choose **Prepare payout**. Zerant decrypts the private destination server-side, creates the canonical ZIP-321 request, saves it in the normal prepared-payment tracker, and then lets the operator review it in `/zcash/payments`. Show the ZIP-321 link/QR or manual handoff. A browser wallet connection is optional for preparation; the actual wallet still keeps the spending keys and authorizes any transaction separately.
 
 If a real testnet payment is submitted, show the saved transaction ID and label it as submitted/pending verification—not automatically settled.
 

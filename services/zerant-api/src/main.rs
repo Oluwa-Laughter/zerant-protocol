@@ -10827,6 +10827,10 @@ fn app(state: AppState) -> Router {
             "/v1/issuer/payout-destinations",
             get(payout_destinations::list_issuer),
         )
+        .route(
+            "/v1/issuer/payout-destinations/{id}/prepare-payment",
+            post(payout_destinations::prepare_payment),
+        )
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
