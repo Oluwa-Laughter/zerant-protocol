@@ -10481,9 +10481,22 @@ async fn retention_maintenance_internal(
     let expired_payout_destinations = tx
         .execute(
             "WITH due AS (
-                SELECT id FROM zcash_payout_destinations
-                WHERE state = 'active' AND expires_at <= NOW()
-                ORDER BY expires_at LIMIT $1 FOR UPDATE SKIP LOCKED
+                SELECT payout.id
+                FROM zcash_payout_destinations AS payout
+                WHERE payout.state = 'active'
+                  AND (
+                    payout.expires_at <= NOW()
+                    OR NOT EXISTS (
+                        SELECT 1
+                        FROM issued_credentials c
+                        WHERE c.issuer_profile_id = payout.issuer_profile_id
+                          AND c.subject_account_id = payout.subject_account_id
+                          AND c.revoked_at IS NULL
+                          AND c.expires_at > NOW()
+                    )
+                  )
+                ORDER BY payout.expires_at
+                LIMIT $1 FOR UPDATE OF payout SKIP LOCKED
              )
              UPDATE zcash_payout_destinations p
              SET state = 'expired', ciphertext = NULL, data_nonce = NULL,

@@ -33,6 +33,42 @@ const ELIGIBLE_PAYOUT_ORGANIZATIONS_SQL: &str = "
     ORDER BY p.display_name ASC, p.issuer_id ASC
     LIMIT $2";
 
+const EXPIRE_HOLDER_PAYOUTS_SQL: &str = "
+    UPDATE zcash_payout_destinations AS payout
+    SET state = 'expired', ciphertext = NULL, data_nonce = NULL, wrapped_dek = NULL,
+        wrap_nonce = NULL, key_version = NULL
+    WHERE payout.subject_account_id = $1
+      AND payout.state = 'active'
+      AND (
+          payout.expires_at <= NOW()
+          OR NOT EXISTS (
+              SELECT 1
+              FROM issued_credentials c
+              WHERE c.issuer_profile_id = payout.issuer_profile_id
+                AND c.subject_account_id = payout.subject_account_id
+                AND c.revoked_at IS NULL
+                AND c.expires_at > NOW()
+          )
+      )";
+
+const EXPIRE_ISSUER_PAYOUTS_SQL: &str = "
+    UPDATE zcash_payout_destinations AS payout
+    SET state = 'expired', ciphertext = NULL, data_nonce = NULL, wrapped_dek = NULL,
+        wrap_nonce = NULL, key_version = NULL
+    WHERE payout.issuer_profile_id = $1
+      AND payout.state = 'active'
+      AND (
+          payout.expires_at <= NOW()
+          OR NOT EXISTS (
+              SELECT 1
+              FROM issued_credentials c
+              WHERE c.issuer_profile_id = payout.issuer_profile_id
+                AND c.subject_account_id = payout.subject_account_id
+                AND c.revoked_at IS NULL
+                AND c.expires_at > NOW()
+          )
+      )";
+
 #[derive(Deserialize, Serialize)]
 struct PayoutSecret {
     recipient: String,
@@ -122,13 +158,7 @@ async fn expire_holder_due(
     account: Uuid,
 ) -> Result<(), ApiError> {
     client
-        .execute(
-            "UPDATE zcash_payout_destinations
-         SET state = 'expired', ciphertext = NULL, data_nonce = NULL, wrapped_dek = NULL,
-             wrap_nonce = NULL, key_version = NULL
-         WHERE subject_account_id = $1 AND state = 'active' AND expires_at <= NOW()",
-            &[&account],
-        )
+        .execute(EXPIRE_HOLDER_PAYOUTS_SQL, &[&account])
         .await
         .map_err(|_| ApiError::Unavailable)?;
     Ok(())
@@ -139,13 +169,7 @@ async fn expire_issuer_due(
     issuer: Uuid,
 ) -> Result<(), ApiError> {
     client
-        .execute(
-            "UPDATE zcash_payout_destinations
-         SET state = 'expired', ciphertext = NULL, data_nonce = NULL, wrapped_dek = NULL,
-             wrap_nonce = NULL, key_version = NULL
-         WHERE issuer_profile_id = $1 AND state = 'active' AND expires_at <= NOW()",
-            &[&issuer],
-        )
+        .execute(EXPIRE_ISSUER_PAYOUTS_SQL, &[&issuer])
         .await
         .map_err(|_| ApiError::Unavailable)?;
     Ok(())
@@ -567,6 +591,18 @@ mod tests {
         assert!(!valid_purpose("x"));
         assert!(!valid_purpose(&"x".repeat(161)));
         assert!(!valid_purpose("bad\ncontext"));
+    }
+
+    #[test]
+    fn payout_access_expires_when_the_trust_relationship_ends() {
+        for sql in [EXPIRE_HOLDER_PAYOUTS_SQL, EXPIRE_ISSUER_PAYOUTS_SQL] {
+            assert!(sql.contains("NOT EXISTS"));
+            assert!(sql.contains("issued_credentials"));
+            assert!(sql.contains("revoked_at IS NULL"));
+            assert!(sql.contains("expires_at > NOW()"));
+            assert!(sql.contains("ciphertext = NULL"));
+            assert!(sql.contains("wrapped_dek = NULL"));
+        }
     }
 
     #[test]
