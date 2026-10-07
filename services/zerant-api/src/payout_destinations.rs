@@ -139,7 +139,6 @@ pub(super) struct IssuerPayoutView {
     id: Uuid,
     network: String,
     state: String,
-    recipient: Option<String>,
     purpose: Option<String>,
     created_at: OffsetDateTime,
     expires_at: OffsetDateTime,
@@ -234,7 +233,6 @@ fn issuer_view(state: &AppState, row: &Row) -> Result<IssuerPayoutView, ApiError
         id: row.get("id"),
         network: row.get("network"),
         state: row.get("state"),
-        recipient: secret.as_ref().map(|value| value.recipient.clone()),
         purpose: secret.as_ref().map(|value| value.purpose.clone()),
         created_at: row.get("created_at"),
         expires_at: row.get("expires_at"),
@@ -649,6 +647,18 @@ mod tests {
         assert!(!valid_purpose("x"));
         assert!(!valid_purpose(&"x".repeat(161)));
         assert!(!valid_purpose("bad\ncontext"));
+    }
+
+    #[test]
+    fn issuer_payout_listing_does_not_serialize_the_recipient() {
+        let source = include_str!("payout_destinations.rs");
+        let issuer_view = source
+            .split("pub(super) struct IssuerPayoutView")
+            .nth(1)
+            .and_then(|value| value.split("fn expected_network").next())
+            .unwrap();
+        assert!(!issuer_view.contains("recipient:"));
+        assert!(issuer_view.contains("purpose:"));
     }
 
     #[test]

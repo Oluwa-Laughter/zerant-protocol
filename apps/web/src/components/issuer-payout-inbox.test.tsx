@@ -13,6 +13,7 @@ test("organization payout inbox treats addresses as private purpose-scoped data"
   assert.ok(html.includes("seven days"));
   assert.equal(html.includes("Holder Zerant ID"), false);
   assert.equal(html.includes("holder_zerant_id"), false);
+  assert.equal(html.includes("Copy receive address"), false);
   assert.equal(html.includes("wallet balance"), false);
   assert.equal(html.includes("transaction history"), false);
 });

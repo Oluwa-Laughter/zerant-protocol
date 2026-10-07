@@ -8,7 +8,6 @@ export type IssuerPayoutDestination = {
   id: string;
   network: string;
   state: "active" | "withdrawn" | "expired";
-  recipient: string | null;
   purpose: string | null;
   created_at: string;
   expires_at: string;
@@ -54,15 +53,6 @@ export function IssuerPayoutInbox({ enabled }: { enabled: boolean }) {
     return () => window.clearTimeout(initialRefresh);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
-
-  async function copyAddress(address: string) {
-    try {
-      await navigator.clipboard.writeText(address);
-      setStatus("Receive address copied. Paste it into payment review and confirm the destination before approving in your wallet.");
-    } catch {
-      setStatus("Copy failed. Select the receive address manually.");
-    }
-  }
 
   async function preparePayout(id: string) {
     const amount = (amountDrafts[id] ?? "").trim();
@@ -144,7 +134,7 @@ export function IssuerPayoutInbox({ enabled }: { enabled: boolean }) {
                   <strong>Purpose</strong>
                   <p>{item.purpose}</p>
                 </div>
-                <p className="small muted mono invoice-recipient-preview">{item.recipient}</p>
+                <p className="small muted">The receive address stays hidden here. Zerant reveals it only in the prepared payment review after an authorized operator chooses an amount.</p>
                 <p className="small muted">Expires {new Date(item.expires_at).toLocaleString()} · {item.network === "zcash:testnet" ? "Zcash testnet" : "Zcash mainnet"}</p>
                 <div className="payment-submit-form">
                   <label htmlFor={"payout-amount-" + item.id}>Payout amount</label>
@@ -172,11 +162,6 @@ export function IssuerPayoutInbox({ enabled }: { enabled: boolean }) {
                     </div>
                   ) : null}
                 </div>
-                <details className="payout-address-fallback">
-                  <summary>Manual address fallback</summary>
-                  <p className="small muted">Use this only if you intentionally need to prepare the payment elsewhere.</p>
-                  <Button variant="secondary" onClick={() => item.recipient && void copyAddress(item.recipient)}>Copy receive address</Button>
-                </details>
               </>
             ) : (
               <p className="small muted">The holder&apos;s private address and purpose have been discarded from this record.</p>
