@@ -20,7 +20,7 @@ Zerant is a privacy-preserving trust layer for Zcash applications that lets issu
 
 ## Short description
 
-Zerant helps applications verify one fact without collecting a person’s full identity, credential history, wallet address, balance, or transaction history. Issuers create signed credentials, holders keep them private under a Zerant ID, and verifiers request one purpose-bound claim. Holders can also share a temporary encrypted payout destination with one organization without turning the address into identity. Zcash payments remain a separate wallet-approved capability, with ZIP-321 review, optional Noir Wallet support, invoices, and bounded payment tracking.
+Zerant helps applications verify one fact without collecting a person’s full identity, credential history, wallet address, balance, or transaction history. Issuers create signed credentials, holders keep them private under a Zerant ID, and verifiers request one purpose-bound claim. Holders can also share a temporary encrypted payout destination with one organization without turning the address into identity. Zcash payments stay a separate authority boundary: Zerant validates and reviews the exact ZIP-321 request, then hands it to an external wallet for approval.
 
 ## Problem
 
@@ -38,13 +38,13 @@ This creates three problems:
 
 Zerant separates three capabilities:
 
-- **Identity/account access** — a Zerant account can be accessed with a passkey; a Zcash wallet is optional.
+- **Identity/account access** — a Zerant account is accessed with a passkey; a payment wallet is not part of sign-in.
 - **Credential disclosure** — a verifier asks for one narrow claim with a purpose, audience, nonce, and expiry; the holder reviews and approves or denies it.
 - **Payment authority** — if ZEC must move, the wallet separately authorizes that exact transaction.
 
 A verifier receives the approved result, not the holder’s entire private credential portfolio.
 
-A wallet connection never becomes automatic proof consent, and proof consent never becomes spending authority.
+Payment handoff never becomes automatic proof consent, and proof consent never becomes spending authority.
 
 ## User flow
 
@@ -54,8 +54,8 @@ A wallet connection never becomes automatic proof consent, and proof consent nev
 4. The holder previews the exact disclosure and approves or denies it.
 5. Zerant re-verifies the request, issuer evidence, revocation state, expiry, audience, and replay binding before returning a verifier-specific result.
 6. If a payment is required, Zerant prepares or validates the Zcash payment request.
-7. The user connects a compatible wallet or opens the reviewed ZIP-321 request in another wallet.
-8. The wallet approves the transaction. Zerant records a returned transaction ID as submitted and keeps settlement claims separate from wallet submission.
+7. Zerant exposes the reviewed ZIP-321 request as a link, QR code, and exact simple-payment details where safe.
+8. The user opens that request in an external compatible wallet, which separately approves any transaction. A transaction ID may be recorded as submitted; settlement claims remain separate.
 
 ## What is implemented
 
@@ -83,8 +83,7 @@ A wallet connection never becomes automatic proof consent, and proof consent nev
 
 ### Account security
 
-- passkey account access;
-- optional Zcash wallet authentication;
+- discoverable passkey account access with Zerant-ID/passkey fallback;
 - opaque authenticated sessions;
 - remote session revocation;
 - encrypted credential storage;
@@ -93,12 +92,8 @@ A wallet connection never becomes automatic proof consent, and proof consent nev
 ### Zcash integration
 
 - Zcash testnet configuration;
-- Noir Wallet injected-provider support;
-- interactive zcash_requestAccounts connection;
-- silent zcash_getAccounts restoration;
-- derived-key wallet message signing for the supported identity path;
-- direct shielded payment when the connected wallet advertises that capability;
-- ZIP-321 request validation and portable wallet handoff;
+- ZIP-321 request validation, canonical review, QR/link handoff, and exact simple-payment fallback;
+- external-wallet payment approval with no persistent browser-wallet connection state;
 - Zcash address inspection;
 - prepared/submitted payment tracking;
 - bounded transaction observation;
@@ -112,7 +107,7 @@ A wallet connection never becomes automatic proof consent, and proof consent nev
 
 The product is split into explicit trust boundaries:
 
-- **Next.js web app** — product UI, consent interaction, wallet selection, and transient connection state.
+- **Next.js web app** — product UI, consent interaction, payment review, and external-wallet handoff.
 - **Rust/Axum service** — authorization, durable workflow state, encrypted credential access, replay protection, issuer/verifier logic.
 - **Protocol crates** — canonicalization, credential signatures, policy evaluation, disclosure binding, and Zcash request validation.
 - **PostgreSQL** — encrypted credentials and durable application state.
@@ -165,7 +160,7 @@ This prevents the common mistake of turning a payment wallet into a universal ap
 
 **Backend:** Rust, Axum, PostgreSQL/Neon.
 
-**Zcash:** Noir Wallet SDK, ZIP-321, Z3/Zallet integration boundaries, lightwalletd-compatible network readiness.
+**Zcash:** ZIP-321, Zcash address parsing, Z3/Zallet integration boundaries, and lightwalletd-compatible network readiness.
 
 **Security:** WebAuthn/passkeys, opaque sessions, encrypted credential storage, strict canonical parsing, origin/audience/nonce/expiry binding, replay protection, SSRF-safe webhooks.
 
@@ -223,7 +218,7 @@ Explain that this destination is encrypted organization-scoped payment routing d
 
 ### 1:55–2:25 — Zcash payment boundary
 
-Enter the amount directly on the organization payout record and choose **Prepare payout**. Zerant decrypts the private destination server-side, creates the canonical ZIP-321 request, saves it in the normal prepared-payment tracker, and then lets the operator review it in `/zcash/payments`. Show the ZIP-321 link/QR or manual handoff. A browser wallet connection is optional for preparation; the actual wallet still keeps the spending keys and authorizes any transaction separately.
+Enter the amount directly on the organization payout record and choose **Prepare payout**. Zerant decrypts the private destination server-side, creates the canonical ZIP-321 request, saves it in the normal prepared-payment tracker, and then lets the operator review it in `/zcash/payments`. Show the ZIP-321 link/QR or exact simple-payment handoff. Zerant does not create a persistent browser-wallet session; an external wallet keeps the spending keys and separately authorizes any transaction.
 
 If a real testnet payment is submitted, show the saved transaction ID and label it as submitted/pending verification—not automatically settled.
 
@@ -243,8 +238,15 @@ Zerant separates trust, consent, and payment authority. Applications learn the f
 - docs/assets/screenshots/02-zcash.png
 - docs/assets/screenshots/03-architecture.png
 - docs/assets/screenshots/04-flow.png
+- docs/assets/screenshots/05-vault.png
+- docs/assets/screenshots/06-holder-consent.png
+- docs/assets/screenshots/07-verifier-result.png
+- docs/assets/screenshots/08-private-payout.png
+- docs/assets/screenshots/09-payout-inbox.png
+- docs/assets/screenshots/10-payment-review.png
+- docs/assets/screenshots/11-mobile-menu.png
 
-Final manual screenshots to add during the real demo session are listed in docs/DEMO.md.
+These frames use real product states from the production workflow. The optional public-invoice frame is listed in docs/DEMO.md.
 
 ## Demo video title
 
@@ -266,8 +268,10 @@ Code: https://github.com/Oluwa-Laughter/zerant-protocol
 - [ ] README images render correctly on GitHub.
 - [ ] Holder demo account contains one safe demo credential.
 - [ ] Verifier demo request can be completed end-to-end.
-- [ ] Testnet Noir Wallet is unlocked and approved for the production origin.
+- [ ] Passkey sign-in works on the production origin and survives refresh.
 - [ ] Payment demo uses testnet only.
+- [ ] No normal demo screen shows a wallet-connect or "Wallet not connected" state.
+- [ ] Mobile navigation is usable at 390px with no horizontal overflow.
 - [ ] Demo copy says submitted rather than settled unless exact settlement has actually been verified.
 - [ ] Final manual screenshots contain no seed phrase, API key, environment variable, wallet history, or private credential signature.
 - [ ] Demo video is publicly viewable without requiring the judge to log in.

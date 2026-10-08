@@ -115,4 +115,4 @@ The current queue message retention is seven days, with bounded concurrency and 
 
 ## Wallet transport
 
-Zerant does not require WalletConnect. The hosted testnet product uses reviewed injected adapters when available and the canonical ZIP-321 handoff for compatible wallets without a browser adapter. No WalletConnect project ID is needed or used by product discovery. Wallet connection remains separate from Zerant account access and payment settlement.
+Zerant does not require WalletConnect or a browser-wallet connector. The hosted testnet product uses canonical ZIP-321 review and external-wallet handoff. No WalletConnect project ID is needed or used by product navigation. Passkeys provide Zerant account access; external wallet approval remains a separate payment boundary.

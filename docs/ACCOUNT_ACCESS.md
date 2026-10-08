@@ -23,15 +23,15 @@ The browser never receives Zerant session tokens directly. Successful authentica
 
 An account may have at most ten passkeys. Adding or removing a passkey requires a session created within the last 15 minutes. Zerant refuses to remove the last passkey if the account has no other Zcash-based authentication method, preventing accidental lockout.
 
-### Zcash-based access
+### Historical Zcash-based access
 
-Zerant also supports purpose-specific Zcash authentication and compatible wallet-message authentication. These access methods remain separate from spending authority and generic payment addresses.
+The backend still recognizes Zcash authentication methods linked by earlier product versions. The current account UI does not offer new wallet pairing or wallet sign-in. Passkeys are the primary account path; these older methods remain separate from spending authority and generic payment addresses.
 
 A user can add passkeys without changing the existing Zerant ID, credentials, issuer memberships, verifier profile, or Zcash configuration.
 
 An existing account starts Zcash sign-in linking with `POST /v1/account/zcash/challenge`. The five-minute challenge binds the account and exact initiating session server-side and sets a separate one-time HttpOnly, Secure, SameSite=Lax link-attempt cookie; only its hash is stored. An injected wallet can still verify and link directly in that session. A supported ZecAuth wallet app instead posts its signed response to the public, link-only callback. The callback verifies the signature and stores one pending key on the challenge but makes no account, identity, handle, or session change. Only `POST /v1/account/zcash/zecauth/complete` from the initiating browser can finalize, after matching the attempt cookie and live session created within the last 15 minutes. A pending response returns HTTP 202 without consuming the attempt. Successful completion atomically checks identity ownership, consumes the challenge and attempt, clears the cookie, and preserves the Zerant ID. An identity owned by another account or a different key in the same account slot causes a retryable conflict.
 
-Account settings list only the linked method, chain where stored, and creation time. The account UI offers both installed-wallet linking and a portable handoff for supported ZecAuth wallet apps, followed by a manual approval check in the initiating browser. The normal unauthenticated wallet sign-in routes continue to create or resolve accounts as before.
+Account settings show an older linked method only when one exists, with its chain where stored and a removal action. The server retains its challenge and signature verification endpoints for existing integrations; the normal product UI does not initiate new linking.
 
 Linked Zcash sign-in methods can be removed with `DELETE /v1/account/zcash/zecauth` or `DELETE /v1/account/zcash/wallet/{testnet|mainnet}`. A session created within the last 15 minutes is required. The service refuses removal of a missing method or the last remaining access method, counting passkeys, the ZecAuth identity, and each chain-specific wallet-message identity. Removal signs out every Zcash-authenticated session on the account because sessions do not identify the particular Zcash key used to sign in; passkey sessions remain active. If the current session is Zcash-authenticated, its cookie is cleared. To rotate an authentication key, retain another access method, remove the old method, then explicitly link the new one. This does not revoke a wallet spending key or delete a wallet account.
 

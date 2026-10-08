@@ -1,6 +1,6 @@
 # Zcash wallet compatibility
 
-Zerant is wallet-agnostic. Wallet choice must not change credential, issuer, verifier or consent semantics.
+Zerant is wallet-agnostic. Wallet choice must not change credential, issuer, verifier or consent semantics. The current product uses external ZIP-321 payment handoff; the adapter discussion below documents retained research and compatibility code, not a connection step in the live UI.
 
 ## Compatibility layers
 
@@ -15,7 +15,7 @@ These paths do not depend on a browser-extension vendor:
 
 Portable handoff is the preferred interoperability layer because the wallet remains responsible for keys, transaction construction and user approval.
 
-### 2. Injected wallet adapters
+### 2. Legacy injected-wallet adapter research
 
 Browser wallets may expose richer capabilities. Zerant models those through `InjectedZcashWalletAdapter` rather than importing wallet behavior into the product core.
 
@@ -35,9 +35,9 @@ Noir Wallet is currently one concrete injected adapter. It is not Zerant's walle
 
 Some Zcash wallets may understand Zcash addresses and ZIP-321 payments but not ZecAuth or browser message signing. Zerant must not misrepresent those wallets as unsupported Zcash wallets. They can still participate in portable Zcash payment flows.
 
-Passkeys now provide wallet-independent Zerant account entry, so holders can use an account even when their wallet has no authentication extension. An authenticated holder can link supported Zcash sign-in to that same account. The account UI supports installed-wallet linking and a portable link handoff for supported ZecAuth wallet apps. The initiating browser checks approval and finalizes the link with its original recent session.
+Passkeys provide wallet-independent Zerant account entry. Earlier versions offered Zcash sign-in linking; the current account UI keeps only removal of previously linked methods. The backend authentication boundary remains documented here for compatibility review.
 
-Account settings also allow removal of a linked ZecAuth or chain-specific wallet-message authentication method after recent sign-in, as long as another access method remains. Removal revokes all Zcash-authenticated Zerant sessions because they are not associated with individual keys; passkey sessions remain. Key rotation is explicit removal followed by linking. This affects Zerant sign-in only, not wallet spending authority or the wallet account.
+Account settings also allow removal of a linked ZecAuth or chain-specific wallet-message authentication method after recent sign-in, as long as another access method remains. Removal revokes all Zcash-authenticated Zerant sessions because they are not associated with individual keys; passkey sessions remain. Removal affects Zerant sign-in only, not wallet spending authority or the wallet account. New linking is not exposed in the current product UI.
 
 ## Security rules
 
@@ -49,13 +49,13 @@ Account settings also allow removal of a linked ZecAuth or chain-specific wallet
 - Wallet-specific code stays under the adapter boundary.
 - Provider detection and wallet-choice rendering must not silently request accounts or authorization.
 
-## Adding another injected wallet
+## Extending retained adapter research
 
 Implement `InjectedZcashWalletAdapter` in `apps/web/src/lib/zcash-wallet.ts` or a dedicated adapter module, advertise only the capabilities actually supported, add the adapter factory to `getInjectedZcashWallets()`, and add conformance tests.
 
 No issuer, credential, verifier, disclosure or Zcash-native Rust code should need to change merely to add a wallet adapter.
 
-## Current connection router
+## Historical connection-router behavior
 
 For the hosted `zcash:testnet` product, a detected mainnet Noir extension is not
 a usable direct payment wallet. The SDK does not expose a safe network check before
@@ -72,10 +72,10 @@ network and exact payment details visible to the user before approval.
 
 The Zcash payment workspace starts with payment review and exposes the complete validated
 ZIP-321 URI through an open, QR, or copy action. It does not ask the holder to connect a
-browser wallet. The old optional direct-connection route remains isolated at
-`/zcash/wallet` for explicit wallet actions, outside normal payment navigation.
+browser wallet. The old `/zcash/wallet` route redirects to `/zcash/payments`.
 WalletConnect is intentionally not offered by product discovery: it does not solve
-the hosted testnet path. The sign-in chooser filters its capability registry separately.
+the hosted testnet path. The retained connector registry is compatibility and research
+infrastructure only; current product navigation does not expose a wallet chooser.
 "Supported Zcash wallet" means support for a specific action, not membership in a
 brand allowlist. There is no universal Zcash dApp connector today. New injected
 providers require an explicit safe detector and adapter; Zerant does not scan

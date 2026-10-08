@@ -62,14 +62,15 @@ No signing, secure vault, protocol verification, Zcash integration, ZK, or mainn
 
 ### Zcash product integration — active
 
-- capability-routed wallet connection with registered injected providers and derived Zcash authentication
-- review whether a maintained Zcash remote-session standard is useful after testnet payment handoff and observation are stable; WalletConnect is not part of the current product route
-- ZecAuth wallet-app authentication handoff and passkey-independent wallet connection
-- ZIP-316 address validation and ZIP-321 payment request handling
+- passkey-first Zerant account access with wallet-independent identity
+- ZIP-316 address validation and canonical ZIP-321 review/handoff
+- external-wallet link, QR, and exact simple-payment handoff with no persistent browser-wallet connection state
 - account-owned shareable Zcash invoice requests with public capability links, cancellation, expiry, bounded retention and export
-- shielded payment handoff
+- temporary encrypted organization-scoped private payout destinations
+- prepared/submitted payment tracking with honest settlement boundaries
 - Z3/Zallet local capability boundary
 - zcash_client_backend light-client readiness for Zaino/lightwalletd-compatible services
+- retained injected/ZecAuth adapter research kept outside current product navigation
 
 ## M3 — Stronger privacy predicates
 Research established, reviewed anonymous credential/selective-disclosure/ZK systems for:

@@ -2,7 +2,7 @@
 
 This runbook is for the hackathon submission, screenshots, and recorded demo. It is intentionally short and uses only flows that are implemented in the current product.
 
-The current [public walkthrough](assets/demo-public-walkthrough.mp4) is a 50-second recording of the live landing page and signed-out product routes. It does not show an authenticated credential, holder consent, Noir approval, or payment submission. Record those with real accounts and an onboarded Testnet Noir wallet before presenting a complete product demo.
+The current [public walkthrough](assets/demo-public-walkthrough.mp4) is a short recording of the landing page and signed-out product routes. The final demo must add the real authenticated credential, holder consent, verifier result, private payout, and reviewed Zcash handoff shown below. The core story does not require a browser-wallet connection.
 
 ## Demo goal
 
@@ -21,7 +21,7 @@ Use the deployed production build and prepare:
 - one verifier application;
 - one shielded-capable Zcash testnet receive address for the holder;
 - a testnet payment request that you are comfortable demonstrating;
-- Testnet Noir Wallet only if you want to show the optional final wallet-approval step.
+- an external compatible testnet wallet only if you intentionally choose to demonstrate a real submission. It is not required for the core demo.
 
 Do not show private keys, seed phrases, environment variables, database credentials, raw credential signatures, or wallet history.
 
@@ -96,7 +96,7 @@ Explain:
 
 From the organization payout inbox, enter the payment amount and choose **Prepare payout**. Zerant creates the normal tracked Zcash payment from the private destination and opens `/zcash/payments` for review.
 
-Show the ZIP-321 link/QR or exact manual handoff. A live browser wallet connection is **not required** to prepare or hand off the payment. If Testnet Noir is stable during recording, you may also show its separate approval step.
+Show the complete ZIP-321 link/QR and, for a simple request, the exact manual recipient and amount. Zerant does not establish a persistent browser-wallet connection: the reviewed request leaves Zerant and the wallet separately authorizes any transaction.
 
 Explain:
 
@@ -145,37 +145,53 @@ Filename:
 
 `docs/assets/screenshots/06-holder-consent.png`
 
-### 07 — Private payout sharing
+### 07 — Verifier result
+
+Capture the verifier-side bounded result after Zerant re-verifies the approved proof. The frame should show the single approved claim and the privacy note explaining what was not disclosed.
+
+Filename:
+
+`docs/assets/screenshots/07-verifier-result.png`
+
+### 08 — Private payout sharing
 
 Capture the holder's `/zcash/payouts` review showing organization, purpose, privacy boundary, and expiry. Do not expose a real address outside the safe demo account.
 
 Filename:
 
-`docs/assets/screenshots/07-private-payout.png`
+`docs/assets/screenshots/08-private-payout.png`
 
-### 08 — Organization payout inbox
+### 09 — Organization payout inbox
 
 Capture `/issuer/payouts` showing the holder relationship, purpose, and private organization-only handling.
 
 Filename:
 
-`docs/assets/screenshots/08-payout-inbox.png`
+`docs/assets/screenshots/09-payout-inbox.png`
 
-### 09 — Payment review
+### 10 — Payment review
 
 Capture the exact reviewed Zcash payment request/ZIP-321 handoff. If you also record a successful wallet submission, capture the submitted txid as an additional frame.
 
 Filename:
 
-`docs/assets/screenshots/09-payment-review.png`
+`docs/assets/screenshots/10-payment-review.png`
 
-### 10 — Public invoice
+### 11 — Mobile workspace navigation
+
+Capture the 390px workspace drawer with the grouped workspace, organization, account, and landing-page navigation. Prefer an authenticated production session for the final frame.
+
+Filename:
+
+`docs/assets/screenshots/11-mobile-menu.png`
+
+### 12 — Public invoice (optional)
 
 If an invoice is part of the recorded demo, capture its shareable public page.
 
 Filename:
 
-`docs/assets/screenshots/10-public-invoice.png`
+`docs/assets/screenshots/12-public-invoice.png`
 
 ## Screenshot quality rules
 
@@ -188,16 +204,40 @@ Filename:
 - Prefer product states with short realistic data so the interface is readable.
 - Do not crop away status labels that explain whether something is prepared, submitted, or verified.
 
-## Demo payment fallback
+## Payment handoff rule
 
-The core demo does not depend on a live browser-wallet connection. If direct Noir approval is unavailable during recording:
+The core demo stops at a reviewed external-wallet handoff unless you deliberately complete a real testnet submission:
 
-1. keep the validated payment visible;
-2. show the exact reviewed ZIP-321 link/QR or manual destination and amount;
-3. explain that a compatible testnet wallet can complete the payment independently of Zerant sign-in;
-4. stop before claiming submission unless a wallet actually returns a valid transaction ID.
+1. keep the server-validated payment visible;
+2. show the complete ZIP-321 link/QR or, for a simple request, the exact destination and amount;
+3. explain that a compatible testnet wallet completes the payment independently of Zerant sign-in;
+4. stop before claiming submission unless you actually have a valid transaction ID from an external wallet.
 
-Do not fabricate a txid or call a prepared request paid/settled.
+Do not fabricate a txid or call a prepared request paid or settled.
+
+## Responsive and animation QA
+
+The production landing page was profiled after load at 1440×1100 and 390×844 at the top, middle, and footer positions. Across all six measured states:
+
+- there was no horizontal page overflow;
+- there were zero running CSS animations after their short entrance transitions completed;
+- there were zero offscreen-running animations;
+- the product source contains no requestAnimationFrame, WebGL, or persistent interval animation loop;
+- reduced-motion CSS disables the remaining short entrance and hover motion where appropriate.
+
+The result is intentionally lightweight: Zerant keeps brief transform/opacity interactions for menu, proof, result, and payment-state transitions without adding a continuous animation engine.
+
+## Production passkey QA
+
+A production WebAuthn smoke test was run against `https://zerant.vercel.app` with an isolated Chrome virtual authenticator, not a user credential. It verified:
+
+- account registration creates an authenticated Zerant session with RP ID `zerant.vercel.app`;
+- the test authenticator produced a valid non-resident credential, demonstrating why discoverable sign-in cannot be the only recovery path;
+- when discoverable sign-in cannot locate that credential, Zerant automatically reveals the Zerant-ID + passkey fallback;
+- the Zerant-ID fallback successfully signs the same account back in;
+- the authenticated session remains valid after a full Vault reload.
+
+No wallet connection or wallet identity participates in this account flow.
 
 ## Submission checklist
 

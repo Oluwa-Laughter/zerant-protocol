@@ -149,9 +149,9 @@ individual PCZT methods are available on the operator's current Zallet build.
 
 ## ZecAuth server authentication
 
-Authenticated account linking also uses the existing five-minute ZecAuth challenge message. Its dedicated account endpoint stores the target account and initiating recent session on the server and accepts either RedPallas wallet-app or derived injected-wallet verification. The ordinary sign-in verifier cannot consume a link challenge. A linked key cannot be moved from another account or silently replace a different key, and the account's public handle stays fixed. Account settings also offer a wallet-app link handoff for supported ZecAuth apps. Its public callback verifies the signed response and stores a pending key only; the initiating browser later supplies its separate one-time link-attempt cookie and exact live, recent session to finalize. The callback cannot link an identity or create a session. Passkeys already provide wallet-independent account entry.
+Legacy account-link endpoints use the existing five-minute ZecAuth challenge message. Their dedicated endpoint stores the target account and initiating recent session on the server and accepts either RedPallas wallet-app or derived injected-wallet verification. The ordinary sign-in verifier cannot consume a link challenge. A linked key cannot be moved from another account or silently replace a different key, and the account's public handle stays fixed. Current account settings do not offer new wallet linking; these server paths remain for compatibility and existing-account safeguards. Their public callback can store a pending key only and cannot create an account or session. Passkeys provide current wallet-independent account entry.
 
-Linked ZecAuth and chain-specific derived wallet-message sign-in methods can be removed through account settings with a session created within 15 minutes. The last account access method cannot be removed. The selected authentication identity and every Zcash-authenticated Zerant session are deleted together; sessions do not record the individual key, while passkey sessions remain. A current Zcash session is signed out. Rotation requires explicit removal and a separate link; there is no silent replacement. This neither revokes a Zcash spending key nor deletes a wallet account.
+Linked ZecAuth and chain-specific derived wallet-message sign-in methods from earlier product versions can be removed through account settings with a session created within 15 minutes. The last account access method cannot be removed. The selected authentication identity and every Zcash-authenticated Zerant session are deleted together; sessions do not record the individual key, while passkey sessions remain. A current Zcash session is signed out. New linking is not exposed in the current UI. This neither revokes a Zcash spending key nor deletes a wallet account.
 
 `zerant-api` implements the server-verification side of the ZecAuth v1 draft profile. It issues five-minute domain/chain/nonce challenges, verifies RedPallas public keys and signatures with `reddsa`, consumes each challenge once, and creates opaque HttpOnly sessions only after the browser redeems its completed server-side authentication attempt.
 
@@ -159,19 +159,17 @@ The default capability allow-list is `auth` plus `request_payment`. Broader view
 
 Authenticated users can query bounded Z3/Zallet capability, chain-readiness and wallet-readiness state through the Rust API. Raw balances, seed fingerprints, address inventories and wallet history are not returned to the browser.
 
-## Wallet connection model
+## Wallet interoperability model
 
 Zerant is wallet-agnostic. It uses portable Zcash handoff formats wherever a wallet supports them and isolates browser-specific behavior behind capability-based adapters.
 
-### Portable wallet-app authentication
+### Legacy portable wallet-app authentication
 
-ZecAuth remains the wallet-app authentication handoff. Zerant creates a short-lived domain/chain/nonce challenge and opens it through the `zecauth:` scheme with a callback to Zerant. A compatible wallet signs the request and Zerant redeems the completed browser attempt into the normal opaque account session.
+ZecAuth remains implemented as a compatibility authentication handoff for earlier linked accounts, but it is not exposed as the current sign-in path. The server creates a short-lived domain/chain/nonce challenge and can redeem a valid completed handoff into the normal opaque account session. Current product sign-in is passkey-first.
 
-### Injected browser wallets
+### Retained injected-wallet adapter research
 
-Injected wallets are optional enhancements. Each wallet adapter advertises connection restoration, identity signing and direct shielded-payment capabilities separately. Product code chooses a capability rather than a wallet name.
-
-Noir Wallet is currently one concrete injected adapter. It is not a protocol dependency and does not define Zerant wallet compatibility. Additional wallets can be added by implementing the same adapter contract without changing credentials, disclosure or verifier logic.
+The repository retains reviewed injected-adapter and capability tests from the earlier browser-wallet prototype. The current product UI does not render a wallet chooser, connection state, or Noir-specific flow. These modules are compatibility research and can inform future integrations without changing credential, disclosure, verifier, or passkey semantics.
 
 ### Wallets with payment support but no authentication extension
 
@@ -185,17 +183,18 @@ The product now treats the canonical ZIP-321 URI as the portable wallet handoff 
 
 After the Rust parser validates and canonicalizes a request:
 
-- any compatible wallet can receive the canonical zcash: URI through the wallet-app handoff;
-- a compatible injected browser wallet may execute a simple single-recipient request directly;
-- direct browser-wallet execution is limited to a request with one recipient, a fixed amount, no memo, and no additional parameters;
-- direct browser-wallet execution always requests shielded funding and still requires explicit wallet approval;
-- multi-recipient, memo-bearing, or otherwise richer requests are handed back to the wallet app so Zerant does not silently drop ZIP-321 semantics.
+- any compatible wallet can receive the complete canonical `zcash:` URI through the external-wallet handoff;
+- Zerant renders a QR code for the same reviewed URI;
+- a single exact-amount request without extra fields may also expose the validated recipient and amount for deliberate manual entry;
+- multi-recipient, memo-bearing, or otherwise richer requests never get reduced to a lossy manual form.
 
-Zerant does not read a wallet balance or transaction history before offering either path.
+Zerant does not read a wallet balance or transaction history before offering this handoff. Spending approval happens outside Zerant.
 
-## Browser wallet connection
+## Legacy browser connector boundary
 
-The browser now routes independently through explicit injected-wallet adapters, ZecAuth authentication handoff, and canonical ZIP-321 payment handoff. The current injected Noir provider is one adapter, not Zerant's wallet protocol. There is no universal Zcash dApp connector, so a wallet without a compatible injected interface or supported URI handoff cannot be live-connected. WalletConnect is intentionally not used by product discovery because its current namespace does not solve the hosted testnet flow. No balance or history lookup is part of connect or sign-in. The native Zcash payment parser remains the authority for canonical ZIP-321 validation; direct wallet submission is separate from settlement verification.
+This section documents compatibility behavior retained in source and tests. It is not a current product interaction: the normal Vault uses passkeys, the payment workspace uses ZIP-321 handoff, and no product screen presents a persistent browser-wallet connection state.
+
+The earlier browser prototype routed through explicit injected-wallet adapters, ZecAuth authentication handoff, and canonical ZIP-321 payment handoff. Those adapters remain isolated compatibility code rather than current navigation. WalletConnect is intentionally not used by product discovery because its current namespace does not solve the hosted testnet flow. The native Zcash payment parser remains the authority for canonical ZIP-321 validation, and any external wallet submission remains separate from settlement verification.
 
 ### Production light-client readiness
 

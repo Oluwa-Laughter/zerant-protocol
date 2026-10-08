@@ -48,11 +48,17 @@ A normal trust request never requires a wallet. The holder authenticates to Zera
 
 A Zcash payment is a separate action. Zerant validates and records the exact payment request; a compatible wallet retains the spending keys and performs the transaction only after its own approval. The wallet result is recorded as **submitted** until a trusted observation path establishes stronger network state.
 
+The normal product has no browser-wallet connection state. Passkeys open Zerant; reviewed ZIP-321 links, QR codes, and exact copied details hand a payment to an external Zcash wallet. Wallet-derived account methods already linked by existing users remain removable under the current access-method safeguards, but new wallet pairing is not offered in account or payment navigation. Server-side Zcash network readiness and exact named-transaction observation remain separate from wallet authorization and never prove shielded recipient or amount by themselves.
+
+### Database migration startup boundary
+
+The API records applied schema migrations in `zerant_schema_migrations`. Under one PostgreSQL advisory lock, it applies each new migration and records its name in the same transaction. Historical migrations are never replayed on a populated database: older audit constraints cannot safely be restored after newer event types have been written. For deployments created before this ledger, startup recognizes only the final schema markers of the recent invoice and private-payout migrations and records the corresponding contiguous baseline. An unfamiliar partially migrated legacy schema fails startup for operator review rather than guessing which changes ran. This ledger contains schema names and timestamps only; it does not change credential, consent, payment, or retention data.
+
 ### Security ownership
 
 | Boundary | Owns | Explicitly does not own |
 | --- | --- | --- |
-| Browser | UI state, consent interaction, transient wallet connection | durable credential authority, wallet keys |
+| Browser | UI state, consent interaction, reviewed payment handoff | durable credential authority, wallet keys |
 | Rust API | authorization, challenges, workflow state, encrypted credential access | wallet seed/spending keys |
 | Protocol crates | canonicalization, signature/replay/policy rules | user sessions or UI |
 | Wallet | spending keys, transaction approval | Zerant identity/credential portfolio |
@@ -117,7 +123,9 @@ value or issuer differs. Denial requires no preview and emits no proof. Preview
 does not reserve consent, persist another credential copy, or grant the verifier
 access. A changed request or available credential requires another holder review.
 
-### Explicit Noir connection gesture (updated 2026-10-06)
+### Legacy injected-wallet connection research (not current product UI)
+
+The following behavior documents retained adapter research and regression coverage from the earlier browser-wallet prototype. The current product does not expose this chooser, does not require Noir, and does not use a browser-wallet connection for account access or the standard payment flow.
 
 The user-initiated Noir connection calls `zcash_requestAccounts` directly from the
 wallet selection action. The selector loads Zerant's configured Zcash chain before
@@ -167,15 +175,15 @@ Prepared records expire after 24 hours. The service lists only records owned by 
 
 Testnet observation remains a separate trust boundary. [Lightwalletd's named `GetTransaction`](https://github.com/zcash/lightwalletd/blob/master/frontend/service.go) returns a raw transaction; this alone cannot reveal the recipient and exact amount of a shielded output. [Zallet's `z_viewtransaction`](https://github.com/zcash/zallet/blob/main/book/src/zcashd/json_rpc.md) is a wallet view and can include decoded outputs plus mined status and confirmations, but Zerant currently has no recipient viewing authority for arbitrary holder-initiated payments. A future payment issuer or recipient must explicitly supply an authorized, narrowly scoped viewing/observation service, and Zerant must verify its exact named transaction against the immutable request digest before advancing state. Do not turn general network readiness or a raw transaction lookup into settlement evidence; no testnet confirmation job is scheduled until this boundary is implemented and tested.
 
-### Wallet connector discovery (2026-10-05)
+### Legacy connector registry (compatibility research)
 
-Browser wallet selection is a client-side registry of explicit, reviewed connectors. Detection only reads known provider entry points and never requests accounts, addresses, balances, history, or remote metadata. Identity methods are offered only for connectors that can sign the exact server-issued challenge in the verified profile, or can complete the existing ZecAuth handoff. The server remains authoritative for challenge creation, signature verification, session redemption, and account linking. Connector metadata and capability flags do not grant authority. The ZecAuth callback contains only the public challenge and callback URL; the initiating browser retains the HttpOnly attempt cookie, and account/session IDs never enter the handoff. No connector discovery state or wallet address is persisted by Zerant.
+The connector modules remain as reviewed compatibility research and regression coverage. They are not part of current product navigation. Passkeys are the product account-access path; ZIP-321 link/QR/exact-detail handoff is the product payment path.
 
-`zcash-connectors.ts` is the sole product-facing registry for sign-in, account linking, general connection, and payment. Its capability contract requires an implemented operation for every advertised capability. `zcash-connection.ts` stores only the selected connector, normalized transient account/session, network configuration, pairing URI, and connection status; it does not discover wallets. The shared selector opens from the Vault sign-in or workspace wallet action and filters the registry by the current purpose. ZecAuth and ZIP-321 are portable auth and payment routes, respectively, rather than wallet brands. WalletConnect is intentionally excluded from product discovery: its current Zcash namespace is mainnet-oriented and does not solve the hosted testnet flow. Zerant uses reviewed injected adapters when available and makes the exact canonical ZIP-321 request the fallback path for every compatible wallet. Payment routing preserves the full canonical ZIP-321 URI whenever a direct send cannot express every field. A direct shielded send requires an exact simple request to a shielded or Unified recipient and an adapter with that method. A transparent recipient requires a separately supported transparent method and explicit action; no shielded request is downgraded. Submitted transactions are not settlement evidence. These client changes do not alter subject binding, consent, storage, key lifecycle, revocation, replay handling, or retention.
+The retained connector modules implement explicit capability contracts and network-safety regression tests. They never make connector metadata authoritative: the Rust service still owns challenge creation, signature verification, session redemption, and account linking, and no connector discovery state or wallet address is persisted as Zerant identity.
 
-The signed-out Vault uses the identity purpose, so its wallet choices can actually complete Zerant sign-in. It does not restore a payment-wallet connection on mount; wallet discovery starts when the person opens the selector. The authenticated workspace exposes general wallet connection beside the existing payment-request review; its portable ZIP-321 choice points to that review rather than posing as account access. ZecAuth sign-in remains a separate server-issued challenge and wallet-app approval. These are UI routing decisions only: neither a payment-only connection nor a remote pairing becomes Zerant identity, and payment review continues to require an authenticated session.
+These modules are no longer a product-facing registry. The current signed-out Vault exposes passkey access only; the authenticated workspace exposes no persistent wallet connection state; and `/zcash/wallet` redirects to payment review. Existing ZecAuth or derived-wallet authentication records from earlier versions remain removable under the access-method safeguards, but new wallet pairing is not offered in current account or payment navigation.
 
-Nozy's developing extension has no verified stable derived-signature contract for Zerant, so no Nozy identity adapter is enabled. Noir's documented WalletConnect reference is not used by Zerant because it does not solve the hosted testnet path. ZIP-321 remains the exact portable payment request. A direct injected send is permitted only for a request fully represented by the adapter's parameters; a wallet-submitted transaction ID is not settlement. This connector change does not change credential subject binding, server storage, key lifecycle, revocation, replay handling, or retention. Existing ZecAuth five-minute expiry and one-day challenge cleanup remain in force.
+WalletConnect remains excluded from product discovery, and no specific injected wallet defines Zerant compatibility. ZIP-321 is the current portable payment boundary. Retaining compatibility tests does not change credential subject binding, server storage, key lifecycle, revocation, replay handling, consent, or retention.
 
 ### Zcash sign-in identity linking
 
@@ -189,13 +197,13 @@ The Zerant ID is an account handle for authentication and credential routing. It
 
 Zcash developer RPCs are used only behind the private service boundary for bounded readiness, capability discovery, and named-transaction observation. RPC success is not payment settlement, and RPC credentials never reach the browser. ZIP-321 payment URIs are part of the product now: Zerant validates an exact request and lets the holder open or copy the complete request in a compatible wallet. FROST/shared-control and PCZT are documented capability boundaries for a later organization treasury or shared approval workflow; no Zerant ID payment and no live FROST signer are claimed here.
 
-WalletConnect is not a supported product route. The hosted testnet product offers reviewed injected adapters when they work and a portable ZIP-321 handoff when they do not. This keeps payment authority with the wallet and lets development continue without making a fragile remote pairing protocol a prerequisite.
+WalletConnect is not a supported product route. The hosted testnet product uses the portable ZIP-321 handoff as its payment boundary. Retained adapter code is compatibility research, not a prerequisite or visible connection state.
 
 ### Wallet-independent testnet payment handoff (2026-10-06)
 
 The payment review presents its server-validated canonical ZIP-321 URI first. The holder can open it in an installed URI handler, copy it into a compatible testnet wallet, or scan a locally generated QR code. For a single exact-amount request without memo, label, message, or extra parameters, the page may also display and copy the validated recipient and exact decimal amount for a wallet that does not import ZIP-321. This manual route requires the holder to compare both fields in the wallet before approval; Zerant cannot enforce that another wallet sent the intended amount to the intended recipient. Complex requests never expose a reduced manual route because dropping a memo, second output, or required parameter changes the request. Every route keeps spending authority in the wallet. A transaction ID entered after external submission is account-bound submission metadata, not proof of settlement. No credential subject binding, consent, storage, issuer key lifecycle, revocation, replay, or retention contract changes.
 
-The normal payment page does not request browser wallet connection. It asks the server to classify the destination before creating a request so a Zerant ID, an invalid address, and a wrong-network address have distinct user-facing outcomes. The server still validates the address, amount, and canonical request for preparation and persistence; the client check is guidance, not an authorization boundary. A saved prepared record remains required before the payment handoff. The optional injected-wallet tools remain isolated on their explicit wallet route for supported account or wallet actions, outside the ordinary payment path.
+The normal payment page does not request browser wallet connection. It asks the server to classify the destination before creating a request so a Zerant ID, an invalid address, and a wrong-network address have distinct user-facing outcomes. The server still validates the address, amount, and canonical request for preparation and persistence; the client check is guidance, not an authorization boundary. A saved prepared record remains required before the payment handoff. No injected-wallet route is exposed in current product navigation; `/zcash/wallet` redirects to `/zcash/payments`.
 
 ### Zcash sign-in identity removal
 
@@ -366,13 +374,11 @@ extracted transactions against their original proposals. Shared control delegate
 approval verification to reviewed external tooling. Native HTTP remains read-only;
 discovery alone never authorizes spending. FROST is an interface, not live signing.
 
-### Browser Zcash wallet capability routing
+### Legacy browser capability routing research
 
-The browser discovers reviewed injected providers through explicit detector functions. It also offers a ZecAuth authentication handoff and canonical ZIP-321 payment handoff without a live wallet session. WalletConnect is intentionally excluded from product discovery; a configured project ID cannot enable it. Connection and restoration never query balances or history. There is no universal Zcash dApp discovery standard, so only registered providers appear as installed wallets. A wallet without a compatible browser interface can still use the exact ZIP-321 URI handoff.
+The repository retains detector, adapter, restoration, and direct-payment tests from the earlier browser-wallet prototype. They remain useful for interoperability research and regression coverage, but current product navigation does not expose provider discovery, connection state, or direct browser-wallet execution.
 
-Connection state is transient browser state and contains only selected connector, capability flags, connection status and minimal account metadata. Addresses from a wallet response are never sent to Zerant authentication endpoints or treated as account identity. Only an adapter advertising safe derived identity signing may use the existing server challenge and verification flow. ZecAuth uses its existing, separate server-controlled handoff. A payment-only connection does not create a Zerant session; passkeys remain an independent account method. Disconnect ends the selected wallet session where the provider supports it and clears browser connection state; it does not revoke a Zerant account session.
-
-A connector may submit a direct payment only for a single exact amount with no memo, label, message or extra ZIP-321 parameters, and only in the explicitly advertised funding mode matching the recipient address class. Transparent payment requires a separate user action and may reveal sender/recipient/amount on chain. Every validated request retains its canonical ZIP-321 URI for portable handoff. Wallet submission is not settlement verification. This browser routing introduces no new credential trust, revocation, replay or retention contract; the existing backend identity and payment verification boundaries remain authoritative.
+Passkeys provide current Zerant account access. Every validated payment retains its canonical ZIP-321 URI for external handoff; simple requests may also expose exact manual details after server validation. WalletConnect remains excluded from product discovery. External wallet submission is not settlement verification, and none of the retained compatibility code changes credential trust, consent, revocation, replay, or retention boundaries.
 
 ### Vault key-provider boundary
 

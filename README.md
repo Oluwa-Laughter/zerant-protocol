@@ -4,7 +4,7 @@
 
 Zerant is a trust and credential layer for applications in the Zcash ecosystem. An organization issues a signed statement to a person's private Zerant vault. Another organization can request one specific fact, and the holder decides whether to disclose it. Zcash payments are a separate action: Zerant prepares and tracks a request, while a wallet keeps the spending keys and asks for its own approval.
 
-Zerant is running on **Zcash testnet**. A Zerant ID (`zr_…`) is an account identifier, not a payment address or a record of wallet activity. A passkey is sufficient to use credentials; connecting a wallet is optional until the user chooses a wallet action.
+Zerant is running on **Zcash testnet**. A Zerant ID (`zr_…`) is an account identifier, not a payment address or a record of wallet activity. A passkey opens the trust workspace. Payment requests leave Zerant as reviewed ZIP-321 data for approval in an external wallet.
 
 ## How it works
 
@@ -26,8 +26,9 @@ Payments follow a different authority path:
 flowchart LR
     A[Zerant account] --> P[Validate recipient, exact amount<br/>and Zcash network]
     P --> R[Review ZIP-321 request]
-    R --> W[Compatible wallet approves and submits]
-    W -->|Transaction ID| S[Saved as submitted]
+    R --> H[Open link, scan QR or copy exact details]
+    H --> W[External testnet wallet approves and submits]
+    W -->|Transaction ID entered by user| S[Saved as submitted]
     S --> N[Bounded network observation]
     N --> Q[Pending exact settlement verification]
 ```
@@ -42,7 +43,6 @@ For organization payouts, a holder can separately share a **temporary private pa
 flowchart TB
     subgraph Browser[Browser]
         UI[Next.js product and consent UI]
-        Wallet[Optional Zcash wallet]
     end
     subgraph Zerant[Zerant service boundary]
         Proxy[Next.js server proxy routes]
@@ -51,6 +51,7 @@ flowchart TB
         DB[(PostgreSQL / Neon)]
     end
     Chain[Zcash testnet services]
+    Wallet[External Zcash wallet]
     Verifier[Verifier integration]
 
     UI -->|Same-origin requests| Proxy
@@ -59,11 +60,37 @@ flowchart TB
     API --> DB
     API -->|Bounded network queries| Chain
     API -->|Approved result and signed webhook| Verifier
-    UI -->|Explicit connection or payment approval| Wallet
-    Wallet -->|Signature or submitted txid| UI
+    UI -->|Reviewed ZIP-321 link, QR or exact details| Wallet
+    Wallet -->|User approves payment externally| Chain
+    Wallet -->|Optional submitted txid entered by user| UI
 ```
 
-The browser holds transient wallet connection state. The private service owns sessions, authorization, encrypted credential records, issuer and verifier workflows, payment records, and proof validation. The Zcash integration crate owns Zcash parsing and observation boundaries. Neither the browser nor the wallet becomes a general credential authority.
+The private service owns sessions, authorization, encrypted credential records, issuer and verifier workflows, payment records, and proof validation. The Zcash integration crate owns address, ZIP-321 and bounded observation rules. The external wallet keeps spending keys and payment approval. Zerant never equates payment authority with account access.
+
+## Product walkthrough
+
+Real production states from the current testnet workflow:
+
+<table>
+<tr>
+<td width="50%"><img src="docs/assets/screenshots/05-vault.png" alt="Zerant private credential vault" /></td>
+<td width="50%"><img src="docs/assets/screenshots/06-holder-consent.png" alt="Zerant holder consent review" /></td>
+</tr>
+<tr>
+<td><strong>Private vault</strong><br/>A Zerant ID receives trust credentials without becoming a payment address.</td>
+<td><strong>Exact consent</strong><br/>The holder sees who is asking, why, and the single claim that can leave the vault.</td>
+</tr>
+<tr>
+<td><img src="docs/assets/screenshots/07-verifier-result.png" alt="Zerant bounded verifier result" /></td>
+<td><img src="docs/assets/screenshots/10-payment-review.png" alt="Zerant Zcash payment review" /></td>
+</tr>
+<tr>
+<td><strong>Bounded verifier result</strong><br/>The verifier receives the approved fact, not the holder's full credential or wallet history.</td>
+<td><strong>Zcash payment handoff</strong><br/>Zerant validates and reviews the exact request before external-wallet approval.</td>
+</tr>
+</table>
+
+The complete screenshot and demo sequence is documented in [docs/DEMO.md](docs/DEMO.md).
 
 ### Repository layout
 
@@ -80,13 +107,11 @@ fixtures/                Shared protocol fixtures
 scripts/                 Validation and operational helpers
 ```
 
-The main workspace routes are `/app`, `/vault`, `/requests`, `/activity`, `/zcash`, `/issuer`, `/verifier`, and `/account`. Long operational areas use direct routes: `/zcash/payments`, `/zcash/invoices`, `/zcash/payouts`, `/zcash/wallet`, `/zcash/address`; `/issuer/team`, `/issuer/schemas`, `/issuer/issue`, `/issuer/payouts`, `/issuer/security`, `/issuer/activity`; and `/verifier/requests`, `/verifier/integrations`, `/verifier/security`. `/issuers` is the public issuer directory; `/pay/[id]` displays a bounded public invoice request. A public invoice does not identify its owner or certify payment.
+The main workspace routes are `/app`, `/vault`, `/requests`, `/activity`, `/zcash`, `/issuer`, `/verifier`, and `/account`. Long operational areas use direct routes: `/zcash/payments`, `/zcash/invoices`, `/zcash/payouts`, `/zcash/address`; `/issuer/team`, `/issuer/schemas`, `/issuer/issue`, `/issuer/payouts`, `/issuer/security`, `/issuer/activity`; and `/verifier/requests`, `/verifier/integrations`, `/verifier/security`. The old `/zcash/wallet` link redirects to payment review. `/issuers` is the public issuer directory; `/pay/[id]` displays a bounded public invoice request. A public invoice does not identify its owner or certify payment.
 
-## Wallet access on testnet
+## Wallet handoff on testnet
 
-Noir Wallet has separate mainnet and testnet extension builds. Zerant can detect an installed Noir provider without receiving account authorization. Selecting it explicitly calls Noir's interactive connection method; Zerant accepts a returned account only if its addresses match the configured testnet. A detected mainnet extension cannot be switched into testnet by Zerant. The [Noir developer guide](https://docs.zknoir.com/developers/) explains how to obtain the official testnet build.
-
-Wallet connection does not sign in to Zerant, approve a proof, or authorize spending. Wallet sign-in uses a separate challenge and signature when supported. A ZEC payment requires separate wallet approval. A validated ZIP-321 request can also be handed to a compatible testnet wallet without a live browser connection. Zerant never requests a seed phrase, spending key, wallet balance, or transaction history for identity.
+Sign in with a passkey. For a Zcash payment, Zerant validates the network, recipient and exact amount, then shows the complete ZIP-321 request as a link and QR code. Open it in a compatible **testnet** wallet, or copy the exact details for a simple payment. The wallet approves and submits the transaction outside Zerant. No browser-wallet connection is part of the normal product flow. Zerant never requests a seed phrase, spending key, wallet balance, or transaction history for identity.
 
 ### What the Zcash building blocks mean
 
@@ -98,7 +123,7 @@ Wallet connection does not sign in to Zerant, approve a proof, or authorize spen
 | FROST | Future shared approval for an organization or treasury | Not a live Zerant signing product; no shares are stored in the credential vault |
 | Account abstraction | A possible future wallet product, not an identity shortcut | Zerant IDs do not control funds; making them spend would require an explicit custodial or smart-wallet design |
 
-Zerant does not depend on WalletConnect. Direct browser adapters are optional. The reliable fallback is to review the request in Zerant and open or copy its ZIP-321 URI in a compatible Zcash testnet wallet.
+Zerant does not depend on WalletConnect or Noir. Historical adapters remain isolated in source for compatibility research; the product path is the reviewed ZIP-321 handoff.
 
 ## Run and verify
 
@@ -119,7 +144,7 @@ cargo test --workspace
 python3 scripts/secret-check.py
 ```
 
-For a browser-level wallet regression check, run `node scripts/browser-wallet-smoke.mjs https://zerant.vercel.app`. It launches an isolated browser with a simulated Noir provider to verify passive discovery, one interactive request, rejection handling, and wrong-network rejection. It does not replace an approval test with the real Testnet Noir extension.
+The browser adapter regression script remains in `scripts/browser-wallet-smoke.mjs` for historical compatibility checks; it is separate from the current payment flow.
 
 The deployed web app reaches the Rust backend through private Vercel service binding and same-origin `/api/zerant/*` routes. Do not put database, RPC, or key configuration in `NEXT_PUBLIC_*`. The health endpoint is `/api/zerant/health`.
 
