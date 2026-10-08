@@ -11251,15 +11251,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => return Err(ApiError::Unavailable.to_string().into()),
     };
     let db = Pool::builder(manager).max_size(20).build()?;
+    let args: Vec<String> = env::args().collect();
+    if args.len() > 1 && args[1] != "vault-rotation" {
+        return Err(ApiError::Invalid.to_string().into());
+    }
+
+    // Vercel checks that the process has bound PORT before it routes traffic.
+    // A cold database connection or migration advisory lock can take longer
+    // than its port-startup timeout. Bind first, but DO NOT accept requests
+    // until schema migrations and all startup validation have succeeded.
+    // Standalone vault rotation never binds a service port.
+    let listener = if args.len() == 1 {
+        let port = env::var("PORT")
+            .ok()
+            .and_then(|value| value.parse::<u16>().ok())
+            .unwrap_or(8080);
+        let bind_ip: IpAddr = env::var("ZERANT_BIND_ADDR")
+            .unwrap_or_else(|_| "127.0.0.1".into())
+            .parse()?;
+        let address = SocketAddr::new(bind_ip, port);
+        let socket = tokio::net::TcpListener::bind(address).await?;
+        info!(%address, "zerant api socket bound; awaiting schema readiness");
+        Some(socket)
+    } else {
+        None
+    };
+
     run_migrations(&db)
         .await
         .map_err(|error| error.to_string())?;
 
-    let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
-        if args[1] != "vault-rotation" {
-            return Err(ApiError::Invalid.to_string().into());
-        }
         vault_rotation::run(&db, &args[1..])
             .await
             .map_err(|error| error.to_string())?;
@@ -11299,16 +11321,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         allowed_scopes,
     };
 
-    let port = env::var("PORT")
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(8080);
-    let bind_ip: IpAddr = env::var("ZERANT_BIND_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1".into())
-        .parse()?;
-    let address = SocketAddr::new(bind_ip, port);
-    let listener = tokio::net::TcpListener::bind(address).await?;
-    info!(%address, "zerant api listening");
+    let listener = listener.ok_or(ApiError::Unavailable)?;
+    info!("zerant api schema ready; accepting requests");
     axum::serve(listener, app(state))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
@@ -11318,6 +11332,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn service_binds_before_database_migrations_but_never_serves_early() {
+        let source = include_str!("main.rs");
+        let main = source.split("#[tokio::main]").nth(1).unwrap();
+        let bind = main.find("TcpListener::bind").unwrap();
+        let migrations = main.find("run_migrations(&db)").unwrap();
+        let serve = main.find("axum::serve").unwrap();
+        assert!(bind < migrations, "open PORT before Neon/migration delays");
+        assert!(
+            migrations < serve,
+            "never accept API requests before schema readiness"
+        );
+        assert!(
+            main.contains("if args.len() == 1"),
+            "vault rotation must not bind a server port"
+        );
+    }
 
     #[test]
     fn new_passkey_registration_requires_discoverable_credential() {

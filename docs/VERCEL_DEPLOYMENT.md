@@ -18,7 +18,7 @@ Set the Framework Preset to **Services**. The root `vercel.json` declares both s
 
 Install **Neon** from the Vercel Marketplace and connect it to this project. The integration provides `DATABASE_URL` to the deployment.
 
-The backend uses TLS by default and runs the Zerant schema migrations at startup under a PostgreSQL advisory lock so concurrent cold starts cannot race migrations.
+The backend uses TLS by default and runs the Zerant schema migrations at startup under a PostgreSQL advisory lock so concurrent cold starts cannot race migrations. **Vercel service startup first binds the configured `PORT`, but does not accept HTTP requests until migrations and initialization succeed.** This prevents slow Neon connections or a migration-lock wait from causing the platform's TCP port-startup timeout while preserving the fail-closed schema-readiness boundary. The standalone `vault-rotation` CLI never binds the service port.
 
 ## Required project environment variables
 
