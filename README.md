@@ -90,7 +90,7 @@ Real production states from the current testnet workflow:
 </tr>
 </table>
 
-**Watch the [36-second Zerant visual preview](docs/assets/demo/zerant-demo-preview.mp4).** It uses real production browser states, with illustrative cursor/camera transitions; it is a silent product overview, not a continuous wallet-transaction recording or proof of settlement. The full three-minute interactive demo script and screenshot sequence are in [docs/DEMO.md](docs/DEMO.md).
+**Watch the [full 2:57 narrated Zerant walkthrough](docs/assets/demo/zerant-demo-full.mp4)**, or the [36-second silent visual preview](docs/assets/demo/zerant-demo-preview.mp4). Both use real production browser captures with illustrative cursor and camera transitions; the full version includes synthesized narration and subtitles. Neither is a continuous wallet-transaction recording or proof of settlement. See [docs/DEMO.md](docs/DEMO.md) for the interactive demo script.
 
 ### Repository layout
 

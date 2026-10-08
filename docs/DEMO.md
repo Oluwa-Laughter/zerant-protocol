@@ -2,7 +2,7 @@
 
 This runbook is for the hackathon submission, screenshots, and recorded demo. It is intentionally short and uses only flows that are implemented in the current product.
 
-The current [public walkthrough](assets/demo-public-walkthrough.mp4) is a short recording of the landing page and signed-out product routes. The final demo must add the real authenticated credential, holder consent, verifier result, private payout, and reviewed Zcash handoff shown below. The core story does not require a browser-wallet connection.
+The [full 2:57 narrated walkthrough](assets/demo/zerant-demo-full.mp4) and [36-second silent preview](assets/demo/zerant-demo-preview.mp4) use real captured states from the authenticated Vault, holder consent, verified result, private payout, organization inbox, and prepared Zcash payment review. The longer edit has synthesized narration and subtitles. Camera and cursor movements are illustrative, not a continuous live transaction recording or proof of payment settlement. The interactive recording plan is documented below; the core story does not require a browser-wallet connection.
 
 ## Demo goal
 
@@ -127,7 +127,7 @@ The repository already contains four clean submission visuals captured from the 
 - `docs/assets/screenshots/03-architecture.png` — system architecture and trust boundaries;
 - `docs/assets/screenshots/04-flow.png` — end-to-end credential, consent, verifier, and optional payment flow.
 
-For the final demo package, add the following authenticated/manual frames from the real browser session. These should not be fabricated from seeded data.
+The following authenticated frames have been captured from real browser sessions and are in the repository. Recheck them after significant visual changes; never fabricate credential, approval, or payment states.
 
 ### 05 — Vault
 

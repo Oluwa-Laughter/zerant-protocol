@@ -1,0 +1,127 @@
+1
+00:00:00,093 --> 00:00:05,285
+Meet Zerant, a privacy-preserving trust layer for applications built around Zcash.
+
+2
+00:00:05,238 --> 00:00:11,999
+Too often, an app asks people to hand over their full identity or wallet activity when it only needs one reliable fact.
+
+3
+00:00:11,999 --> 00:00:19,132
+Zerant takes a different approach: issue a trusted credential, request a specific claim, and let the holder decide what to share.
+
+4
+00:00:19,623 --> 00:00:22,609
+The holder signs into Zerant with a passkey.
+
+5
+00:00:22,563 --> 00:00:25,104
+No wallet connection is required.
+
+6
+00:00:25,104 --> 00:00:31,002
+Inside the private vault, Privacy Builders Collective has issued a Contributor Eligibility credential.
+
+7
+00:00:31,002 --> 00:00:35,521
+The holder can see that they are eligible without publishing their credential history.
+
+8
+00:00:35,521 --> 00:00:40,772
+Their Zerant ID is for trust and account access, not a Zcash payment address.
+
+9
+00:00:41,253 --> 00:00:46,528
+Now Privacy Builders Rewards Portal requests one narrow fact: Contributor Eligibility.
+
+10
+00:00:46,482 --> 00:00:54,070
+Before any disclosure, the holder can review the requester, the exact purpose, the credential issuer, and the single claim value.
+
+11
+00:00:54,070 --> 00:00:57,390
+The review clearly explains what remains private.
+
+12
+00:00:57,390 --> 00:01:01,682
+The holder may deny the request or explicitly approve this one result.
+
+13
+00:01:01,682 --> 00:01:04,211
+Approval is never automatic.
+
+14
+00:01:04,690 --> 00:01:09,570
+The verifier validates the approved proof and receives the bounded answer: Eligible.
+
+15
+00:01:09,524 --> 00:01:17,087
+It does not receive the holder's complete source credential, unrelated claims, wallet address, balance, or transaction history.
+
+16
+00:01:17,087 --> 00:01:26,090
+Zerant also checks the trust relationship, expiry, revocation, intended audience, and replay conditions before treating that result as verified.
+
+17
+00:01:26,565 --> 00:01:29,191
+Payment routing is a separate step.
+
+18
+00:01:29,144 --> 00:01:36,337
+The holder may share a temporary, shielded-capable Zcash testnet destination with a trusted organization for a stated payout purpose.
+
+19
+00:01:36,337 --> 00:01:42,798
+The address is encrypted, scoped to that one relationship, and it can be withdrawn or expires automatically.
+
+20
+00:01:42,798 --> 00:01:47,233
+It never becomes the holder's Zerant identity or a general verifier claim.
+
+21
+00:01:47,725 --> 00:01:56,969
+An authorized organization operator sees a private payout reference and purpose, not a reusable holder identifier or an exposed receive address in the general inbox.
+
+22
+00:01:56,922 --> 00:02:02,880
+When the operator chooses an amount, Zerant prepares a payment against that specific active payout record.
+
+23
+00:02:02,880 --> 00:02:06,692
+This does not move funds or give Zerant spending authority.
+
+24
+00:02:07,167 --> 00:02:16,027
+Zerant validates the network, recipient, and exact amount, then prepares a canonical ZIP three two one payment request with a reviewed link and QR code.
+
+25
+00:02:15,980 --> 00:02:21,039
+A compatible external Zcash wallet holds the spending keys and authorizes the transaction.
+
+26
+00:02:21,039 --> 00:02:28,136
+Preparing a request is not submitting a transaction, and a transaction ID alone is not proof that a shielded payment has settled.
+
+27
+00:02:28,618 --> 00:02:37,538
+The same trust and payment workflows remain accessible on smaller screens, with grouped navigation, a keyboard-accessible menu, and careful loading and error states.
+
+28
+00:02:37,491 --> 00:02:41,567
+The product keeps the identity and payment boundaries clear throughout.
+
+29
+00:02:42,054 --> 00:02:51,621
+From private credentials to selective proof, and from temporary payout routing to wallet handoff, Zerant keeps trust, consent, and spending authority separate.
+
+30
+00:02:51,575 --> 00:02:53,013
+Zerant.
+
+31
+00:02:53,013 --> 00:02:54,643
+Prove trust.
+
+32
+00:02:54,643 --> 00:02:56,465
+Preserve privacy.

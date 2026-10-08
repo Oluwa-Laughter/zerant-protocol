@@ -1,0 +1,51 @@
+{
+  "voice": "en-NG-AbeoNeural",
+  "disclosure": "Narration is synthesized. All product captures show real Zerant browser states; visual transitions are editorial, not a continuous transaction recording.",
+  "scenes": [
+    {
+      "key": "landing",
+      "title": "Zerant — Prove trust. Preserve privacy.",
+      "text": "Meet Zerant, a privacy-preserving trust layer for applications built around Zcash. Too often, an app asks people to hand over their full identity or wallet activity when it only needs one reliable fact. Zerant takes a different approach: issue a trusted credential, request a specific claim, and let the holder decide what to share."
+    },
+    {
+      "key": "vault",
+      "title": "A private credential vault",
+      "text": "The holder signs into Zerant with a passkey. No wallet connection is required. Inside the private vault, Privacy Builders Collective has issued a Contributor Eligibility credential. The holder can see that they are eligible without publishing their credential history. Their Zerant ID is for trust and account access, not a Zcash payment address."
+    },
+    {
+      "key": "consent",
+      "title": "Purpose-bound holder consent",
+      "text": "Now Privacy Builders Rewards Portal requests one narrow fact: Contributor Eligibility. Before any disclosure, the holder can review the requester, the exact purpose, the credential issuer, and the single claim value. The review clearly explains what remains private. The holder may deny the request or explicitly approve this one result. Approval is never automatic."
+    },
+    {
+      "key": "result",
+      "title": "Only the approved result",
+      "text": "The verifier validates the approved proof and receives the bounded answer: Eligible. It does not receive the holder's complete source credential, unrelated claims, wallet address, balance, or transaction history. Zerant also checks the trust relationship, expiry, revocation, intended audience, and replay conditions before treating that result as verified."
+    },
+    {
+      "key": "payout",
+      "title": "A separate private payout destination",
+      "text": "Payment routing is a separate step. The holder may share a temporary, shielded-capable Zcash testnet destination with a trusted organization for a stated payout purpose. The address is encrypted, scoped to that one relationship, and it can be withdrawn or expires automatically. It never becomes the holder's Zerant identity or a general verifier claim."
+    },
+    {
+      "key": "inbox",
+      "title": "Organization-scoped payout preparation",
+      "text": "An authorized organization operator sees a private payout reference and purpose, not a reusable holder identifier or an exposed receive address in the general inbox. When the operator chooses an amount, Zerant prepares a payment against that specific active payout record. This does not move funds or give Zerant spending authority."
+    },
+    {
+      "key": "review",
+      "title": "Review, then external wallet approval",
+      "text": "Zerant validates the network, recipient, and exact amount, then prepares a canonical ZIP three two one payment request with a reviewed link and QR code. A compatible external Zcash wallet holds the spending keys and authorizes the transaction. Preparing a request is not submitting a transaction, and a transaction ID alone is not proof that a shielded payment has settled."
+    },
+    {
+      "key": "mobile",
+      "title": "Responsive and accessible",
+      "text": "The same trust and payment workflows remain accessible on smaller screens, with grouped navigation, a keyboard-accessible menu, and careful loading and error states. The product keeps the identity and payment boundaries clear throughout."
+    },
+    {
+      "key": "landing",
+      "title": "Prove trust. Preserve privacy.",
+      "text": "From private credentials to selective proof, and from temporary payout routing to wallet handoff, Zerant keeps trust, consent, and spending authority separate. Zerant. Prove trust. Preserve privacy."
+    }
+  ]
+}
