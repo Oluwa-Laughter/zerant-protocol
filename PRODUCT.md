@@ -18,11 +18,11 @@ These examples reuse one protocol. New use cases should add reviewed schemas/pol
 
 ## Zcash boundary
 
-Zcash is an integration and settlement layer, not a generic identity field. The generic protocol does not require wallet addresses, balances or transactions.
+Zcash is Zerant's payment integration layer, not its account identity system. Credential issuance, holder consent, and verifier results do not require a wallet address, wallet balance, or transaction history.
 
-The current Zcash adapter is regtest-oriented and read-only: it discovers current Z3 RPC capabilities and projects minimal chain/wallet readiness. Payment sending is deliberately disabled until the current Zallet payment RPC contract is exercised end-to-end on official Z3 regtest. Zcash privacy properties do not automatically apply to Zerant credentials.
+The live product uses **Zcash testnet** to validate addresses and canonical ZIP-321 payment requests, prepare wallet handoffs, record submitted transaction identifiers, and observe bounded network status. A compatible external wallet approves any spend; Zerant does not hold spending keys. Payment preparation, submission, and independently proven shielded settlement are different states.
 
-FROST is an optional future organizational signing/custody capability for teams or issuer keys, not a requirement for holder flows.
+The Rust Zcash crate also retains bounded Z3/Zallet regtest research and capabilities. That work does not imply a live custom custody wallet, FROST signing, or exact recipient-side settlement proof.
 
 ## Success criteria
 

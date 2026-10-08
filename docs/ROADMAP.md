@@ -2,6 +2,8 @@
 
 The roadmap is intentionally staged so the product never claims privacy or protocol properties ahead of implementation.
 
+**Reading note:** The early M1 sections below describe historical implementation stages. For currently deployed features and explicit limitations, use [README.md](../README.md), [Architecture](ARCHITECTURE.md), and [Zcash integration](ZCASH-INTEGRATION.md).
+
 ## M1A — Visual and product shell
 **Status:** complete
 
@@ -11,7 +13,7 @@ The roadmap is intentionally staged so the product never claims privacy or proto
 - Consent review UI
 - Robust README and architecture documentation
 - Vercel-ready deployment
-- Static typed demo data only
+- Initial typed placeholder states (superseded by authenticated, server-backed workflows)
 
 No signing, secure vault, protocol verification, Zcash integration, ZK, or mainnet.
 
