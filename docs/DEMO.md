@@ -2,7 +2,7 @@
 
 This runbook is for the hackathon submission, screenshots, and recorded demo. It is intentionally short and uses only flows that are implemented in the current product.
 
-The [full 2:57 narrated walkthrough](assets/demo/zerant-demo-full.mp4) and [36-second silent preview](assets/demo/zerant-demo-preview.mp4) use real captured states from the authenticated Vault, holder consent, verified result, private payout, organization inbox, and prepared Zcash payment review. The longer edit has synthesized narration and subtitles. Camera and cursor movements are illustrative, not a continuous live transaction recording or proof of payment settlement. The interactive recording plan is documented below; the core story does not require a browser-wallet connection.
+The final walkthrough is a **3:20, caption-free, 1080p/30 fps** recording of real Chromium interactions with synthetic English narration. The local deliverable is `~/Videos/Zerant/zerant-demo-final.mp4`, with a shorter preview beside it. See [recording and verification instructions](assets/demo/README.md) and the [final narration](assets/demo/demo-final-narration.json). Native passkey approval is performed by the account owner before capture; no wallet transaction or settlement is simulated. The older committed video is a historical screenshot-based edit, not this final export.
 
 ## Demo goal
 

@@ -12,7 +12,7 @@ Use this file as the source of truth when completing the final hackathon project
 
 **Repository:** https://github.com/Oluwa-Laughter/zerant-protocol
 
-**Demo video:** [Zerant — Full narrated walkthrough (2:57)](https://github.com/Oluwa-Laughter/zerant-protocol/blob/main/docs/assets/demo/zerant-demo-full.mp4). The edit uses real production browser captures, synthetic narration, and illustrative transitions; it is not a continuous transaction recording. Verify the public link in a private/incognito browser before submitting.
+**Demo video:** the final caption-free, narrated 3:20 export is prepared locally at `~/Videos/Zerant/zerant-demo-final.mp4`. Upload it to the submission video host and verify the resulting public link in a private browser before submitting. The [older committed edit](https://github.com/Oluwa-Laughter/zerant-protocol/blob/main/docs/assets/demo/zerant-demo-full.mp4) is historical, not the final export. The final recording uses real browser interactions and synthetic narration; it does not show a settled transaction. See the [recording guide](assets/demo/README.md).
 
 ## One-sentence description
 

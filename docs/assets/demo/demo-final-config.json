@@ -1,0 +1,267 @@
+{
+  "origin": "https://zerant.vercel.app",
+  "scenes": [
+    {
+      "name": "intro",
+      "route": "/",
+      "expect": "Prove trust.",
+      "duration": 20,
+      "actions": [
+        {
+          "at": 10,
+          "kind": "scroll",
+          "delta": 230
+        },
+        {
+          "at": 16,
+          "kind": "scroll",
+          "delta": -230
+        }
+      ]
+    },
+    {
+      "name": "overview",
+      "route": "/app",
+      "expect": "Private trust for the Zcash ecosystem.",
+      "authenticated": true,
+      "duration": 25,
+      "actions": [
+        {
+          "at": 8,
+          "kind": "scroll",
+          "delta": 360
+        },
+        {
+          "at": 18,
+          "kind": "scroll",
+          "delta": 300
+        }
+      ]
+    },
+    {
+      "name": "vault",
+      "route": "/vault",
+      "expect": "Contributor Eligibility",
+      "authenticated": true,
+      "duration": 30,
+      "actions": [
+        {
+          "at": 5,
+          "kind": "scroll",
+          "delta": 300
+        },
+        {
+          "at": 18,
+          "kind": "scroll",
+          "delta": 250
+        }
+      ]
+    },
+    {
+      "name": "consent",
+      "route": "/requests",
+      "expect": "Review exact claim",
+      "authenticated": true,
+      "duration": 20,
+      "prepare": [
+        {
+          "kind": "focus",
+          "selector": "#holder-request-list"
+        }
+      ],
+      "actions": [
+        {
+          "at": 1,
+          "kind": "click",
+          "text": "Review exact claim"
+        },
+        {
+          "at": 2,
+          "kind": "wait",
+          "expression": "document.body.innerText.includes('This is the claim Zerant would share.')"
+        },
+        {
+          "at": 3,
+          "kind": "focus",
+          "selector": ".holder-proof-preview"
+        },
+        {
+          "at": 17,
+          "kind": "click",
+          "text": "Approve this claim"
+        },
+        {
+          "at": 18,
+          "kind": "wait",
+          "expression": "document.body.innerText.includes('Approved. The claim you reviewed')"
+        }
+      ]
+    },
+    {
+      "name": "result",
+      "route": "/verifier/requests",
+      "expect": "Privacy Builders Rewards Portal",
+      "authenticated": true,
+      "duration": 10,
+      "prepare": [
+        {
+          "kind": "click",
+          "text": "View narrow result"
+        },
+        {
+          "kind": "wait",
+          "expression": "document.querySelector('.verification-result-value strong')?.innerText==='Eligible'"
+        },
+        {
+          "kind": "focus",
+          "selector": ".verification-result-card"
+        }
+      ],
+      "actions": [
+        {
+          "at": 6,
+          "kind": "scroll",
+          "delta": 180
+        }
+      ]
+    },
+    {
+      "name": "payout",
+      "route": "/zcash/payouts",
+      "expect": "1 active payout destination",
+      "authenticated": true,
+      "duration": 15,
+      "prepare": [
+        {
+          "kind": "focus",
+          "selector": ".zcash-invoice-list"
+        }
+      ],
+      "actions": [
+        {
+          "at": 7,
+          "kind": "scroll",
+          "delta": -250
+        }
+      ]
+    },
+    {
+      "name": "payment",
+      "route": "/zcash/payments",
+      "expect": "Review payment",
+      "authenticated": true,
+      "duration": 15,
+      "prepare": [
+        {
+          "kind": "fill",
+          "selector": "#zcash-payment-recipient",
+          "valueFileEnv": "DEMO_RECIPIENT_FILE"
+        },
+        {
+          "kind": "fill",
+          "selector": "#zcash-payment-amount",
+          "value": "0.01"
+        },
+        {
+          "kind": "click",
+          "text": "Review payment"
+        },
+        {
+          "kind": "wait",
+          "expression": "document.querySelector('#reviewed-payment-link')!==null"
+        },
+        {
+          "kind": "focus",
+          "selector": ".zcash-privacy-review"
+        }
+      ],
+      "actions": [
+        {
+          "at": 4,
+          "kind": "click",
+          "text": "Copy payment link"
+        },
+        {
+          "at": 8,
+          "kind": "focus",
+          "selector": ".payment-portable-handoff"
+        }
+      ]
+    },
+    {
+      "name": "requests",
+      "route": "/verifier/requests",
+      "expect": "Privacy Builders Rewards Portal",
+      "authenticated": true,
+      "duration": 15,
+      "prepare": [
+        {
+          "kind": "focus",
+          "selector": "#verify-holder"
+        }
+      ],
+      "actions": [
+        {
+          "at": 6,
+          "kind": "scroll",
+          "delta": 300
+        }
+      ]
+    },
+    {
+      "name": "issuer",
+      "route": "/issuer",
+      "expect": "Privacy Builders Collective",
+      "authenticated": true,
+      "duration": 15,
+      "actions": [
+        {
+          "at": 5,
+          "kind": "scroll",
+          "delta": 280
+        },
+        {
+          "at": 11,
+          "kind": "scroll",
+          "delta": 230
+        }
+      ]
+    },
+    {
+      "name": "mobile",
+      "route": "/vault",
+      "expect": "Contributor Eligibility",
+      "authenticated": true,
+      "width": 390,
+      "duration": 20,
+      "actions": [
+        {
+          "at": 2,
+          "kind": "click",
+          "selector": "button[aria-label='Open navigation']"
+        },
+        {
+          "at": 9,
+          "kind": "click",
+          "selector": ".mobile-menu-heading button"
+        },
+        {
+          "at": 12,
+          "kind": "scroll",
+          "x": 340,
+          "y": 700,
+          "delta": 600
+        }
+      ],
+      "height": 844,
+      "captureScreenshots": true
+    },
+    {
+      "name": "closing",
+      "route": "/",
+      "expect": "Prove trust.",
+      "duration": 15,
+      "actions": []
+    }
+  ]
+}

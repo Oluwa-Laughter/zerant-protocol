@@ -90,7 +90,7 @@ Real production states from the current testnet workflow:
 </tr>
 </table>
 
-**Watch the [full 2:57 narrated Zerant walkthrough](docs/assets/demo/zerant-demo-full.mp4)**, or the [36-second silent visual preview](docs/assets/demo/zerant-demo-preview.mp4). Both use real production browser captures with illustrative cursor and camera transitions; the full version includes synthesized narration and subtitles. Neither is a continuous wallet-transaction recording or proof of settlement. See [docs/DEMO.md](docs/DEMO.md) for the interactive demo script.
+The final **3:20 Zerant walkthrough** records real production Chromium interactions, with slower synthetic narration, a small pointer, and no captions. The local video is `~/Videos/Zerant/zerant-demo-final.mp4`; large regenerated videos are kept outside Git. See the [recording guide](docs/assets/demo/README.md) for reproduction and verification, and [docs/DEMO.md](docs/DEMO.md) for the interactive product flow. The [older committed edit](docs/assets/demo/zerant-demo-full.mp4) remains a historical reference. Neither edit demonstrates payment settlement.
 
 ### Repository layout
 
