@@ -5,10 +5,13 @@
 use super::*;
 
 pub(super) async fn start(State(state): State<AppState>) -> Result<Response, ApiError> {
-    let (public_key, authentication) = state
+    let (mut public_key, authentication) = state
         .webauthn
         .start_discoverable_authentication()
         .map_err(|_| ApiError::Unavailable)?;
+    // This endpoint is launched from an explicit button, not conditional
+    // autofill on an input. Do not force conditional mediation here.
+    public_key.mediation = None;
     let authentication_state =
         serde_json::to_value(authentication).map_err(|_| ApiError::Unavailable)?;
     let (attempt, _) =

@@ -2509,6 +2509,24 @@ fn passkey_attempt_cookie(attempt: &str) -> String {
     )
 }
 
+/// webauthn-rs defaults to non-discoverable registration. New Zerant passkeys
+/// must be discoverable for the primary username-less sign-in button to work.
+/// This only changes browser registration options, not challenge verification.
+fn require_discoverable_passkey(
+    mut public_key: webauthn_rs::prelude::CreationChallengeResponse,
+) -> Result<webauthn_rs::prelude::CreationChallengeResponse, ApiError> {
+    let selection = public_key
+        .public_key
+        .authenticator_selection
+        .as_mut()
+        .ok_or(ApiError::Unavailable)?;
+    selection.resident_key = Some(
+        serde_json::from_value(serde_json::json!("required")).map_err(|_| ApiError::Unavailable)?,
+    );
+    selection.require_resident_key = true;
+    Ok(public_key)
+}
+
 async fn passkey_registration_start(State(state): State<AppState>) -> Result<Response, ApiError> {
     let account = Uuid::new_v4();
     let zerant_id = zerant_public_handle(account.as_bytes());
@@ -2516,6 +2534,7 @@ async fn passkey_registration_start(State(state): State<AppState>) -> Result<Res
         .webauthn
         .start_passkey_registration(account, &zerant_id, "Zerant account", None)
         .map_err(|_| ApiError::Unavailable)?;
+    let public_key = require_discoverable_passkey(public_key)?;
     let registration_state =
         serde_json::to_value(registration).map_err(|_| ApiError::Unavailable)?;
 
@@ -2880,6 +2899,7 @@ async fn account_passkey_registration_start(
         .webauthn
         .start_passkey_registration(account, &zerant_id, "Zerant account", exclude_credentials)
         .map_err(|_| ApiError::Unavailable)?;
+    let public_key = require_discoverable_passkey(public_key)?;
     let registration_state =
         serde_json::to_value(registration).map_err(|_| ApiError::Unavailable)?;
     let (attempt, _) =
@@ -11298,6 +11318,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_passkey_registration_requires_discoverable_credential() {
+        let origin = url::Url::parse("https://zerant.example").unwrap();
+        let webauthn = WebauthnBuilder::new("zerant.example", &origin)
+            .unwrap()
+            .rp_name("Zerant")
+            .build()
+            .unwrap();
+        let (challenge, _) = webauthn
+            .start_passkey_registration(Uuid::new_v4(), "zr_test", "Zerant account", None)
+            .unwrap();
+        let challenge = require_discoverable_passkey(challenge).unwrap();
+        let selection = serde_json::to_value(challenge).unwrap();
+        assert_eq!(
+            selection["publicKey"]["authenticatorSelection"]["residentKey"],
+            "required"
+        );
+        assert_eq!(
+            selection["publicKey"]["authenticatorSelection"]["requireResidentKey"],
+            true
+        );
+    }
 
     #[tokio::test]
     async fn applied_migrations_are_not_replayed_after_new_audit_events() {

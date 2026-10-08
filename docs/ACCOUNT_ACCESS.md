@@ -8,7 +8,7 @@ Zerant separates **account access** from credentials, reputation, and Zcash paym
 
 A user can create a Zerant account with a passkey, sign back in with that passkey, or attach additional passkeys to an existing authenticated account.
 
-The primary sign-in action lets the device offer a discoverable Zerant passkey without typing a Zerant ID. Some authenticators do not provide a discoverable credential; the existing Zerant-ID sign-in remains available under the fallback control. Zerant never treats a device-supplied account handle as authenticated by itself: the service retrieves that account's exact stored credential and validates the WebAuthn assertion before issuing a session.
+New Zerant account and additional-passkey registrations explicitly request a **resident/discoverable** credential (`residentKey: required`), rather than accepting the WebAuthn library's default non-discoverable request. This enables the primary **Continue with passkey** action to discover the credential without first typing a Zerant ID. The button uses an explicit modal authenticator ceremony, not conditional autofill. Earlier credentials registered without discoverability—and authenticator/browser combinations that cannot provide one—still use **Zerant ID + passkey** as the supported fallback. A device-supplied account handle is never trusted by itself: the service retrieves that account's exact stored credential and verifies the one-time challenge, signature, origin and relying party before issuing a session.
 
 Passkey challenges are:
 
