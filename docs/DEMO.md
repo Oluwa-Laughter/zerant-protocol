@@ -177,6 +177,8 @@ Filename:
 
 `docs/assets/screenshots/10-payment-review.png`
 
+An additional crop of the real production prepared-payment card is available at `docs/assets/screenshots/10a-prepared-payment.png`. It shows a 0.01 ZEC testnet request in **PREPARED** status, not a submitted or settled payment.
+
 ### 11 — Mobile workspace navigation
 
 Capture the 390px workspace drawer with the grouped workspace, organization, account, and landing-page navigation. Prefer an authenticated production session for the final frame.

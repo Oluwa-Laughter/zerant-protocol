@@ -82,11 +82,11 @@ Real production states from the current testnet workflow:
 </tr>
 <tr>
 <td><img src="docs/assets/screenshots/07-verifier-result.png" alt="Zerant bounded verifier result" /></td>
-<td><img src="docs/assets/screenshots/10-payment-review.png" alt="Zerant Zcash payment review" /></td>
+<td><img src="docs/assets/screenshots/10a-prepared-payment.png" alt="Zerant prepared 0.01 ZEC payment, pending external wallet approval" /></td>
 </tr>
 <tr>
 <td><strong>Bounded verifier result</strong><br/>The verifier receives the approved fact, not the holder's full credential or wallet history.</td>
-<td><strong>Zcash payment handoff</strong><br/>Zerant validates and reviews the exact request before external-wallet approval.</td>
+<td><strong>Zcash payment handoff</strong><br/>A real testnet request is marked <em>prepared</em>—not submitted or settled—before external-wallet approval.</td>
 </tr>
 </table>
 
