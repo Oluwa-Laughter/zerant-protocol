@@ -32,6 +32,10 @@ test("workspace renders server and Zcash boundaries without browser-local persis
   assert.equal(html.includes('id="zcash-wallet-actions"'), false);
   assert.ok(html.includes("Continue with passkey"));
   assert.ok(html.includes("Passkey sign-in required"));
+  assert.ok(html.includes("Network status available after sign-in."));
+  assert.ok(html.includes("No wallet connection is needed to access Zerant."));
+  assert.equal(html.includes("Zcash network connection unavailable."), false);
+  assert.equal(html.includes("Network unavailable"), false);
   assert.equal(html.includes("passkey or compatible wallet"), false);
 });
 

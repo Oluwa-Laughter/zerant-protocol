@@ -167,7 +167,9 @@ export function ProductWorkspace({
         <article className="workspace-card">
           <p className="eyebrow">Zcash testnet</p>
           <h2>
-            {zcashNetwork?.state === "ready"
+            {!authenticated
+              ? "Network status available after sign-in."
+              : zcashNetwork?.state === "ready"
               ? "Zcash network ready."
               : zcashNetwork?.state === "syncing"
                 ? "Zcash network syncing."
@@ -178,7 +180,9 @@ export function ProductWorkspace({
                     : "Zcash network connection unavailable."}
           </h2>
           <p className="muted">
-            {zcashNetwork?.state === "ready"
+            {!authenticated
+              ? "Sign in with your passkey to check network readiness. No wallet connection is needed to access Zerant."
+              : zcashNetwork?.state === "ready"
               ? "Zerant has a fresh network view for supported Zcash actions."
               : zcashNetwork?.state === "syncing"
                 ? "Zerant is catching up before network-dependent actions are enabled."
@@ -196,7 +200,9 @@ export function ProductWorkspace({
             }
           >
             <span />
-            {zcashNetwork?.state === "ready"
+            {!authenticated
+              ? "Sign in to check"
+              : zcashNetwork?.state === "ready"
               ? "Zcash ready"
               : zcashNetwork?.state === "syncing"
                 ? "Syncing"
