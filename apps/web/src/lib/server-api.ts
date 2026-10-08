@@ -2,6 +2,12 @@ import "server-only";
 import type { OperationalHealthSnapshot } from "@/lib/operational-health";
 
 const MAX_PROXY_BODY = 300_000;
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+
+async function proxyResponseBody(upstream: Response, method: string): Promise<ArrayBuffer | null> {
+  if (method === "HEAD" || NULL_BODY_STATUSES.has(upstream.status)) return null;
+  return upstream.arrayBuffer();
+}
 
 function backendOrigin(): string {
   const raw = process.env.ZERANT_API_ORIGIN;
@@ -60,7 +66,7 @@ export async function proxyToZerant(
     if (single) responseHeaders.append("set-cookie", single);
   }
 
-  return new Response(await upstream.arrayBuffer(), {
+  return new Response(await proxyResponseBody(upstream, method), {
     status: upstream.status,
     headers: responseHeaders,
   });
@@ -109,7 +115,7 @@ export async function proxyPublicToZerant(
     options?.cacheControl ?? cacheControl ?? "public, max-age=60, stale-while-revalidate=60",
   );
 
-  return new Response(await upstream.arrayBuffer(), {
+  return new Response(await proxyResponseBody(upstream, "GET"), {
     status: upstream.status,
     headers: responseHeaders,
   });
@@ -167,7 +173,7 @@ export async function proxyIntegrationToZerant(
   const upstreamType = upstream.headers.get("content-type");
   if (upstreamType) responseHeaders.set("content-type", upstreamType);
 
-  return new Response(await upstream.arrayBuffer(), {
+  return new Response(await proxyResponseBody(upstream, method), {
     status: upstream.status,
     headers: responseHeaders,
   });
