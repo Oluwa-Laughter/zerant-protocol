@@ -202,3 +202,32 @@ test("private payout activity does not expose a reusable holder identifier", () 
   assert.equal(html.includes("private-holder"), false);
   assert.equal(html.includes("zr_holder"), false);
 });
+
+test("issuer credential history labels expiry and provides search and status controls", () => {
+  const owner = { ...auditor, role: "owner" as const, owner: true };
+  const html = renderToStaticMarkup(<IssuerWorkspace
+    authenticated backendAvailable currentZerantId={owner.zerant_id}
+    initialProfile={profile}
+    initialIssued={[
+      { credential_id: "cred-expired", holder_zerant_id: "zr_111111111111111111111111", credential_schema_id: null,
+        claim_type: "membership", context: "community", issued_at: "2025-01-01T00:00:00Z",
+        expires_at: "2025-02-01T00:00:00Z", revoked: false },
+      { credential_id: "cred-active", holder_zerant_id: "zr_222222222222222222222222", credential_schema_id: null,
+        claim_type: "contributor", context: "community", issued_at: "2026-10-01T00:00:00Z",
+        expires_at: "2099-02-01T00:00:00Z", revoked: false },
+    ]}
+    initialSchemas={[]}
+    initialKeys={[]}
+    initialTeam={[owner]}
+    initialTeamInvitations={[]}
+    initialMyInvitations={[]}
+    initialActivity={{ items: [], next_cursor: null }}
+    activeSection="issue"
+  />);
+  assert.ok(html.includes("1 active · 1 expired · 0 revoked"));
+  assert.ok(html.includes("Find a credential"));
+  assert.ok(html.includes("Credential status"));
+  assert.ok(html.includes('value="expired"'));
+  assert.ok(html.includes('class="credential-status expired"'));
+  assert.ok(html.includes('href="/issuer/schemas"'));
+});

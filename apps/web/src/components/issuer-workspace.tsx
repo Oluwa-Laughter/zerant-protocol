@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { WorkspaceSectionNav } from "@/components/workspace-section-nav";
 import { IssuerPayoutInbox } from "@/components/issuer-payout-inbox";
+import { credentialState, filterIssuedCredentials, type CredentialFilter } from "@/lib/issuer-credentials";
 
 export type IssuerProfile = {
   display_name: string;
@@ -157,9 +158,11 @@ export function IssuerWorkspace({
   );
   const [activityLoading, setActivityLoading] = useState(false);
   const [inviteZerantId, setInviteZerantId] = useState("");
+  const [inviting, setInviting] = useState(false);
   const [inviteRole, setInviteRole] =
     useState<"admin" | "issuer" | "auditor">("issuer");
   const [displayName, setDisplayName] = useState("");
+  const [creatingOrganization, setCreatingOrganization] = useState(false);
   const [holderId, setHolderId] = useState("");
   const [issueReview, setIssueReview] = useState<CredentialIssueReview | null>(null);
   const [issuing, setIssuing] = useState(false);
@@ -167,6 +170,9 @@ export function IssuerWorkspace({
   const [schemaId, setSchemaId] = useState(initialSchemas.find((item) => item.active)?.id ?? "");
   const [value, setValue] = useState("");
   const [schemaName, setSchemaName] = useState("");
+  const [creatingSchema, setCreatingSchema] = useState(false);
+  const [issuedSearch, setIssuedSearch] = useState("");
+  const [issuedFilter, setIssuedFilter] = useState<CredentialFilter>("all");
   const [schemaDescription, setSchemaDescription] = useState("");
   const [schemaContext, setSchemaContext] = useState("");
   const [schemaExpiry, setSchemaExpiry] = useState("90");
@@ -180,6 +186,13 @@ export function IssuerWorkspace({
   const activeSchemas = useMemo(
     () => schemas.filter((item) => item.active),
     [schemas],
+  );
+
+  const effectiveSchemaId = activeSchemas.some((schema) => schema.id === schemaId)
+    ? schemaId : activeSchemas[0]?.id ?? "";
+  const visibleIssued = useMemo(
+    () => filterIssuedCredentials(issued, schemas, issuedSearch, issuedFilter),
+    [issued, schemas, issuedSearch, issuedFilter],
   );
 
   const currentMember = useMemo(
@@ -204,7 +217,8 @@ export function IssuerWorkspace({
     currentRole === "owner" || currentRole === "admin" || currentRole === "issuer";
 
   const revokedIssued = issued.filter((item) => item.revoked).length;
-  const activeIssued = issued.length - revokedIssued;
+  const expiredIssued = issued.filter((item) => credentialState(item) === "expired").length;
+  const activeIssued = issued.length - revokedIssued - expiredIssued;
 
   async function loadMoreActivity() {
     if (!activityCursor || activityLoading) return;
@@ -231,68 +245,77 @@ export function IssuerWorkspace({
   }
 
   async function activateIssuer() {
-    const response = await fetch("/api/zerant/issuer", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ display_name: displayName }),
-    });
-    if (!response.ok) {
-      if (response.status === 429) {
-        setStatus("You’re doing that too quickly. Try again in a minute.");
+    if (creatingOrganization || displayName.trim().length < 2) return;
+    setCreatingOrganization(true);
+    try {
+      const response = await fetch("/api/zerant/issuer", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ display_name: displayName.trim() }),
+      });
+      if (!response.ok) {
+        setStatus(response.status === 429
+          ? "You’re doing that too quickly. Try again in a minute."
+          : response.status === 409
+            ? "This account already has an issuer profile. Refresh your workspace."
+            : "Organization could not be created. Check the name and try again.");
         return;
       }
-      setStatus(
-        response.status === 409
-          ? "This account already has an issuer profile."
-          : "Issuer profile could not be created.",
-      );
-      return;
+      setProfile((await response.json()) as IssuerProfile);
+      setDisplayName("");
+      setStatus("Organization created. Start by defining a credential type.");
+    } catch {
+      setStatus("Could not confirm organization creation. Refresh before trying again.");
+    } finally {
+      setCreatingOrganization(false);
     }
-    setProfile((await response.json()) as IssuerProfile);
-    setDisplayName("");
-    setStatus("Issuer profile is active.");
   }
 
   async function inviteTeamMember() {
-    const response = await fetch("/api/zerant/issuer/team/invitations", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        zerant_id: inviteZerantId,
-        role: canInviteSuccessor ? "admin" : inviteRole,
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        setStatus("You’re doing that too quickly. Try again in a minute.");
-        return;
-      }
-      if (response.status === 403) {
-        setStatus("Your role cannot manage this team.");
-        return;
-      }
-      setStatus(
-        response.status === 404
-          ? "That Zerant ID could not be found."
-          : response.status === 409
-            ? "That person already belongs to an issuer organization."
-            : "Invitation could not be sent.",
-      );
+    if (inviting || !(canInviteTeam || canInviteSuccessor)) return;
+    const recipient = inviteZerantId.trim();
+    if (!/^zr_[0-9a-f]{24}$/.test(recipient)) {
+      setStatus("Enter a complete Zerant ID for the teammate you want to invite.");
       return;
     }
-
-    const invitation = (await response.json()) as IssuerInvitation;
-    setTeamInvitations((current) => [
-      invitation,
-      ...current.filter((item) => item.invited_zerant_id !== invitation.invited_zerant_id),
-    ]);
-    setInviteZerantId("");
-    setStatus(canInviteSuccessor
-      ? "Successor invitation sent. After they accept as admin, transfer ownership to them before deleting your personal account."
-      : "Invitation sent. The recipient must accept it from their Zerant account.");
+    setInviting(true);
+    try {
+      const response = await fetch("/api/zerant/issuer/team/invitations", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          zerant_id: recipient,
+          role: canInviteSuccessor ? "admin" : inviteRole,
+        }),
+      });
+      if (!response.ok) {
+        setStatus(response.status === 429
+          ? "You’re doing that too quickly. Try again in a minute."
+          : response.status === 403
+            ? "Your role cannot manage this team."
+            : response.status === 404
+              ? "That Zerant ID could not be found."
+              : response.status === 409
+                ? "That person already belongs to an issuer organization."
+                : "Invitation could not be sent.");
+        return;
+      }
+      const invitation = (await response.json()) as IssuerInvitation;
+      setTeamInvitations((current) => [
+        invitation,
+        ...current.filter((item) => item.invited_zerant_id !== invitation.invited_zerant_id),
+      ]);
+      setInviteZerantId("");
+      setStatus(canInviteSuccessor
+        ? "Successor invitation sent. After they accept as admin, transfer ownership to them before deleting your personal account."
+        : "Invitation sent. The recipient must accept it from their Zerant account.");
+    } catch {
+      setStatus("Could not confirm the invitation. Check pending invitations before retrying.");
+    } finally {
+      setInviting(false);
+    }
   }
 
   async function decideInvitation(id: string, decision: "accept" | "decline") {
@@ -397,45 +420,47 @@ export function IssuerWorkspace({
   }
 
   async function createCredentialType() {
+    if (creatingSchema || !canManageSchemas) return;
     const days = Number.parseInt(schemaExpiry, 10);
-    if (!Number.isInteger(days)) {
-      setStatus("Choose a valid credential lifetime.");
+    if (!Number.isInteger(days) || !schemaName.trim() || !schemaDescription.trim() || !schemaContext.trim()) {
+      setStatus("Complete the credential name, purpose, context and validity before continuing.");
       return;
     }
+    setCreatingSchema(true);
+    try {
+      const response = await fetch("/api/zerant/issuer/schemas", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          display_name: schemaName.trim(),
+          description: schemaDescription.trim(),
+          context: schemaContext.trim(),
+          default_expiry_days: days,
+        }),
+      });
 
-    const response = await fetch("/api/zerant/issuer/schemas", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        display_name: schemaName,
-        description: schemaDescription,
-        context: schemaContext,
-        default_expiry_days: days,
-      }),
-    });
-
-    if (!response.ok) {
-      if (response.status === 429) {
-        setStatus("You’re doing that too quickly. Try again in a minute.");
+      if (!response.ok) {
+        setStatus(response.status === 429
+          ? "You’re doing that too quickly. Try again in a minute."
+          : response.status === 409
+            ? "A credential type with the same name or meaning already exists."
+            : "Credential type could not be created. Check the details and try again.");
         return;
       }
-      setStatus(
-        response.status === 409
-          ? "A credential type with the same name or meaning already exists."
-          : "Credential type could not be created.",
-      );
-      return;
+      const created = (await response.json()) as CredentialSchema;
+      setSchemas((current) => [created, ...current]);
+      setSchemaId(created.id);
+      setSchemaName("");
+      setSchemaDescription("");
+      setSchemaContext("");
+      setSchemaExpiry("90");
+      setStatus("Credential type created. You can issue it immediately.");
+    } catch {
+      setStatus("Could not confirm creation. Check your credential types before trying again.");
+    } finally {
+      setCreatingSchema(false);
     }
-
-    const created = (await response.json()) as CredentialSchema;
-    setSchemas((current) => [created, ...current]);
-    setSchemaId(created.id);
-    setSchemaName("");
-    setSchemaDescription("");
-    setSchemaContext("");
-    setSchemaExpiry("90");
-    setStatus("Credential type created. You can issue it immediately.");
   }
 
   function beginCredentialTypeVersion(schema: CredentialSchema) {
@@ -596,7 +621,7 @@ export function IssuerWorkspace({
   function reviewCredentialIssue() {
     const recipient = holderId.trim();
     const claim = value.trim();
-    const schema = activeSchemas.find((item) => item.id === schemaId);
+    const schema = activeSchemas.find((item) => item.id === effectiveSchemaId);
     if (!/^zr_[0-9a-f]{24}$/.test(recipient)) {
       setStatus("Enter the recipient’s complete Zerant ID from their vault.");
       return;
@@ -754,9 +779,11 @@ export function IssuerWorkspace({
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
             placeholder="Your organization name"
+            maxLength={120}
+            disabled={creatingOrganization}
           />
-          <Button disabled={displayName.trim().length < 2} onClick={activateIssuer}>
-            Activate issuer profile
+          <Button disabled={creatingOrganization || displayName.trim().length < 2} onClick={activateIssuer}>
+            {creatingOrganization ? "Creating organization…" : "Activate issuer profile"}
           </Button>
           {myInvitations.length ? (
             <p className="small muted">
@@ -785,6 +812,13 @@ export function IssuerWorkspace({
           {issuerRetired ? "Retired" : currentRole ? currentRole.charAt(0).toUpperCase() + currentRole.slice(1) : "Issuer team"}
         </span>
       </section>
+
+      {status ? (
+        <div className="issuer-feedback" role="status" aria-live="polite">
+          <p>{status}</p>
+          <button type="button" onClick={() => setStatus("")} aria-label="Dismiss notification">Dismiss</button>
+        </div>
+      ) : null}
 
       {issuerRetired ? (
         <section className="issuer-retired-banner" aria-label="Retired issuer status">
@@ -916,13 +950,18 @@ export function IssuerWorkspace({
                 value={inviteZerantId}
                 onChange={(event) => setInviteZerantId(event.target.value)}
                 placeholder="zr_..."
+                maxLength={27}
+                aria-describedby="team-zerant-help"
+                disabled={inviting}
               />
+              <p id="team-zerant-help" className="small muted">The teammate must have a Zerant account and accept the invitation themselves.</p>
               <label htmlFor="team-role">Role</label>
               {canInviteSuccessor ? (
                 <div id="team-role" className="issuer-successor-role"><strong>Admin successor</strong><span>Required for retired-issuer ownership transfer.</span></div>
               ) : (
                 <select
                   id="team-role"
+                  disabled={inviting}
                   value={inviteRole}
                   onChange={(event) =>
                     setInviteRole(event.target.value as "admin" | "issuer" | "auditor")
@@ -934,10 +973,10 @@ export function IssuerWorkspace({
                 </select>
               )}
               <Button
-                disabled={!inviteZerantId.trim()}
+                disabled={inviting || !/^zr_[0-9a-f]{24}$/.test(inviteZerantId.trim())}
                 onClick={inviteTeamMember}
               >
-                {canInviteSuccessor ? "Invite successor" : "Send invitation"}
+                {inviting ? "Sending invitation…" : canInviteSuccessor ? "Invite successor" : "Send invitation"}
               </Button>
 
               {teamInvitations.length ? (
@@ -1039,7 +1078,7 @@ export function IssuerWorkspace({
             value={schemaName}
             onChange={(event) => setSchemaName(event.target.value)}
             placeholder="Membership, Program Completion, Contributor..."
-            disabled={!canManageSchemas}
+            disabled={!canManageSchemas || creatingSchema}
           />
 
           <label htmlFor="schema-description">What does it prove?</label>
@@ -1049,7 +1088,7 @@ export function IssuerWorkspace({
             onChange={(event) => setSchemaDescription(event.target.value)}
             rows={3}
             placeholder="Describe what a holder is entitled to prove with this credential."
-            disabled={!canManageSchemas}
+            disabled={!canManageSchemas || creatingSchema}
           />
 
           <label htmlFor="schema-context">Where does it apply?</label>
@@ -1058,7 +1097,7 @@ export function IssuerWorkspace({
             value={schemaContext}
             onChange={(event) => setSchemaContext(event.target.value)}
             placeholder="Community, program, marketplace or organization"
-            disabled={!canManageSchemas}
+            disabled={!canManageSchemas || creatingSchema}
           />
 
           <label htmlFor="schema-expiry">Default validity</label>
@@ -1066,7 +1105,7 @@ export function IssuerWorkspace({
             id="schema-expiry"
             value={schemaExpiry}
             onChange={(event) => setSchemaExpiry(event.target.value)}
-            disabled={!canManageSchemas}
+            disabled={!canManageSchemas || creatingSchema}
           >
             <option value="30">30 days</option>
             <option value="90">90 days</option>
@@ -1077,13 +1116,14 @@ export function IssuerWorkspace({
           <Button
             disabled={
               !canManageSchemas ||
+              creatingSchema ||
               !schemaName.trim() ||
               !schemaDescription.trim() ||
               !schemaContext.trim()
             }
             onClick={createCredentialType}
           >
-            Create credential type
+            {creatingSchema ? "Creating credential type…" : "Create credential type"}
           </Button>
         </article>
 
@@ -1276,7 +1316,7 @@ export function IssuerWorkspace({
           <label htmlFor="credential-type">Credential type</label>
           <select
             id="credential-type"
-            value={schemaId}
+            value={effectiveSchemaId}
             onChange={(event) => setSchemaId(event.target.value)}
             disabled={!canIssue || Boolean(issueReview)}
           >
@@ -1290,6 +1330,9 @@ export function IssuerWorkspace({
               <option value="">Create a credential type first</option>
             )}
           </select>
+          {!activeSchemas.length ? (
+            <p className="small muted">No active credential types yet. <Link href="/issuer/schemas" className="text-link">Define a credential type →</Link></p>
+          ) : null}
 
           <label htmlFor="claim-value">What are you attesting to?</label>
           <input
@@ -1297,8 +1340,12 @@ export function IssuerWorkspace({
             value={value}
             onChange={(event) => setValue(event.target.value)}
             placeholder="Active member, completed, maintainer..."
+            maxLength={512}
+            aria-describedby="claim-value-help"
             disabled={!canIssue || Boolean(issueReview)}
           />
+
+          <p id="claim-value-help" className="small muted">Keep the claim short and factual. {value.length}/512 characters.</p>
 
           {issueReview ? (
             <div className="credential-issue-review" aria-label="Review credential before issuing">
@@ -1318,21 +1365,43 @@ export function IssuerWorkspace({
             </div>
           ) : (
             <Button
-              disabled={!canIssue || !holderId.trim() || !schemaId || !value.trim()}
+              disabled={!canIssue || !holderId.trim() || !effectiveSchemaId || !value.trim() || value.trim().length > 512}
               onClick={reviewCredentialIssue}
             >
               Review credential
             </Button>
           )}
-          {status ? <p className="vault-status neutral" role="status">{status}</p> : null}
         </article>
 
         <article className="issuer-panel">
           <p className="eyebrow">Issued credentials</p>
           <h2>{issued.length} credential{issued.length === 1 ? "" : "s"} issued</h2>
+          <p className="small muted">{activeIssued} active · {expiredIssued} expired · {revokedIssued} revoked</p>
+          <div className="issued-history-filters" role="group" aria-label="Search and filter issued credentials">
+            <label htmlFor="issued-search">Find a credential</label>
+            <input
+              id="issued-search"
+              type="search"
+              value={issuedSearch}
+              onChange={(event) => setIssuedSearch(event.target.value)}
+              placeholder="Search recipient, credential or context"
+            />
+            <label htmlFor="issued-filter">Credential status</label>
+            <select
+              id="issued-filter"
+              value={issuedFilter}
+              onChange={(event) => setIssuedFilter(event.target.value as CredentialFilter)}
+            >
+              <option value="all">All credentials</option>
+              <option value="active">Active</option>
+              <option value="expired">Expired</option>
+              <option value="revoked">Revoked</option>
+            </select>
+            <p className="small muted" role="status" aria-live="polite">Showing {visibleIssued.length} of {issued.length} credentials</p>
+          </div>
           <div className="issued-list">
-            {issued.length ? (
-              issued.map((item) => {
+            {visibleIssued.length ? (
+              visibleIssued.map((item) => {
                 const schema = schemas.find((entry) => entry.id === item.credential_schema_id);
                 return (
                   <article className="issued-card" key={item.credential_id}>
@@ -1346,8 +1415,8 @@ export function IssuerWorkspace({
                       {new Date(item.expires_at).toLocaleDateString()}
                     </p>
                     <div className="issued-card-actions">
-                      <span className={item.revoked ? "credential-status revoked" : "credential-status active"}>
-                        {item.revoked ? "Revoked" : "Active"}
+                      <span className={"credential-status " + credentialState(item)}>
+                        {credentialState(item) === "revoked" ? "Revoked" : credentialState(item) === "expired" ? "Expired" : "Active"}
                       </span>
                       {!item.revoked && canIssue ? (
                         <Button
@@ -1362,7 +1431,9 @@ export function IssuerWorkspace({
                 );
               })
             ) : (
-              <p className="muted">No credentials have been issued from this profile yet.</p>
+              <p className="muted">{issued.length
+                ? "No credentials match these filters. Try another search or status."
+                : "No credentials have been issued from this profile yet."}</p>
             )}
           </div>
         </article>

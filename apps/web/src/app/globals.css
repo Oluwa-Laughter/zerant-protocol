@@ -393,3 +393,17 @@
 .payment-manual-field code{overflow-wrap:anywhere}
 .payment-direct-option{margin-top:20px}.payment-direct-option summary{cursor:pointer;font-weight:650}.payment-direct-option[open]{display:grid;gap:12px}
 @media(max-width:700px){.payment-portable-handoff{grid-template-columns:1fr}.payment-manual-field{align-items:stretch;flex-direction:column}.payment-manual-field .button{align-self:flex-start}}
+
+/* Issuer operations: visible feedback and usable credential history controls. */
+.issuer-feedback{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:24px 0;padding:14px 18px;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:12px;background:var(--card);color:var(--foreground)}
+.issuer-feedback p{margin:0;max-width:76ch;font-size:.88rem;line-height:1.55}
+.issuer-feedback button{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--background);color:var(--foreground);font:inherit;font-size:.78rem;cursor:pointer}
+.issuer-feedback button:hover{border-color:var(--accent)}
+.issuer-feedback button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.issued-history-filters{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin:10px 0 16px;padding:16px;border:1px solid var(--border);border-radius:11px;background:var(--soft)}
+.issued-history-filters label{margin:3px 0 0;font-size:.76rem;font-weight:700}
+.issued-history-filters input,.issued-history-filters select{min-width:0;width:100%;max-width:100%}
+.issued-history-filters p{margin:8px 0 0}
+.issuer-panel .issued-card{min-width:0}
+.issuer-panel .issued-card .mono{overflow-wrap:anywhere}
+.credential-status.expired{background:color-mix(in srgb,var(--warning) 12%,var(--card));color:var(--foreground);border:1px solid color-mix(in srgb,var(--warning) 36%,var(--border))}

@@ -29,7 +29,6 @@ export default function Home() {
     <main id="main">
       <section className="hero product-hero">
         <div className="hero-copy">
-          <p className="eyebrow"><span className="status-dot" /> Built for the Zcash ecosystem · Testnet</p>
           <h1>Prove trust.<br /><span>Preserve privacy.</span></h1>
           <p className="hero-description">
             Zerant connects private credentials and consent to Zcash payment workflows. Organizations issue specific claims; people decide what to prove and use their own wallets for Zcash payments.

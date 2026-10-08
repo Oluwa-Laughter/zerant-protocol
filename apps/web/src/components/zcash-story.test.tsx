@@ -5,7 +5,7 @@ import Home from "../app/page";
 
 test("landing page explains Zerant's Zcash role without claiming testnet settlement", () => {
   const html = renderToStaticMarkup(<Home />);
-  assert.ok(html.includes("Built for the Zcash ecosystem · Testnet"));
+  assert.equal(html.includes("Built for the Zcash ecosystem · Testnet"), false);
   assert.ok(html.includes("Zcash testnet handles payments"));
   assert.ok(html.includes("Zerant handles credentials, requests and consent"));
   assert.ok(html.includes("Submission is not settlement"));
