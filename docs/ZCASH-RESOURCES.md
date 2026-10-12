@@ -90,4 +90,4 @@ Any new integration must preserve the current rule: protocol and wallet authorit
 
 - ZIP-321 is the portable `zcash:` payment-request format used for full-request handoff.
 - ZecAuth is an emerging authentication-specific `zecauth:` handoff; support depends on the wallet.
-- The NoirWallet `zcash-wallet-adapter` documents the Zcash WalletConnect `bip122:00040fe8ec8471911baa1db1266ea15d` namespace and `zcash_getAddress`, `zcash_getBalance`, and `zcash_transfer` methods. Zerant uses the maintained `@walletconnect/sign-client` transport directly because the adapter package currently brings unrelated cross-chain dependencies. Zerant does not call `zcash_getBalance` for connection or authentication. WalletConnect support requires the remote wallet to implement the requested Zcash namespace and methods.
+- Use reviewed, Zcash-specific wallet interfaces for supported account actions; for payments the current product uses canonical ZIP-321 external-wallet handoff. Zerant does not query wallet balances/history for account access, and does not require a browser-wallet session.

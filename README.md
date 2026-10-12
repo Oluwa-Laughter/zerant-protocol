@@ -143,6 +143,12 @@ The frontend alone does not replace the private API and database. For a complete
 
 For the detail behind those boundaries: [Privacy](docs/PRIVACY.md) · [Threat model](docs/THREAT_MODEL.md) · [Security policy](SECURITY.md) · [Roadmap](docs/ROADMAP.md). The native protocol specifications are maintained under [`docs/specs/`](docs/specs/).
 
+## License and third-party acknowledgements
+
+**Copyright © 2026 Isaac Makinde. All rights reserved.** Original Zerant source, design and documentation are **proprietary**, with limited permission for expressly published API integration examples. See [LICENSE](LICENSE) for the terms; the repository's public visibility does not make it open source.
+
+Third-party dependencies retain their own terms, including license and attribution conditions that are **not** replaced by Zerant's proprietary license. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the [versioned pnpm/Cargo license inventory](third-party-licenses.txt). The inventory reflects dependency metadata, not a full distribution legal review.
+
 ## Links
 
 - **Live product:** https://zerant.vercel.app

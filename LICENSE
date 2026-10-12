@@ -1,0 +1,38 @@
+Copyright (c) 2026 Isaac Makinde. All rights reserved.
+
+Zerant Protocol, including its original source code, protocol implementation,
+user-interface designs, branding and documentation, is proprietary software
+except where a particular file or component states otherwise.
+
+No license to use, reproduce, modify, distribute, sublicense, commercialize,
+or create derivative works of Zerant's proprietary materials is granted by
+their publication in this repository. Any such permission requires a separate
+written agreement with the copyright holder, except as expressly provided
+below or otherwise permitted by applicable law.
+
+LIMITED PERMISSION FOR INTEGRATION EXAMPLES
+
+Code samples expressly presented as integration examples in Zerant's public
+API documentation and docs/examples/ may be copied, run, and adapted solely
+to build and maintain integrations with Zerant's documented interfaces.
+This limited permission does not extend to the Zerant application, backend,
+libraries, designs, trademarks, private services, or other proprietary code.
+Examples incorporating third-party material remain subject to that material's
+own license terms.
+
+THIRD-PARTY MATERIAL
+
+This license applies only to original material owned by the copyright holder.
+Third-party code, assets, binaries, and other materials retain their respective
+owners and license terms. Nothing in this document replaces, narrows, or grants
+additional rights under those third-party licenses.
+
+See THIRD_PARTY_NOTICES.md for important notices and distribution cautions,
+and third-party-licenses.txt for a versioned inventory derived from the locked
+JavaScript and Rust dependencies. The inventory is not a substitute for the
+original full license texts and notices supplied with those dependencies.
+
+No rights in the Zerant name, logo, or other trademarks are granted.
+
+THE PROPRIETARY SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTIES OF ANY
+KIND, TO THE EXTENT PERMITTED BY APPLICABLE LAW.

@@ -6,14 +6,12 @@ import type { ZcashChain, ZcashConnector } from "./zcash-connectors";
 
 export type ConnectionSnapshot = {
   activeChain: ZcashChain | null;
-  walletConnectProjectId: string;
   selected: ZcashConnector | null;
   adapter: ZcashWalletAdapter | null;
   account: ConnectedZcashWallet | null;
   status: "idle" | "connecting" | "connected";
-  displayUri: string | null;
 };
-const empty: ConnectionSnapshot = { activeChain: null, walletConnectProjectId: process.env.NEXT_PUBLIC_ZCASH_WALLETCONNECT_PROJECT_ID ?? "", selected: null, adapter: null, account: null, status: "idle", displayUri: null };
+const empty: ConnectionSnapshot = { activeChain: null, selected: null, adapter: null, account: null, status: "idle" };
 let snapshot = empty;
 let configLoading: Promise<ZcashChain> | null = null;
 let connectionCleanup: (() => void) | null = null;
@@ -45,12 +43,10 @@ export async function ensureZcashConfig(request: typeof fetch = fetch): Promise<
   try { return await configLoading; } finally { configLoading = null; }
 }
 
-export function setZcashDisplayUri(uri: string): void { update({ displayUri: uri }); }
-
 function clearConnectionState(): void {
   connectionCleanup?.();
   connectionCleanup = null;
-  update({ selected: null, adapter: null, account: null, status: "idle", displayUri: null });
+  update({ selected: null, adapter: null, account: null, status: "idle" });
 }
 
 async function refreshSelectedConnection(connector: ZcashConnector, chain: ZcashChain): Promise<void> {
@@ -115,7 +111,7 @@ export async function connectConnector(connector: ZcashConnector, chain: ZcashCh
   // this user-triggered approval request is open.
   connectionCleanup?.();
   connectionCleanup = null;
-  update({ selected: connector, adapter: connector.adapter, account: null, status: "connecting", displayUri: null });
+  update({ selected: connector, adapter: connector.adapter, account: null, status: "connecting" });
   try {
     const account = await connector.connect();
     try {
@@ -154,7 +150,7 @@ export async function disconnectZcash(): Promise<void> {
   connectionCleanup?.();
   connectionCleanup = null;
   try { await disconnect?.(); }
-  finally { update({ selected: null, adapter: null, account: null, status: "idle", displayUri: null }); }
+  finally { update({ selected: null, adapter: null, account: null, status: "idle" }); }
 }
 
 export async function resetConnectorAuthorization(

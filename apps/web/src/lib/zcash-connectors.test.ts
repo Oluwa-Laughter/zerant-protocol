@@ -7,7 +7,7 @@ import type { InjectedZcashWalletAdapter, ZecAuthWalletChallenge } from "./zcash
 function injected(id: string, identitySigning = true): ZcashConnector {
   return injectedConnector({
     id, name: id, capabilities: { identitySigning, shieldedPayment: false, transparentPayment: false,
-      paymentRequestHandoff: false, walletConnect: false, zecAuthHandoff: false, connectionRestore: true },
+      paymentRequestHandoff: false, zecAuthHandoff: false, connectionRestore: true },
     connect: async () => { throw new Error("not used"); },
     existingConnection: async () => null,
     ensureConnection: async () => { throw new Error("not used"); },
@@ -19,7 +19,7 @@ const testnet = "zcash:testnet";
 const mainnet = "zcash:mainnet";
 
 test("discovery orders detected sign-in wallets and deduplicates transports", () => {
-  const choices = discoverZcashConnectors("identity", testnet, "", [zecAuthConnector(), injected("noir"), injected("other"), injected("noir"), zip321Connector()]);
+  const choices = discoverZcashConnectors("identity", testnet, [zecAuthConnector(), injected("noir"), injected("other"), injected("noir"), zip321Connector()]);
   assert.deepEqual(choices.map((choice) => choice.id), ["noir:injected", "other:injected", "zecauth:portable"]);
 });
 
@@ -27,7 +27,7 @@ test("default sign-in discovery does not advertise draft portable ZecAuth", () =
   const prior = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: {} });
   try {
-    const choices = discoverZcashConnectors("identity", testnet, "");
+    const choices = discoverZcashConnectors("identity", testnet);
     assert.equal(choices.some((choice) => choice.id === "zecauth:portable"), false);
   } finally {
     if (prior) Object.defineProperty(globalThis, "window", prior);
@@ -35,11 +35,12 @@ test("default sign-in discovery does not advertise draft portable ZecAuth", () =
   }
 });
 
-test("WalletConnect is not offered by product discovery", () => {
-  for (const purpose of ["connection", "payment", "identity"] as const) {
-    assert.equal(discoverZcashConnectors(purpose, testnet, "project").some((choice) => choice.transport === "walletconnect"), false);
-    assert.equal(discoverZcashConnectors(purpose, mainnet, "").some((choice) => choice.transport === "walletconnect"), false);
-    assert.equal(discoverZcashConnectors(purpose, mainnet, "project").some((choice) => choice.transport === "walletconnect"), false);
+test("payment discovery retains the ZIP-321 handoff without a persistent wallet session", () => {
+  for (const chain of [testnet, mainnet] as const) {
+    const choices = discoverZcashConnectors("payment", chain, [zip321Connector()]);
+    assert.deepEqual(choices.map((choice) => choice.id), ["zip321:portable"]);
+    assert.equal(choices[0].openPaymentHandoff?.("zcash:utest1recipient?amount=1"), "zcash:utest1recipient?amount=1");
+    assert.throws(() => choices[0].openPaymentHandoff?.("https://example.com"), /canonical Zcash payment URI/);
   }
 });
 
@@ -47,7 +48,7 @@ test("identity refuses payment-only and invalid capability advertisements", () =
   assert.equal(supportsPurpose(zip321Connector(), "identity"), false);
   assert.equal(supportsPurpose(injected("payment", false), "identity"), false);
   const fake = { ...injected("fake"), signIdentityChallenge: undefined };
-  assert.deepEqual(discoverZcashConnectors("identity", testnet, "", [fake]), []);
+  assert.deepEqual(discoverZcashConnectors("identity", testnet, [fake]), []);
 });
 
 test("ZecAuth handoff excludes account and session identifiers", () => {

@@ -73,15 +73,13 @@ network and exact payment details visible to the user before approval.
 The Zcash payment workspace starts with payment review and exposes the complete validated
 ZIP-321 URI through an open, QR, or copy action. It does not ask the holder to connect a
 browser wallet. The old `/zcash/wallet` route redirects to `/zcash/payments`.
-WalletConnect is intentionally not offered by product discovery: it does not solve
-the hosted testnet path. The retained connector registry is compatibility and research
-infrastructure only; current product navigation does not expose a wallet chooser.
+The retained connector registry supports reviewed injected and portable payment methods, but it is compatibility infrastructure only; current product navigation does not expose a persistent wallet chooser.
 "Supported Zcash wallet" means support for a specific action, not membership in a
 brand allowlist. There is no universal Zcash dApp connector today. New injected
 providers require an explicit safe detector and adapter; Zerant does not scan
 arbitrary browser globals.
 
-The historical WalletConnect adapter remains isolated in source for compatibility tests, but it is not registered in product discovery and is not a supported Zerant route. The testnet fallback is the exact ZIP-321 request, which a compatible wallet can open without a Zerant browser connection.
+For Zcash testnet, Zerant presents the exact ZIP-321 request, which a compatible external wallet can open without a Zerant browser connection.
 
 ZecAuth is an authentication-specific handoff, not the definition of wallet support. A browser wallet may authenticate only if it provides the reviewed derived-signing method. Neither wallet connection nor a payment address creates an account identity. Direct payment is limited to exact simple requests; all richer requests use canonical ZIP-321 handoff. Wallet submission remains separate from settlement verification.
 
@@ -89,14 +87,13 @@ ZecAuth is an authentication-specific handoff, not the definition of wallet supp
 
 `Yes` means the cited provider or protocol documents the capability and Zerant has a corresponding implementation or bounded test. `Unknown` means wallet-side support was not verified. A portable format being available in Zerant does not establish that a named wallet handles it.
 
-| Wallet / route | Injected identity signing | ZecAuth auth handoff | WalletConnect Zcash transport | ZIP-321 payment URI | Direct shielded payment | Restore connection |
-| --- | --- | --- | --- | --- | --- | --- |
-| Noir injected provider | Yes, derived mode | Unknown | Not used by Zerant discovery | N/A for direct adapter | Yes, including the official separate testnet extension | Yes, `getAccounts` |
-| Noir WalletConnect reference | No | Unknown | Not used by Zerant discovery | Unknown | No | Not used |
-| NozyWallet extension | Unknown; contract not verified for Zerant | Unknown | Unknown | Unknown | Unknown | Unknown |
-| ZecAuth-compatible wallet (unbranded) | N/A | Yes, if wallet implements draft | N/A | Unknown | Unknown | N/A |
-| ZIP-321-compatible wallet (unbranded) | N/A | N/A | N/A | Yes, if wallet implements ZIP 321 | N/A | N/A |
-| Zingo PC portable route | N/A | N/A | N/A | Yes; documents `zcash:` ZIP-321 handling and testnet wallets | N/A | N/A |
-| Zodl/Zashi, YWallet, Unstoppable | Unknown | Unknown | Unknown | Unknown | Unknown | Unknown |
+| Wallet / route | Injected identity signing | ZecAuth auth handoff | ZIP-321 payment URI | Direct shielded payment | Restore connection |
+| --- | --- | --- | --- | --- | --- |
+| Noir injected provider | Yes, derived mode | Unknown | N/A for direct adapter | Yes, including the official separate testnet extension | Yes, `getAccounts` |
+| NozyWallet extension | Unknown; contract not verified for Zerant | Unknown | Unknown | Unknown | Unknown |
+| ZecAuth-compatible wallet (unbranded) | N/A | Yes, if wallet implements draft | Unknown | Unknown | N/A |
+| ZIP-321-compatible wallet (unbranded) | N/A | N/A | Yes, if wallet implements ZIP 321 | N/A | N/A |
+| Zingo PC portable route | N/A | N/A | Yes; documents `zcash:` ZIP-321 handling and testnet wallets | N/A | N/A |
+| Zodl/Zashi, YWallet, Unstoppable | Unknown | Unknown | Unknown | Unknown | Unknown |
 
 Sources: [Noir SDK and extension installation](https://github.com/NoirWallet/noir-wallet-sdk), [Noir Releases](https://github.com/NoirWallet/noir-wallet-sdk/releases), [Zingo PC](https://github.com/zingolabs/zingo-pc), [Nozy extension status](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/browser-extension/README.md), and [ZIP 321](https://zips.z.cash/zip-0321). ZecAuth compatibility remains experimental and requires an independently verified wallet-side implementation.

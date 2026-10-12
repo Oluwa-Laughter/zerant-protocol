@@ -66,7 +66,6 @@ export type ZcashWalletCapabilities = {
   shieldedPayment: boolean;
   transparentPayment: boolean;
   paymentRequestHandoff: boolean;
-  walletConnect: boolean;
   zecAuthHandoff: boolean;
   connectionRestore: boolean;
 };
@@ -225,7 +224,6 @@ export class NoirWalletAdapter implements ZcashWalletAdapter {
     shieldedPayment: true,
     transparentPayment: false,
     paymentRequestHandoff: false,
-    walletConnect: false,
     zecAuthHandoff: false,
     connectionRestore: true,
   };

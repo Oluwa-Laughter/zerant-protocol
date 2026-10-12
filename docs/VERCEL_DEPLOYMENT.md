@@ -45,7 +45,7 @@ If `ZERANT_PUBLIC_ORIGIN` is absent, preview deployments use Vercel's deployment
 
 Do not create `ZERANT_API_ORIGIN` manually. Vercel injects it from the `web -> backend` service binding.
 
-Do not expose any of the server variables above with a `NEXT_PUBLIC_` prefix. Wallet transport is separate public client behavior; the hosted product does not require a WalletConnect project ID.
+Do not expose any of the server variables above with a `NEXT_PUBLIC_` prefix. The hosted product does not require a third-party wallet-pairing service.
 
 
 
@@ -115,4 +115,4 @@ The current queue message retention is seven days, with bounded concurrency and 
 
 ## Wallet transport
 
-Zerant does not require WalletConnect or a browser-wallet connector. The hosted testnet product uses canonical ZIP-321 review and external-wallet handoff. No WalletConnect project ID is needed or used by product navigation. Passkeys provide Zerant account access; external wallet approval remains a separate payment boundary.
+Zerant does not require a persistent browser-wallet connector. The hosted testnet product uses canonical ZIP-321 review and external-wallet handoff. Passkeys provide Zerant account access; external wallet approval remains a separate payment boundary.

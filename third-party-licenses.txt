@@ -1,0 +1,882 @@
+ZERANT PROTOCOL — THIRD-PARTY DEPENDENCY LICENSE INVENTORY
+Generated from installed pnpm package metadata and locked Cargo metadata.
+Run: python3 scripts/generate-third-party-licenses.py
+
+This inventory is NOT a license for Zerant's proprietary source code.
+It records package metadata and locations of licenses/notices bundled with
+local dependencies. It is NOT a reproduction of every upstream copyright
+notice or complete license agreement; consult the original dependencies
+and THIRD_PARTY_NOTICES.md before redistributing compiled artifacts.
+Optional, platform-specific, test and build-only packages can be listed.
+
+pnpm-lock.yaml SHA-256: ae4c0e244ac47b230ea5141a1d041d7b2667014f74293d03404738377540f10e
+Cargo.lock SHA-256:     7b1a1827d5d2fca07e5e0e1da743921ac354dbf2906158f194ad57a0b386457b
+JavaScript packages (unique name/version): 411
+Rust registry packages (unique name/version): 448
+
+FORMAT: Name | Version | License metadata | Project/reference | Locally bundled notices | Author metadata
+
+=== JAVASCRIPT (PNPM DEPENDENCIES) ===
+@alloc/quick-lru | 5.3.0 | MIT | https://github.com/aleclarson/quick-lru#readme | license | Sindre Sorhus
+@babel/code-frame | 7.29.7 | MIT | https://babel.dev/docs/en/next/babel-code-frame | LICENSE | The Babel Team
+@babel/compat-data | 7.29.7 | MIT | https://github.com/babel/babel#readme | LICENSE | The Babel Team
+@babel/core | 7.29.7 | MIT | https://babel.dev/docs/en/next/babel-core | LICENSE | The Babel Team
+@babel/generator | 7.29.8 | MIT | https://babel.dev/docs/en/next/babel-generator | LICENSE | The Babel Team
+@babel/helper-compilation-targets | 7.29.7 | MIT | https://github.com/babel/babel#readme | LICENSE | The Babel Team
+@babel/helper-globals | 7.29.7 | MIT | https://github.com/babel/babel#readme | LICENSE | The Babel Team
+@babel/helper-module-imports | 7.29.7 | MIT | https://babel.dev/docs/en/next/babel-helper-module-imports | LICENSE | The Babel Team
+@babel/helper-module-transforms | 7.29.7 | MIT | https://babel.dev/docs/en/next/babel-helper-module-transforms | LICENSE | The Babel Team
+@babel/helper-string-parser | 7.29.7 | MIT | https://babel.dev/docs/en/next/babel-helper-string-parser | LICENSE | The Babel Team
+@babel/helper-validator-identifier | 7.29.7 | MIT | https://github.com/babel/babel#readme | LICENSE | The Babel Team
+@babel/helper-validator-option | 7.29.7 | MIT | https://github.com/babel/babel#readme | LICENSE | The Babel Team
+@babel/helpers | 7.29.7 | MIT | https://babel.dev/docs/en/next/babel-helpers | LICENSE | The Babel Team
+@babel/parser | 7.29.9 | MIT | https://babel.dev/docs/en/next/babel-parser | LICENSE | The Babel Team
+@babel/template | 7.29.7 | MIT | https://babel.dev/docs/en/next/babel-template | LICENSE | The Babel Team
+@babel/traverse | 7.29.8 | MIT | https://babel.dev/docs/en/next/babel-traverse | LICENSE | The Babel Team
+@babel/types | 7.29.8 | MIT | https://babel.dev/docs/en/next/babel-types | LICENSE | The Babel Team
+@esbuild/linux-x64 | 0.28.2 | MIT | https://github.com/evanw/esbuild#readme | (not found in package root) | -
+@eslint-community/eslint-utils | 4.10.1 | MIT | https://github.com/eslint-community/eslint-utils#readme | LICENSE | Toru Nagashima
+@eslint-community/eslint-utils | 4.9.1 | MIT | https://github.com/eslint-community/eslint-utils#readme | LICENSE | Toru Nagashima
+@eslint-community/regexpp | 4.12.2 | MIT | https://github.com/eslint-community/regexpp#readme | LICENSE | Toru Nagashima
+@eslint/config-array | 0.21.2 | Apache-2.0 | https://github.com/eslint/rewrite/tree/main/packages/config-array#readme | LICENSE | Nicholas C. Zakas
+@eslint/config-helpers | 0.4.2 | Apache-2.0 | https://github.com/eslint/rewrite/tree/main/packages/config-helpers#readme | LICENSE | -
+@eslint/core | 0.17.0 | Apache-2.0 | https://github.com/eslint/rewrite/tree/main/packages/core#readme | LICENSE | Nicholas C. Zakas
+@eslint/eslintrc | 3.3.7 | MIT | https://github.com/eslint/eslintrc#readme | LICENSE | Nicholas C. Zakas
+@eslint/js | 9.39.2 | MIT | https://eslint.org | LICENSE | -
+@eslint/object-schema | 2.1.7 | Apache-2.0 | https://github.com/eslint/rewrite/tree/main/packages/object-schema#readme | LICENSE | Nicholas C. Zakas
+@eslint/plugin-kit | 0.4.1 | Apache-2.0 | https://github.com/eslint/rewrite/tree/main/packages/plugin-kit#readme | LICENSE | Nicholas C. Zakas
+@humanfs/core | 0.19.2 | Apache-2.0 | https://github.com/humanwhocodes/humanfs#readme | LICENSE | Nicholas C. Zakas
+@humanfs/node | 0.16.8 | Apache-2.0 | https://github.com/humanwhocodes/humanfs#readme | LICENSE | Nicholas C. Zakas
+@humanfs/types | 0.15.0 | Apache-2.0 | https://github.com/humanwhocodes/humanfs#readme | (not found in package root) | Nicholas C. Zakas
+@humanwhocodes/module-importer | 1.0.1 | Apache-2.0 | https://github.com/humanwhocodes/module-importer#readme | LICENSE | Nicholas C. Zaks
+@humanwhocodes/retry | 0.4.3 | Apache-2.0 | https://github.com/humanwhocodes/retry#readme | LICENSE | Nicholas C. Zaks
+@img/colour | 1.1.0 | MIT | https://github.com/lovell/colour#readme | LICENSE.md | -
+@img/sharp-libvips-linux-x64 | 1.3.4 | LGPL-3.0-or-later | https://sharp.pixelplumbing.com | (not found in package root) | Lovell Fuller
+@img/sharp-linux-x64 | 0.35.5 | Apache-2.0 | https://sharp.pixelplumbing.com | LICENSE | Lovell Fuller
+@jridgewell/gen-mapping | 0.3.13 | MIT | https://github.com/jridgewell/sourcemaps/tree/main/packages/gen-mapping | LICENSE | Justin Ridgewell
+@jridgewell/remapping | 2.3.5 | MIT | https://github.com/jridgewell/sourcemaps/tree/main/packages/remapping | LICENSE | Justin Ridgewell
+@jridgewell/resolve-uri | 3.1.2 | MIT | https://github.com/jridgewell/resolve-uri#readme | LICENSE | Justin Ridgewell
+@jridgewell/sourcemap-codec | 1.6.0 | MIT | https://github.com/jridgewell/sourcemaps/tree/main/packages/sourcemap-codec | LICENSE | Justin Ridgewell
+@jridgewell/trace-mapping | 0.3.31 | MIT | https://github.com/jridgewell/sourcemaps/tree/main/packages/trace-mapping | LICENSE | Justin Ridgewell
+@next/env | 16.3.8 | MIT | https://github.com/vercel/next.js#readme | (not found in package root) | Next.js Team
+@next/eslint-plugin-next | 16.3.8 | MIT | https://github.com/vercel/next.js#readme | (not found in package root) | -
+@next/swc-linux-x64-gnu | 16.3.8 | MIT | https://github.com/vercel/next.js#readme | (not found in package root) | -
+@noble/curves | 1.9.7 | MIT | https://paulmillr.com/noble/ | LICENSE | Paul Miller
+@noble/hashes | 1.8.0 | MIT | https://paulmillr.com/noble/ | LICENSE | Paul Miller
+@nodelib/fs.scandir | 2.1.5 | MIT | https://github.com/nodelib/nodelib/tree/master#readme | LICENSE | -
+@nodelib/fs.stat | 2.0.5 | MIT | https://github.com/nodelib/nodelib/tree/master#readme | LICENSE | -
+@nodelib/fs.walk | 1.2.8 | MIT | https://github.com/nodelib/nodelib/tree/master#readme | LICENSE | -
+@noir-wallet/sdk | 0.1.9 | MIT | https://noirwallet.github.io/noir-wallet-sdk/ | LICENSE | Noir Finance
+@nolyfill/is-core-module | 1.0.39 | MIT | https://github.com/SukkaW/nolyfill#readme | LICENSE | -
+@rtsao/scc | 1.1.0 | MIT | https://github.com/rtsao/scc#readme | LICENSE | -
+@simplewebauthn/browser | 14.0.0 | MIT | https://github.com/MasterKale/SimpleWebAuthn/tree/master/packages/browser#readme | LICENSE.md | Matthew Miller
+@swc/helpers | 0.5.23 | Apache-2.0 | https://swc.rs | LICENSE | 강동윤
+@tailwindcss/node | 4.3.3 | MIT | https://tailwindcss.com | LICENSE | -
+@tailwindcss/oxide | 4.3.3 | MIT | https://github.com/tailwindlabs/tailwindcss#readme | LICENSE | -
+@tailwindcss/oxide-linux-x64-gnu | 4.3.3 | MIT | https://github.com/tailwindlabs/tailwindcss#readme | LICENSE | -
+@tailwindcss/postcss | 4.3.3 | MIT | https://tailwindcss.com | LICENSE | -
+@types/estree | 1.0.9 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/estree | LICENSE | -
+@types/json-schema | 7.0.15 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/json-schema | LICENSE | -
+@types/json5 | 0.0.29 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped#readme | (not found in package root) | Jason Swearingen
+@types/node | 26.6.4 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node | LICENSE | -
+@types/qrcode | 1.5.6 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/qrcode | LICENSE | -
+@types/react | 19.3.0 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react | LICENSE | -
+@types/react-dom | 19.3.0 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom | LICENSE | -
+@typescript-eslint/eslint-plugin | 8.71.0 | MIT | https://typescript-eslint.io/packages/eslint-plugin | LICENSE | -
+@typescript-eslint/parser | 8.71.0 | MIT | https://typescript-eslint.io/packages/parser | LICENSE | -
+@typescript-eslint/project-service | 8.71.0 | MIT | https://typescript-eslint.io | LICENSE | -
+@typescript-eslint/scope-manager | 8.71.0 | MIT | https://typescript-eslint.io/packages/scope-manager | LICENSE | -
+@typescript-eslint/tsconfig-utils | 8.71.0 | MIT | https://typescript-eslint.io | LICENSE | -
+@typescript-eslint/type-utils | 8.71.0 | MIT | https://typescript-eslint.io | LICENSE | -
+@typescript-eslint/types | 8.71.0 | MIT | https://typescript-eslint.io | LICENSE | -
+@typescript-eslint/typescript-estree | 8.71.0 | MIT | https://typescript-eslint.io/packages/typescript-estree | LICENSE | -
+@typescript-eslint/utils | 8.71.0 | MIT | https://typescript-eslint.io/packages/utils | LICENSE | -
+@typescript-eslint/visitor-keys | 8.71.0 | MIT | https://typescript-eslint.io | LICENSE | -
+@unrs/resolver-binding-linux-x64-gnu | 1.12.2 | MIT | https://github.com/unrs/unrs-resolver | (not found in package root) | -
+@vercel/cli-config | 0.3.1 | Apache-2.0 | https://vercel.com/docs/projects/project-configuration/global-configuration | LICENSE | -
+@vercel/cli-exec | 1.0.1 | Apache-2.0 | https://vercel.com | LICENSE | -
+@vercel/oidc | 3.8.10 | Apache-2.0 | https://vercel.com | LICENSE | -
+@vercel/queue | 0.7.0 | MIT | - | (not found in package root) | Timer
+acorn | 8.18.0 | MIT | https://github.com/acornjs/acorn | LICENSE | -
+acorn-jsx | 5.3.2 | MIT | https://github.com/acornjs/acorn-jsx | LICENSE | -
+ajv | 6.15.0 | MIT | https://github.com/ajv-validator/ajv | LICENSE | Evgeny Poberezkin
+ansi-regex | 5.0.1 | MIT | https://github.com/chalk/ansi-regex#readme | license | Sindre Sorhus
+ansi-styles | 4.3.0 | MIT | https://github.com/chalk/ansi-styles#readme | license | Sindre Sorhus
+argparse | 2.0.1 | Python-2.0 | https://github.com/nodeca/argparse#readme | LICENSE | -
+aria-query | 5.3.2 | Apache-2.0 | https://github.com/A11yance/aria-query#readme | LICENSE | Jesse Beach
+array-buffer-byte-length | 1.0.2 | MIT | https://github.com/inspect-js/array-buffer-byte-length#readme | LICENSE | Jordan Harband
+array-includes | 3.2.0 | MIT | https://github.com/es-shims/array-includes#readme | LICENSE | Jordan Harband
+array.prototype.findlast | 1.2.5 | MIT | https://github.com/es-shims/Array.prototype.findLast#readme | LICENSE | Jordan Harband
+array.prototype.findlastindex | 1.2.6 | MIT | https://github.com/es-shims/Array.prototype.findLastIndex#readme | LICENSE | Jordan Harband
+array.prototype.flat | 1.3.3 | MIT | https://github.com/es-shims/Array.prototype.flat#readme | LICENSE | Jordan Harband
+array.prototype.flatmap | 1.3.3 | MIT | https://github.com/es-shims/Array.prototype.flatMap#readme | LICENSE | Jordan Harband
+array.prototype.tosorted | 1.1.4 | MIT | https://github.com/es-shims/Array.prototype.toSorted#readme | LICENSE | Jordan Harband
+arraybuffer.prototype.slice | 1.0.4 | MIT | https://github.com/es-shims/ArrayBuffer.prototype.slice#readme | LICENSE | Jordan Harband
+ast-types-flow | 0.0.8 | MIT | https://github.com/kyldvs/ast-types-flow#readme | LICENSE | kyldvs
+async-function | 1.0.0 | MIT | https://github.com/ljharb/async-function#readme | LICENSE | Jordan Harbamd
+available-typed-arrays | 1.0.7 | MIT | https://github.com/inspect-js/available-typed-arrays#readme | LICENSE | Jordan Harband
+axe-core | 4.13.0 | MPL-2.0 | https://www.deque.com/axe/ | LICENSE, LICENSE-3RD-PARTY.txt | -
+axobject-query | 4.1.0 | Apache-2.0 | https://github.com/A11yance/axobject-query#readme | LICENSE | Jesse Beach
+balanced-match | 1.0.2 | MIT | https://github.com/juliangruber/balanced-match#readme | LICENSE.md | -
+balanced-match | 4.0.4 | MIT | https://github.com/juliangruber/balanced-match#readme | LICENSE.md | -
+base-x | 5.0.1 | MIT | https://github.com/cryptocoinjs/base-x | LICENSE.md | Daniel Cousens
+baseline-browser-mapping | 2.11.27 | Apache-2.0 | https://github.com/web-platform-dx/baseline-browser-mapping#readme | LICENSE.txt | -
+brace-expansion | 1.1.21 | MIT | https://github.com/juliangruber/brace-expansion#readme | LICENSE | -
+brace-expansion | 5.0.12 | MIT | https://github.com/juliangruber/brace-expansion#readme | LICENSE | -
+braces | 3.0.3 | MIT | https://github.com/micromatch/braces | LICENSE | Jon Schlinkert
+browserslist | 4.29.3 | MIT | https://github.com/browserslist/browserslist#readme | LICENSE | Andrey Sitnik
+bs58 | 6.0.0 | MIT | https://github.com/cryptocoinjs/bs58#readme | LICENSE | -
+call-bind | 1.0.9 | MIT | https://github.com/ljharb/call-bind#readme | LICENSE | Jordan Harband
+call-bind-apply-helpers | 1.0.2 | MIT | https://github.com/ljharb/call-bind-apply-helpers#readme | LICENSE | Jordan Harband
+call-bound | 1.0.4 | MIT | https://github.com/ljharb/call-bound#readme | LICENSE | Jordan Harband
+callsites | 3.1.0 | MIT | https://github.com/sindresorhus/callsites#readme | license | Sindre Sorhus
+camelcase | 5.3.1 | MIT | https://github.com/sindresorhus/camelcase#readme | license | Sindre Sorhus
+caniuse-lite | 1.0.30001814 | CC-BY-4.0 | https://github.com/browserslist/caniuse-lite#readme | LICENSE | Ben Briggs
+chalk | 4.1.2 | MIT | https://github.com/chalk/chalk#readme | license | -
+client-only | 0.0.1 | MIT | https://reactjs.org/ | (not found in package root) | -
+cliui | 6.0.0 | ISC | https://github.com/yargs/cliui#readme | LICENSE.txt | Ben Coe
+clsx | 2.1.1 | MIT | https://github.com/lukeed/clsx#readme | license | Luke Edwards
+color-convert | 2.0.1 | MIT | https://github.com/Qix-/color-convert#readme | LICENSE | Heather Arthur
+color-name | 1.1.4 | MIT | https://github.com/colorjs/color-name | LICENSE | DY
+concat-map | 0.0.1 | MIT | https://github.com/substack/node-concat-map#readme | LICENSE | James Halliday
+convert-source-map | 2.0.0 | MIT | https://github.com/thlorenz/convert-source-map | LICENSE | Thorsten Lorenz
+cross-spawn | 7.0.6 | MIT | https://github.com/moxystudio/node-cross-spawn | LICENSE | André Cruz
+csstype | 3.2.3 | MIT | https://github.com/frenic/csstype#readme | LICENSE | Fredrik Nicol
+damerau-levenshtein | 1.0.8 | BSD-2-Clause | https://github.com/tad-lispy/node-damerau-levenshtein#readme | LICENSE | The Spanish Inquisition
+data-view-buffer | 1.0.2 | MIT | https://github.com/inspect-js/data-view-buffer#readme | LICENSE | Jordan Harband
+data-view-byte-length | 1.0.2 | MIT | https://github.com/inspect-js/data-view-byte-length#readme | LICENSE | Jordan Harband
+data-view-byte-offset | 1.0.1 | MIT | https://github.com/inspect-js/data-view-byte-offset#readme | LICENSE | Jordan Harband
+debug | 3.2.7 | MIT | https://github.com/debug-js/debug#readme | LICENSE | Josh Junon
+debug | 4.4.3 | MIT | https://github.com/debug-js/debug#readme | LICENSE | Josh Junon
+decamelize | 1.2.0 | MIT | https://github.com/sindresorhus/decamelize#readme | license | Sindre Sorhus
+deep-is | 0.1.4 | MIT | https://github.com/thlorenz/deep-is#readme | LICENSE | Thorsten Lorenz
+define-data-property | 1.1.4 | MIT | https://github.com/ljharb/define-data-property#readme | LICENSE | Jordan Harband
+define-properties | 1.2.1 | MIT | https://github.com/ljharb/define-properties#readme | LICENSE | Jordan Harband
+detect-libc | 2.1.2 | Apache-2.0 | https://github.com/lovell/detect-libc#readme | LICENSE | Lovell Fuller
+dijkstrajs | 1.0.3 | MIT | https://github.com/tcort/dijkstrajs | LICENSE.md | -
+doctrine | 2.1.0 | Apache-2.0 | https://github.com/eslint/doctrine | LICENSE, LICENSE.closure-compiler, LICENSE.esprima | -
+dunder-proto | 1.0.1 | MIT | https://github.com/es-shims/dunder-proto#readme | LICENSE | Jordan Harband
+electron-to-chromium | 1.5.444 | ISC | https://github.com/Kilian/electron-to-chromium#readme | LICENSE | Kilian Valkhof
+emoji-regex | 8.0.0 | MIT | https://mths.be/emoji-regex | LICENSE-MIT.txt | Mathias Bynens
+emoji-regex | 9.2.2 | MIT | https://mths.be/emoji-regex | LICENSE-MIT.txt | Mathias Bynens
+enhanced-resolve | 5.26.0 | MIT | https://github.com/webpack/enhanced-resolve#readme | LICENSE | Tobias Koppers @sokra
+es-abstract | 1.24.2 | MIT | https://github.com/ljharb/es-abstract#readme | LICENSE | Jordan Harband
+es-abstract-get | 1.0.0 | MIT | https://github.com/ljharb/es-abstract-get#readme | LICENSE | Jordan Harband
+es-define-property | 1.0.1 | MIT | https://github.com/ljharb/es-define-property#readme | LICENSE | Jordan Harband
+es-errors | 1.3.0 | MIT | https://github.com/ljharb/es-errors#readme | LICENSE | Jordan Harband
+es-iterator-helpers | 1.4.0 | MIT | https://github.com/es-shims/iterator-helpers#readme | LICENSE | Jordan Harband
+es-object-atoms | 1.1.2 | MIT | https://github.com/ljharb/es-object-atoms#readme | LICENSE | Jordan Harband
+es-set-tostringtag | 2.1.0 | MIT | https://github.com/es-shims/es-set-tostringtag#readme | LICENSE | Jordan Harband
+es-shim-unscopables | 1.1.0 | MIT | https://github.com/ljharb/es-shim-unscopables#readme | LICENSE | Jordan Harband
+es-to-primitive | 1.3.4 | MIT | https://github.com/ljharb/es-to-primitive#readme | LICENSE | Jordan Harband
+esbuild | 0.28.2 | MIT | https://github.com/evanw/esbuild#readme | LICENSE.md | -
+escalade | 3.2.0 | MIT | https://github.com/lukeed/escalade#readme | license | Luke Edwards
+escape-string-regexp | 4.0.0 | MIT | https://github.com/sindresorhus/escape-string-regexp#readme | license | Sindre Sorhus
+eslint | 9.39.2 | MIT | https://eslint.org | LICENSE | Nicholas C. Zakas
+eslint-config-next | 16.3.8 | MIT | https://nextjs.org/docs/app/api-reference/config/eslint | (not found in package root) | -
+eslint-import-resolver-node | 0.3.10 | MIT | https://github.com/import-js/eslint-plugin-import | LICENSE | Ben Mosher
+eslint-import-resolver-typescript | 3.10.1 | ISC | https://github.com/import-js/eslint-import-resolver-typescript#readme | LICENSE | Alex Gorbatchev
+eslint-module-utils | 2.14.0 | MIT | https://github.com/import-js/eslint-plugin-import#readme | LICENSE | Ben Mosher
+eslint-plugin-import | 2.32.0 | MIT | https://github.com/import-js/eslint-plugin-import | LICENSE | Ben Mosher
+eslint-plugin-jsx-a11y | 6.10.2 | MIT | https://github.com/jsx-eslint/eslint-plugin-jsx-a11y#readme | LICENSE.md | Ethan Cohen
+eslint-plugin-react | 7.37.5 | MIT | https://github.com/jsx-eslint/eslint-plugin-react | LICENSE | Yannick Croissant
+eslint-plugin-react-hooks | 7.1.1 | MIT | https://react.dev/ | LICENSE | -
+eslint-scope | 8.4.0 | BSD-2-Clause | https://github.com/eslint/js/blob/main/packages/eslint-scope/README.md | LICENSE | -
+eslint-visitor-keys | 3.4.3 | Apache-2.0 | https://github.com/eslint/js/blob/main/packages/eslint-visitor-keys/README.md | LICENSE | Toru Nagashima
+eslint-visitor-keys | 4.2.1 | Apache-2.0 | https://github.com/eslint/js/blob/main/packages/eslint-visitor-keys/README.md | LICENSE | Toru Nagashima
+eslint-visitor-keys | 5.0.1 | Apache-2.0 | https://github.com/eslint/js/blob/main/packages/eslint-visitor-keys/README.md | LICENSE | Toru Nagashima
+espree | 10.4.0 | BSD-2-Clause | https://github.com/eslint/js/blob/main/packages/espree/README.md | LICENSE | Nicholas C. Zakas
+esquery | 1.7.0 | BSD-3-Clause | https://github.com/estools/esquery/ | license.txt | Joel Feenstra
+esrecurse | 4.3.0 | BSD-2-Clause | https://github.com/estools/esrecurse | (not found in package root) | -
+estraverse | 5.3.0 | BSD-2-Clause | https://github.com/estools/estraverse | LICENSE.BSD | -
+esutils | 2.0.3 | BSD-2-Clause | https://github.com/estools/esutils | LICENSE.BSD | -
+execa | 5.1.1 | MIT | https://github.com/sindresorhus/execa#readme | license | Sindre Sorhus
+fast-deep-equal | 3.1.3 | MIT | https://github.com/epoberezkin/fast-deep-equal#readme | LICENSE | Evgeny Poberezkin
+fast-glob | 3.3.1 | MIT | https://github.com/mrmlnc/fast-glob#readme | LICENSE | Denis Malinochkin
+fast-json-stable-stringify | 2.1.0 | MIT | https://github.com/epoberezkin/fast-json-stable-stringify | LICENSE | James Halliday
+fast-levenshtein | 2.0.6 | MIT | https://github.com/hiddentao/fast-levenshtein#readme | LICENSE.md | Ramesh Nair
+fastq | 1.20.3 | ISC | https://github.com/mcollina/fastq#readme | LICENSE | Matteo Collina
+fdir | 6.5.0 | MIT | https://github.com/thecodrr/fdir#readme | LICENSE | thecodrr
+file-entry-cache | 8.0.0 | MIT | https://github.com/jaredwray/file-entry-cache#readme | LICENSE | Jared Wray
+fill-range | 7.1.1 | MIT | https://github.com/jonschlinkert/fill-range | LICENSE | Jon Schlinkert
+find-up | 4.1.0 | MIT | https://github.com/sindresorhus/find-up#readme | license | Sindre Sorhus
+find-up | 5.0.0 | MIT | https://github.com/sindresorhus/find-up#readme | license | Sindre Sorhus
+flat-cache | 4.0.1 | MIT | https://github.com/jaredwray/flat-cache#readme | LICENSE | Jared Wray
+flatted | 3.4.4 | ISC | https://github.com/WebReflection/flatted#readme | LICENSE | Andrea Giammarchi
+for-each | 0.3.5 | MIT | https://github.com/Raynos/for-each | LICENSE | Raynos
+function-bind | 1.1.2 | MIT | https://github.com/Raynos/function-bind | LICENSE | Raynos
+function.prototype.name | 1.2.0 | MIT | https://github.com/es-shims/Function.prototype.name#readme | LICENSE | Jordan Harband
+functions-have-names | 1.2.3 | MIT | https://github.com/inspect-js/functions-have-names#readme | LICENSE | Jordan Harband
+generator-function | 2.0.1 | MIT | https://github.com/TimothyGu/generator-function#readme | LICENSE.md | Jordan Harbamd
+gensync | 1.0.0-beta.2 | MIT | https://github.com/loganfsmyth/gensync | LICENSE | Logan Smyth
+get-caller-file | 2.0.5 | ISC | https://github.com/stefanpenner/get-caller-file#readme | LICENSE.md | Stefan Penner
+get-intrinsic | 1.3.0 | MIT | https://github.com/ljharb/get-intrinsic#readme | LICENSE | Jordan Harband
+get-proto | 1.0.1 | MIT | https://github.com/ljharb/get-proto#readme | LICENSE | Jordan Harband
+get-stream | 6.0.1 | MIT | https://github.com/sindresorhus/get-stream#readme | license | Sindre Sorhus
+get-symbol-description | 1.1.0 | MIT | https://github.com/inspect-js/get-symbol-description#readme | LICENSE | Jordan Harband
+get-tsconfig | 4.14.3 | MIT | https://github.com/privatenumber/get-tsconfig#readme | LICENSE | Hiroki Osame
+glob-parent | 5.1.2 | ISC | https://github.com/gulpjs/glob-parent#readme | LICENSE | Gulp Team
+glob-parent | 6.0.2 | ISC | https://github.com/gulpjs/glob-parent#readme | LICENSE | Gulp Team
+globals | 14.0.0 | MIT | https://github.com/sindresorhus/globals#readme | license | Sindre Sorhus
+globals | 16.4.0 | MIT | https://github.com/sindresorhus/globals#readme | license | Sindre Sorhus
+globalthis | 1.0.4 | MIT | https://github.com/ljharb/System.global#readme | LICENSE | Jordan Harband
+gopd | 1.2.0 | MIT | https://github.com/ljharb/gopd#readme | LICENSE | Jordan Harband
+graceful-fs | 4.2.11 | ISC | https://github.com/isaacs/node-graceful-fs#readme | LICENSE | -
+has-bigints | 1.1.0 | MIT | https://github.com/ljharb/has-bigints#readme | LICENSE | Jordan Harband
+has-flag | 4.0.0 | MIT | https://github.com/sindresorhus/has-flag#readme | license | Sindre Sorhus
+has-property-descriptors | 1.0.2 | MIT | https://github.com/inspect-js/has-property-descriptors#readme | LICENSE | Jordan Harband
+has-proto | 1.2.0 | MIT | https://github.com/inspect-js/has-proto#readme | LICENSE | Jordan Harband
+has-symbols | 1.1.0 | MIT | https://github.com/ljharb/has-symbols#readme | LICENSE | Jordan Harband
+has-tostringtag | 1.0.2 | MIT | https://github.com/inspect-js/has-tostringtag#readme | LICENSE | Jordan Harband
+hasown | 2.0.4 | MIT | https://github.com/inspect-js/hasOwn#readme | LICENSE | Jordan Harband
+hermes-estree | 0.25.1 | MIT | https://github.com/facebook/hermes#readme | LICENSE | -
+hermes-parser | 0.25.1 | MIT | https://github.com/facebook/hermes#readme | LICENSE | -
+human-signals | 2.1.0 | Apache-2.0 | https://git.io/JeluP | LICENSE | ehmicky
+ignore | 5.3.2 | MIT | https://github.com/kaelzhang/node-ignore#readme | LICENSE-MIT | kael
+ignore | 7.0.12 | MIT | https://github.com/kaelzhang/node-ignore#readme | LICENSE-MIT | kael
+import-fresh | 3.3.1 | MIT | https://github.com/sindresorhus/import-fresh#readme | license | Sindre Sorhus
+imurmurhash | 0.1.4 | MIT | https://github.com/jensyt/imurmurhash-js | (not found in package root) | Jens Taylor
+internal-slot | 1.1.0 | MIT | https://github.com/ljharb/internal-slot#readme | LICENSE | Jordan Harband
+is-array-buffer | 3.0.5 | MIT | https://github.com/inspect-js/is-array-buffer#readme | LICENSE | Jordan Harband
+is-async-function | 2.1.1 | MIT | https://github.com/inspect-js/is-async-function#readme | LICENSE | Jordan Harband
+is-bigint | 1.1.0 | MIT | https://github.com/inspect-js/is-bigint#readme | LICENSE | Jordan Harband
+is-boolean-object | 1.2.2 | MIT | https://github.com/inspect-js/is-boolean-object#readme | LICENSE | Jordan Harband
+is-bun-module | 2.0.0 | MIT | https://github.com/SunsetTechuila/is-bun-module | LICENSE | SunsetTechuila
+is-callable | 1.2.7 | MIT | https://github.com/inspect-js/is-callable#readme | LICENSE | Jordan Harband
+is-core-module | 2.17.0 | MIT | https://github.com/inspect-js/is-core-module | LICENSE | Jordan Harband
+is-data-view | 1.0.2 | MIT | https://github.com/inspect-js/is-data-view#readme | LICENSE | Jordan Harband
+is-date-object | 1.1.0 | MIT | https://github.com/inspect-js/is-date-object#readme | LICENSE | Jordan Harband
+is-document.all | 1.0.0 | MIT | https://github.com/inspect-js/is-document.all#readme | LICENSE | Jordan Harband
+is-extglob | 2.1.1 | MIT | https://github.com/jonschlinkert/is-extglob | LICENSE | Jon Schlinkert
+is-finalizationregistry | 1.1.1 | MIT | https://github.com/inspect-js/is-finalizationregistry#readme | LICENSE | Jordan Harband
+is-fullwidth-code-point | 3.0.0 | MIT | https://github.com/sindresorhus/is-fullwidth-code-point#readme | license | Sindre Sorhus
+is-generator-function | 1.1.2 | MIT | https://github.com/inspect-js/is-generator-function#readme | LICENSE | Jordan Harband
+is-glob | 4.0.3 | MIT | https://github.com/micromatch/is-glob | LICENSE | Jon Schlinkert
+is-map | 2.0.3 | MIT | https://github.com/inspect-js/is-map#readme | LICENSE | Jordan Harband
+is-negative-zero | 2.0.3 | MIT | https://github.com/inspect-js/is-negative-zero | LICENSE | Jordan Harband
+is-number | 7.0.0 | MIT | https://github.com/jonschlinkert/is-number | LICENSE | Jon Schlinkert
+is-number-object | 1.1.1 | MIT | https://github.com/inspect-js/is-number-object#readme | LICENSE | Jordan Harband
+is-regex | 1.2.1 | MIT | https://github.com/inspect-js/is-regex | LICENSE | Jordan Harband
+is-set | 2.0.3 | MIT | https://github.com/inspect-js/is-set#readme | LICENSE | Jordan Harband
+is-shared-array-buffer | 1.0.4 | MIT | https://github.com/inspect-js/is-shared-array-buffer#readme | LICENSE | Jordan Harband
+is-stream | 2.0.1 | MIT | https://github.com/sindresorhus/is-stream#readme | license | Sindre Sorhus
+is-string | 1.1.1 | MIT | https://github.com/inspect-js/is-string#readme | LICENSE | Jordan Harband
+is-symbol | 1.1.1 | MIT | https://github.com/inspect-js/is-symbol#readme | LICENSE | Jordan Harband
+is-typed-array | 1.1.15 | MIT | https://github.com/inspect-js/is-typed-array#readme | LICENSE | Jordan Harband
+is-weakmap | 2.0.2 | MIT | https://github.com/inspect-js/is-weakmap#readme | LICENSE | Jordan Harband
+is-weakref | 1.1.1 | MIT | https://github.com/inspect-js/is-weakref#readme | LICENSE | Jordan Harband
+is-weakset | 2.0.4 | MIT | https://github.com/inspect-js/is-weakset#readme | LICENSE | Jordan Harband
+isarray | 2.0.5 | MIT | https://github.com/juliangruber/isarray | LICENSE | Julian Gruber
+isexe | 2.0.0 | ISC | https://github.com/isaacs/isexe#readme | LICENSE | Isaac Z. Schlueter
+iterator.prototype | 1.1.5 | MIT | https://github.com/ljharb/Iterator.prototype#readme | LICENSE | Jordan Harband
+jiti | 2.7.0 | MIT | https://github.com/unjs/jiti#readme | LICENSE | -
+jose | 5.10.0 | MIT | https://github.com/panva/jose | LICENSE.md | Filip Skokan
+js-tokens | 4.0.0 | MIT | https://github.com/lydell/js-tokens#readme | LICENSE | Simon Lydell
+js-yaml | 4.3.2 | MIT | https://github.com/nodeca/js-yaml#readme | LICENSE | Vladimir Zapparov
+jsesc | 3.1.0 | MIT | https://mths.be/jsesc | LICENSE-MIT.txt | Mathias Bynens
+json-buffer | 3.0.1 | MIT | https://github.com/dominictarr/json-buffer | LICENSE | Dominic Tarr
+json-schema-traverse | 0.4.1 | MIT | https://github.com/epoberezkin/json-schema-traverse#readme | LICENSE | Evgeny Poberezkin
+json-stable-stringify-without-jsonify | 1.0.1 | MIT | https://github.com/samn/json-stable-stringify | LICENSE | James Halliday
+json5 | 1.0.2 | MIT | http://json5.org/ | LICENSE.md | Aseem Kishore
+json5 | 2.2.3 | MIT | http://json5.org/ | LICENSE.md | Aseem Kishore
+jsx-ast-utils | 3.3.5 | MIT | https://github.com/jsx-eslint/jsx-ast-utils#readme | LICENSE.md | Ethan Cohen
+keyv | 4.5.4 | MIT | https://github.com/jaredwray/keyv | (not found in package root) | Jared Wray
+language-subtag-registry | 0.3.23 | CC0-1.0 | https://github.com/mattcg/language-subtag-registry | (not found in package root) | -
+language-tags | 1.0.9 | MIT | https://github.com/mattcg/language-tags | (not found in package root) | Matthew Caruana Galizia
+levn | 0.4.1 | MIT | https://github.com/gkz/levn | LICENSE | George Zahariev
+lightningcss | 1.32.0 | MPL-2.0 | https://github.com/parcel-bundler/lightningcss#readme | LICENSE | -
+lightningcss-linux-x64-gnu | 1.32.0 | MPL-2.0 | https://github.com/parcel-bundler/lightningcss#readme | LICENSE | -
+locate-path | 5.0.0 | MIT | https://github.com/sindresorhus/locate-path#readme | license | Sindre Sorhus
+locate-path | 6.0.0 | MIT | https://github.com/sindresorhus/locate-path#readme | license | Sindre Sorhus
+lodash.merge | 4.6.2 | MIT | https://lodash.com/ | LICENSE | John-David Dalton
+loose-envify | 1.4.0 | MIT | https://github.com/zertosh/loose-envify | LICENSE | Andres Suarez
+lru-cache | 5.1.1 | ISC | https://github.com/isaacs/node-lru-cache#readme | LICENSE | Isaac Z. Schlueter
+magic-string | 0.30.21 | MIT | https://github.com/Rich-Harris/magic-string#readme | LICENSE | Rich Harris
+math-intrinsics | 1.1.0 | MIT | https://github.com/es-shims/math-intrinsics#readme | LICENSE | Jordan Harband
+merge-stream | 2.0.0 | MIT | https://github.com/grncdr/merge-stream#readme | LICENSE | Stephen Sugden
+merge2 | 1.4.1 | MIT | https://github.com/teambition/merge2 | LICENSE | -
+micromatch | 4.0.8 | MIT | https://github.com/micromatch/micromatch | LICENSE | Jon Schlinkert
+mimic-fn | 2.1.0 | MIT | https://github.com/sindresorhus/mimic-fn#readme | license | Sindre Sorhus
+minimatch | 10.2.6 | BlueOak-1.0.0 | https://github.com/isaacs/minimatch#readme | LICENSE.md | Isaac Z. Schlueter
+minimatch | 3.1.5 | ISC | https://github.com/isaacs/minimatch#readme | LICENSE | Isaac Z. Schlueter
+minimist | 1.2.8 | MIT | https://github.com/minimistjs/minimist | LICENSE | James Halliday
+mixpart | 0.0.6 | MIT | - | (not found in package root) | Timer
+ms | 2.1.3 | MIT | https://github.com/vercel/ms#readme | license.md | -
+nanoid | 3.3.19 | MIT | https://github.com/ai/nanoid#readme | LICENSE | Andrey Sitnik
+napi-postinstall | 0.3.4 | MIT | https://github.com/un-ts/napi-postinstall#readme | LICENSE | JounQin
+natural-compare | 1.4.0 | MIT | https://github.com/litejs/natural-compare-lite#readme | (not found in package root) | Lauri Rooden
+next | 16.3.8 | MIT | https://nextjs.org | license.md | -
+node-exports-info | 1.6.2 | MIT | https://github.com/inspect-js/node-exports-info#readme | LICENSE | Jordan Harband
+node-releases | 2.0.57 | MIT | https://github.com/chicoxyzzy/node-releases#readme | LICENSE | Sergey Rubanov
+npm-run-path | 4.0.1 | MIT | https://github.com/sindresorhus/npm-run-path#readme | license | Sindre Sorhus
+object-assign | 4.1.1 | MIT | https://github.com/sindresorhus/object-assign#readme | license | Sindre Sorhus
+object-inspect | 1.13.4 | MIT | https://github.com/inspect-js/object-inspect | LICENSE | James Halliday
+object-keys | 1.1.1 | MIT | https://github.com/ljharb/object-keys#readme | LICENSE | Jordan Harband
+object.assign | 4.1.7 | MIT | https://github.com/ljharb/object.assign#readme | LICENSE | Jordan Harband
+object.entries | 1.1.9 | MIT | https://github.com/es-shims/Object.entries#readme | LICENSE | Jordan Harband
+object.fromentries | 2.0.8 | MIT | https://github.com/es-shims/Object.fromEntries#readme | LICENSE | Jordan Harband
+object.groupby | 1.0.3 | MIT | https://github.com/es-shims/Object.groupBy#readme | LICENSE | Jordan Harband
+object.values | 1.2.1 | MIT | https://github.com/es-shims/Object.values#readme | LICENSE | Jordan Harband
+onetime | 5.1.2 | MIT | https://github.com/sindresorhus/onetime#readme | license | Sindre Sorhus
+optionator | 0.9.4 | MIT | https://github.com/gkz/optionator | LICENSE | George Zahariev
+os-paths | 4.4.0 | MIT | https://github.com/rivy/js.os-paths#readme | LICENSE | Roy Ivy III
+own-keys | 1.0.2 | MIT | https://github.com/ljharb/own-keys#readme | LICENSE | Jordan Harband
+p-limit | 2.3.0 | MIT | https://github.com/sindresorhus/p-limit#readme | license | Sindre Sorhus
+p-limit | 3.1.0 | MIT | https://github.com/sindresorhus/p-limit#readme | license | Sindre Sorhus
+p-locate | 4.1.0 | MIT | https://github.com/sindresorhus/p-locate#readme | license | Sindre Sorhus
+p-locate | 5.0.0 | MIT | https://github.com/sindresorhus/p-locate#readme | license | Sindre Sorhus
+p-try | 2.2.0 | MIT | https://github.com/sindresorhus/p-try#readme | license | Sindre Sorhus
+parent-module | 1.0.1 | MIT | https://github.com/sindresorhus/parent-module#readme | license | Sindre Sorhus
+path-exists | 4.0.0 | MIT | https://github.com/sindresorhus/path-exists#readme | license | Sindre Sorhus
+path-key | 3.1.1 | MIT | https://github.com/sindresorhus/path-key#readme | license | Sindre Sorhus
+path-parse | 1.0.7 | MIT | https://github.com/jbgutierrez/path-parse#readme | LICENSE | Javier Blanco
+picocolors | 1.1.1 | ISC | https://github.com/alexeyraspopov/picocolors#readme | LICENSE | Alexey Raspopov
+picomatch | 2.3.2 | MIT | https://github.com/micromatch/picomatch | LICENSE | Jon Schlinkert
+picomatch | 4.0.7 | MIT | https://github.com/micromatch/picomatch | LICENSE | Jon Schlinkert
+pngjs | 5.0.0 | MIT | https://github.com/lukeapage/pngjs | LICENSE | -
+possible-typed-array-names | 1.1.0 | MIT | https://github.com/ljharb/possible-typed-array-names#readme | LICENSE | Jordan Harband
+postcss | 8.5.23 | MIT | https://postcss.org/ | LICENSE | Andrey Sitnik
+postcss | 8.5.28 | MIT | https://postcss.org/ | LICENSE | Andrey Sitnik
+prelude-ls | 1.2.1 | MIT | http://preludels.com | LICENSE | George Zahariev
+prop-types | 15.8.1 | MIT | https://facebook.github.io/react/ | LICENSE | -
+punycode | 2.3.1 | MIT | https://mths.be/punycode | LICENSE-MIT.txt | Mathias Bynens
+qrcode | 1.5.4 | MIT | http://github.com/soldair/node-qrcode | license | Ryan Day
+queue-microtask | 1.2.3 | MIT | https://github.com/feross/queue-microtask | LICENSE | Feross Aboukhadijeh
+react | 19.3.0 | MIT | https://react.dev/ | LICENSE | -
+react-dom | 19.3.0 | MIT | https://react.dev/ | LICENSE | -
+react-is | 16.13.1 | MIT | https://reactjs.org/ | LICENSE | -
+reflect.getprototypeof | 1.0.10 | MIT | https://github.com/es-shims/Reflect.getPrototypeOf | LICENSE | Jordan Harband
+regexp.prototype.flags | 1.5.4 | MIT | https://github.com/es-shims/RegExp.prototype.flags#readme | LICENSE | Jordan Harband
+require-directory | 2.1.1 | MIT | https://github.com/troygoode/node-require-directory/ | LICENSE | Troy Goode
+require-main-filename | 2.0.0 | ISC | https://github.com/yargs/require-main-filename#readme | LICENSE.txt | Ben Coe
+resolve | 2.0.0-next.7 | MIT | https://github.com/browserify/resolve#readme | LICENSE | James Halliday
+resolve-from | 4.0.0 | MIT | https://github.com/sindresorhus/resolve-from#readme | license | Sindre Sorhus
+resolve-pkg-maps | 1.0.0 | MIT | https://github.com/privatenumber/resolve-pkg-maps#readme | LICENSE | Hiroki Osame
+reusify | 1.1.0 | MIT | https://github.com/mcollina/reusify#readme | LICENSE | Matteo Collina
+run-parallel | 1.2.0 | MIT | https://github.com/feross/run-parallel | LICENSE | Feross Aboukhadijeh
+safe-array-concat | 1.1.4 | MIT | https://github.com/ljharb/safe-array-concat#readme | LICENSE | Jordan Harband
+safe-push-apply | 1.0.0 | MIT | https://github.com/ljharb/safe-push-apply#readme | LICENSE | Jordan Harband
+safe-regex-test | 1.1.0 | MIT | https://github.com/ljharb/safe-regex-test#readme | LICENSE | Jordan Harband
+scheduler | 0.28.0 | MIT | https://react.dev/ | LICENSE | -
+semver | 6.3.1 | ISC | https://github.com/npm/node-semver#readme | LICENSE | GitHub Inc.
+semver | 7.8.5 | ISC | https://github.com/npm/node-semver#readme | LICENSE | GitHub Inc.
+set-blocking | 2.0.0 | ISC | https://github.com/yargs/set-blocking#readme | LICENSE.txt | Ben Coe
+set-function-length | 1.2.2 | MIT | https://github.com/ljharb/set-function-length#readme | LICENSE | Jordan Harband
+set-function-name | 2.0.2 | MIT | https://github.com/ljharb/set-function-name#readme | LICENSE | Jordan Harband
+set-proto | 1.0.0 | MIT | https://github.com/ljharb/set-proto#readme | LICENSE | Jordan Harband
+sharp | 0.35.5 | Apache-2.0 | https://sharp.pixelplumbing.com | LICENSE | Lovell Fuller
+shebang-command | 2.0.0 | MIT | https://github.com/kevva/shebang-command#readme | license | Kevin Mårtensson
+shebang-regex | 3.0.0 | MIT | https://github.com/sindresorhus/shebang-regex#readme | license | Sindre Sorhus
+side-channel | 1.1.1 | MIT | https://github.com/ljharb/side-channel#readme | LICENSE | Jordan Harband
+side-channel-list | 1.0.1 | MIT | https://github.com/ljharb/side-channel-list#readme | LICENSE | Jordan Harband
+side-channel-map | 1.0.1 | MIT | https://github.com/ljharb/side-channel-map#readme | LICENSE | Jordan Harband
+side-channel-weakmap | 1.0.2 | MIT | https://github.com/ljharb/side-channel-weakmap#readme | LICENSE | Jordan Harband
+signal-exit | 3.0.7 | ISC | https://github.com/tapjs/signal-exit | LICENSE.txt | Ben Coe
+source-map-js | 1.2.2 | BSD-3-Clause | https://github.com/7rulnik/source-map-js | LICENSE | Valentin 7rulnik Semirulnik
+stable-hash | 0.0.5 | MIT | https://github.com/shuding/stable-hash#readme | (not found in package root) | Shu Ding
+stop-iteration-iterator | 1.1.0 | MIT | https://github.com/ljharb/stop-iteration-iterator#readme | LICENSE | Jordan Harband
+string-width | 4.2.3 | MIT | https://github.com/sindresorhus/string-width#readme | license | Sindre Sorhus
+string.prototype.includes | 2.0.1 | MIT | https://mths.be/includes | LICENSE | Mathias Bynens
+string.prototype.matchall | 4.1.0 | MIT | https://github.com/es-shims/String.prototype.matchAll#readme | LICENSE | Jordan Harband
+string.prototype.repeat | 1.0.0 | MIT | https://mths.be/repeat | LICENSE-MIT.txt | Mathias Bynens
+string.prototype.trim | 1.2.11 | MIT | https://github.com/es-shims/String.prototype.trim#readme | LICENSE | Jordan Harband
+string.prototype.trimend | 1.0.10 | MIT | https://github.com/es-shims/String.prototype.trimEnd#readme | LICENSE | Jordan Harband
+string.prototype.trimstart | 1.0.8 | MIT | https://github.com/es-shims/String.prototype.trimStart#readme | LICENSE | Jordan Harband
+strip-ansi | 6.0.1 | MIT | https://github.com/chalk/strip-ansi#readme | license | Sindre Sorhus
+strip-bom | 3.0.0 | MIT | https://github.com/sindresorhus/strip-bom#readme | license | Sindre Sorhus
+strip-final-newline | 2.0.0 | MIT | https://github.com/sindresorhus/strip-final-newline#readme | license | Sindre Sorhus
+strip-json-comments | 3.1.1 | MIT | https://github.com/sindresorhus/strip-json-comments#readme | license | Sindre Sorhus
+styled-jsx | 5.1.6 | MIT | https://github.com/vercel/styled-jsx#readme | license.md | -
+supports-color | 7.2.0 | MIT | https://github.com/chalk/supports-color#readme | license | Sindre Sorhus
+supports-preserve-symlinks-flag | 1.0.0 | MIT | https://github.com/inspect-js/node-supports-preserve-symlinks-flag#readme | LICENSE | Jordan Harband
+tailwind-merge | 3.7.0 | MIT | https://github.com/dcastil/tailwind-merge | LICENSE.md | Dany Castillo
+tailwindcss | 4.3.3 | MIT | https://tailwindcss.com | LICENSE | -
+tapable | 2.3.3 | MIT | https://github.com/webpack/tapable | LICENSE | Tobias Koppers @sokra
+tinyglobby | 0.2.17 | MIT | https://superchupu.dev/tinyglobby | LICENSE | Superchupu
+to-regex-range | 5.0.1 | MIT | https://github.com/micromatch/to-regex-range | LICENSE | Jon Schlinkert
+ts-api-utils | 2.5.0 | MIT | https://github.com/JoshuaKGoldberg/ts-api-utils#readme | LICENSE.md | JoshuaKGoldberg
+tsconfig-paths | 3.15.0 | MIT | https://github.com/dividab/tsconfig-paths#readme | LICENSE | Jonas Kello
+tslib | 2.8.1 | 0BSD | https://www.typescriptlang.org/ | LICENSE.txt | Microsoft Corp.
+tsx | 4.23.15 | MIT | https://tsx.hirok.io | LICENSE | Hiroki Osame
+type-check | 0.4.0 | MIT | https://github.com/gkz/type-check | LICENSE | George Zahariev
+typed-array-buffer | 1.0.3 | MIT | https://github.com/inspect-js/typed-array-buffer#readme | LICENSE | Jordan Harband
+typed-array-byte-length | 1.0.3 | MIT | https://github.com/inspect-js/typed-array-byte-length#readme | LICENSE | Jordan Harband
+typed-array-byte-offset | 1.0.5 | MIT | https://github.com/inspect-js/typed-array-byte-offset#readme | LICENSE | Jordan Harband
+typed-array-length | 1.0.8 | MIT | https://github.com/inspect-js/typed-array-length#readme | LICENSE | Jordan Harband
+typescript | 5.9.3 | Apache-2.0 | https://www.typescriptlang.org/ | LICENSE.txt | Microsoft Corp.
+typescript-eslint | 8.71.0 | MIT | https://typescript-eslint.io/packages/typescript-eslint | LICENSE | -
+unbox-primitive | 1.1.0 | MIT | https://github.com/ljharb/unbox-primitive#readme | LICENSE | Jordan Harband
+undici-types | 8.9.0 | MIT | https://undici.nodejs.org | LICENSE | -
+unrs-resolver | 1.12.2 | MIT | https://github.com/unrs/unrs-resolver | (not found in package root) | -
+update-browserslist-db | 1.3.3 | MIT | https://github.com/browserslist/update-db#readme | LICENSE | Andrey Sitnik
+uri-js | 4.4.1 | BSD-2-Clause | https://github.com/garycourt/uri-js | LICENSE | Gary Court
+which | 2.0.2 | ISC | https://github.com/isaacs/node-which#readme | LICENSE | Isaac Z. Schlueter
+which-boxed-primitive | 1.1.1 | MIT | https://github.com/inspect-js/which-boxed-primitive#readme | LICENSE | Jordan Harband
+which-builtin-type | 1.2.1 | MIT | https://github.com/inspect-js/which-builtin-type#readme | LICENSE | Jordan Harband
+which-collection | 1.0.2 | MIT | https://github.com/inspect-js/which-collection#readme | LICENSE | Jordan Harband
+which-module | 2.0.1 | ISC | https://github.com/nexdrew/which-module#readme | LICENSE | nexdrew
+which-typed-array | 1.1.24 | MIT | https://github.com/inspect-js/which-typed-array#readme | LICENSE | Jordan Harband
+word-wrap | 1.2.5 | MIT | https://github.com/jonschlinkert/word-wrap | LICENSE | Jon Schlinkert
+wrap-ansi | 6.2.0 | MIT | https://github.com/chalk/wrap-ansi#readme | license | Sindre Sorhus
+xdg-app-paths | 5.5.1 | MIT | https://github.com/rivy/js.xdg-app-paths#readme | LICENSE | Roy Ivy III
+xdg-portable | 7.3.0 | MIT | https://github.com/rivy/js.xdg-portable#readme | LICENSE | Roy Ivy III
+y18n | 4.0.3 | ISC | https://github.com/yargs/y18n | LICENSE | Ben Coe
+yallist | 3.1.1 | ISC | https://github.com/isaacs/yallist#readme | LICENSE | Isaac Z. Schlueter
+yargs | 15.4.1 | MIT | https://yargs.js.org/ | LICENSE | -
+yargs-parser | 18.1.3 | ISC | https://github.com/yargs/yargs-parser#readme | LICENSE.txt | Ben Coe
+yocto-queue | 0.1.0 | MIT | https://github.com/sindresorhus/yocto-queue#readme | license | Sindre Sorhus
+zod | 4.1.11 | MIT | https://zod.dev | LICENSE | Colin McDonnell
+zod | 4.6.5 | MIT | https://zod.dev | LICENSE | Colin McDonnell
+zod-validation-error | 4.0.2 | MIT | https://github.com/causaly/zod-validation-error#readme | LICENSE | Dimitrios C. Michalakos
+
+=== RUST (CARGO REGISTRY DEPENDENCIES) ===
+adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | https://github.com/oyvindln/adler2 | LICENSE-0BSD, LICENSE-APACHE, LICENSE-MIT | -
+aead | 0.5.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits | LICENSE-APACHE, LICENSE-MIT | -
+aes | 0.8.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/block-ciphers | LICENSE-APACHE, LICENSE-MIT | -
+aes-gcm | 0.10.3 | Apache-2.0 OR MIT | https://github.com/RustCrypto/AEADs | LICENSE-APACHE, LICENSE-MIT | -
+aho-corasick | 1.1.5 | Unlicense OR MIT | https://github.com/BurntSushi/aho-corasick | COPYING, LICENSE-MIT | -
+anyhow | 1.0.104 | MIT OR Apache-2.0 | https://github.com/dtolnay/anyhow | LICENSE-APACHE, LICENSE-MIT | -
+arrayvec | 0.7.8 | MIT OR Apache-2.0 | https://github.com/bluss/arrayvec | LICENSE-APACHE, LICENSE-MIT | -
+asn1-rs | 0.6.2 | MIT OR Apache-2.0 | https://github.com/rusticata/asn1-rs.git | LICENSE-APACHE, LICENSE-MIT | -
+asn1-rs-derive | 0.5.1 | MIT OR Apache-2.0 | https://github.com/rusticata/asn1-rs.git | LICENSE-APACHE, LICENSE-MIT | -
+asn1-rs-impl | 0.2.0 | MIT/Apache-2.0 | https://github.com/rusticata/asn1-rs.git | (not found in package root) | -
+async-trait | 0.1.92 | MIT OR Apache-2.0 | https://github.com/dtolnay/async-trait | LICENSE-APACHE, LICENSE-MIT | -
+atomic-polyfill | 1.0.3 | MIT OR Apache-2.0 | https://github.com/embassy-rs/atomic-polyfill | LICENSE-APACHE, LICENSE-MIT | -
+atomic-waker | 1.1.2 | Apache-2.0 OR MIT | https://github.com/smol-rs/atomic-waker | LICENSE-APACHE, LICENSE-MIT, LICENSE-THIRD-PARTY | -
+autocfg | 1.5.1 | Apache-2.0 OR MIT | https://github.com/cuviper/autocfg | LICENSE-APACHE, LICENSE-MIT | -
+aws-lc-rs | 1.18.0 | ISC AND (Apache-2.0 OR ISC) | https://github.com/aws/aws-lc-rs | LICENSE | -
+aws-lc-sys | 0.44.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) | https://github.com/aws/aws-lc-rs | LICENSE | -
+axum | 0.8.9 | MIT | https://github.com/tokio-rs/axum | LICENSE | -
+axum-core | 0.5.6 | MIT | https://github.com/tokio-rs/axum | LICENSE | -
+base16ct | 0.2.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats/tree/master/base16ct | LICENSE-APACHE, LICENSE-MIT | -
+base64 | 0.21.7 | MIT OR Apache-2.0 | https://github.com/marshallpierce/rust-base64 | LICENSE-APACHE, LICENSE-MIT | -
+base64 | 0.22.1 | MIT OR Apache-2.0 | https://github.com/marshallpierce/rust-base64 | LICENSE-APACHE, LICENSE-MIT | -
+base64 | 0.23.1 | MIT OR Apache-2.0 | https://github.com/marshallpierce/rust-base64 | LICENSE-APACHE, LICENSE-MIT | -
+base64urlsafedata | 0.5.5 | MPL-2.0 | https://github.com/kanidm/webauthn-rs | (not found in package root) | -
+bech32 | 0.11.1 | MIT | https://github.com/rust-bitcoin/rust-bech32 | LICENSE-MIT | -
+bellman | 0.14.0 | MIT/Apache-2.0 | https://github.com/zkcrypto/bellman | LICENSE-APACHE, LICENSE-MIT | -
+bip32 | 0.6.0-pre.1 | Apache-2.0 OR MIT | https://github.com/iqlusioninc/crates/tree/main/bip32 | LICENSE-APACHE, LICENSE-MIT | -
+bitcoin-consensus-encoding | 1.3.0 | CC0-1.0 | https://github.com/rust-bitcoin/rust-bitcoin/ | (not found in package root) | -
+bitcoin-internals | 0.7.0 | CC0-1.0 | https://github.com/rust-bitcoin/rust-bitcoin/ | (not found in package root) | -
+bitcoin-io | 0.1.101 | CC0-1.0 | https://github.com/rust-bitcoin/rust-bitcoin | (not found in package root) | -
+bitcoin_hashes | 0.14.101 | CC0-1.0 | https://github.com/rust-bitcoin/rust-bitcoin | (not found in package root) | -
+bitflags | 2.13.2 | MIT OR Apache-2.0 | https://github.com/bitflags/bitflags | LICENSE-APACHE, LICENSE-MIT | -
+bitvec | 1.1.1 | MIT | https://github.com/bitvecto-rs/bitvec | LICENSE.txt | -
+blake2b_simd | 1.0.5 | MIT | https://github.com/oconnor663/blake2_simd | (not found in package root) | -
+blake2s_simd | 1.0.5 | MIT | https://github.com/oconnor663/blake2_simd | (not found in package root) | -
+block-buffer | 0.10.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | LICENSE-APACHE, LICENSE-MIT | -
+block-buffer | 0.11.0-rc.3 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | LICENSE-APACHE, LICENSE-MIT | -
+bls12_381 | 0.8.0 | MIT/Apache-2.0 | https://github.com/zkcrypto/bls12_381 | LICENSE-APACHE, LICENSE-MIT | -
+bounded-vec | 0.9.0 | CC0-1.0 | https://github.com/ergoplatform/bounded-vec | LICENSE | -
+bs58 | 0.5.1 | MIT/Apache-2.0 | https://github.com/Nullus157/bs58-rs | LICENSE-APACHE, LICENSE-MIT | -
+bumpalo | 3.20.3 | MIT OR Apache-2.0 | https://github.com/fitzgen/bumpalo | LICENSE-APACHE, LICENSE-MIT | -
+byteorder | 1.5.0 | Unlicense OR MIT | https://github.com/BurntSushi/byteorder | COPYING, LICENSE-MIT | -
+bytes | 1.12.1 | MIT | https://github.com/tokio-rs/bytes | LICENSE | -
+cbc | 0.1.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/block-modes | LICENSE-APACHE, LICENSE-MIT | -
+cc | 1.6.0 | MIT OR Apache-2.0 | https://github.com/rust-lang/cc-rs | LICENSE-APACHE, LICENSE-MIT | -
+cfg-if | 1.0.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/cfg-if | LICENSE-APACHE, LICENSE-MIT | -
+cfg_aliases | 0.2.2 | MIT | https://github.com/katharostech/cfg_aliases | LICENSE, NOTICES.md | -
+chacha20 | 0.10.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/stream-ciphers | LICENSE-APACHE, LICENSE-MIT | -
+chacha20 | 0.9.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/stream-ciphers | LICENSE-APACHE, LICENSE-MIT | -
+chacha20poly1305 | 0.10.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/AEADs/tree/master/chacha20poly1305 | LICENSE-APACHE, LICENSE-MIT | -
+cipher | 0.4.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits | LICENSE-APACHE, LICENSE-MIT | -
+cmake | 0.1.58 | MIT OR Apache-2.0 | https://github.com/rust-lang/cmake-rs | LICENSE-APACHE, LICENSE-MIT | -
+cobs | 0.3.0 | MIT OR Apache-2.0 | https://github.com/jamesmunns/cobs.rs | LICENSE-APACHE, LICENSE-MIT | -
+combine | 4.6.8 | MIT | https://github.com/Marwes/combine | LICENSE | -
+const-crc32-nostd | 1.3.1 | MIT | https://git.shipyard.rs/jstrong/const-crc32 | LICENSE | -
+constant_time_eq | 0.4.2 | CC0-1.0 OR MIT-0 OR Apache-2.0 | https://github.com/cesarb/constant_time_eq | LICENSE-APACHE, LICENSE-CC0, LICENSE-MIT0 | -
+core-foundation | 0.10.1 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs | LICENSE-APACHE, LICENSE-MIT | -
+core-foundation-sys | 0.8.7 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs | LICENSE-APACHE, LICENSE-MIT | -
+corez | 0.1.1 | MIT OR Apache-2.0 | https://github.com/zcash/corez | LICENSE-APACHE, LICENSE-MIT | -
+cpufeatures | 0.2.17 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | LICENSE-APACHE, LICENSE-MIT | -
+cpufeatures | 0.3.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | LICENSE-APACHE, LICENSE-MIT | -
+crc32fast | 1.5.2 | MIT OR Apache-2.0 | https://github.com/srijs/rust-crc32fast | LICENSE-APACHE, LICENSE-MIT | -
+critical-section | 1.2.0 | MIT OR Apache-2.0 | https://github.com/rust-embedded/critical-section | LICENSE-APACHE, LICENSE-MIT | -
+crossbeam-deque | 0.8.8 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam | LICENSE-APACHE, LICENSE-MIT | -
+crossbeam-epoch | 0.9.21 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam | LICENSE-APACHE, LICENSE-MIT | -
+crossbeam-utils | 0.8.23 | MIT OR Apache-2.0 | https://github.com/crossbeam-rs/crossbeam | LICENSE-APACHE, LICENSE-MIT | -
+crunchy | 0.2.4 | MIT | https://github.com/eira-fransham/crunchy | LICENSE | -
+crypto-common | 0.1.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits | LICENSE-APACHE, LICENSE-MIT | -
+crypto-common | 0.2.0-rc.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits | LICENSE-APACHE, LICENSE-MIT | -
+ctr | 0.9.2 | MIT OR Apache-2.0 | https://github.com/RustCrypto/block-modes | LICENSE-APACHE, LICENSE-MIT | -
+data-encoding | 2.11.1 | MIT | https://github.com/ia0/data-encoding | LICENSE | -
+deadpool | 0.13.1 | MIT OR Apache-2.0 | https://github.com/deadpool-rs/deadpool | LICENSE-APACHE, LICENSE-MIT | -
+deadpool-postgres | 0.14.2 | MIT OR Apache-2.0 | https://github.com/deadpool-rs/deadpool | LICENSE-APACHE, LICENSE-MIT | -
+deadpool-runtime | 0.3.1 | MIT OR Apache-2.0 | https://github.com/deadpool-rs/deadpool | LICENSE-APACHE, LICENSE-MIT | -
+der-parser | 9.0.0 | MIT/Apache-2.0 | https://github.com/rusticata/der-parser.git | LICENSE-APACHE, LICENSE-MIT | -
+deranged | 0.5.8 | MIT OR Apache-2.0 | https://github.com/jhpratt/deranged | LICENSE-Apache, LICENSE-MIT | -
+derive-getters | 0.5.0 | MIT | https://git.sr.ht/~kvsari/derive-getters | LICENSE | -
+digest | 0.10.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits | LICENSE-APACHE, LICENSE-MIT | -
+digest | 0.11.0-pre.9 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits | LICENSE-APACHE, LICENSE-MIT | -
+displaydoc | 0.2.7 | MIT OR Apache-2.0 | https://github.com/yaahc/displaydoc | LICENSE-APACHE, LICENSE-MIT | -
+document-features | 0.2.12 | MIT OR Apache-2.0 | https://github.com/slint-ui/document-features | LICENSE-APACHE, LICENSE-MIT | -
+dunce | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 | https://gitlab.com/kornelski/dunce | LICENSE | -
+either | 1.18.0 | MIT OR Apache-2.0 | https://github.com/rayon-rs/either | LICENSE-APACHE, LICENSE-MIT | -
+embedded-io | 0.4.0 | MIT OR Apache-2.0 | https://github.com/embassy-rs/embedded-io | LICENSE-APACHE, LICENSE-MIT | -
+embedded-io | 0.6.1 | MIT OR Apache-2.0 | https://github.com/rust-embedded/embedded-hal | LICENSE-APACHE, LICENSE-MIT | -
+equihash | 0.3.0 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | (not found in package root) | -
+equivalent | 1.0.2 | Apache-2.0 OR MIT | https://github.com/indexmap-rs/equivalent | LICENSE-APACHE, LICENSE-MIT | -
+errno | 0.3.14 | MIT OR Apache-2.0 | https://github.com/lambda-fairy/rust-errno | LICENSE-APACHE, LICENSE-MIT | -
+f4jumble | 0.1.1 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+fallible-iterator | 0.2.0 | MIT/Apache-2.0 | https://github.com/sfackler/rust-fallible-iterator | LICENSE-APACHE, LICENSE-MIT | -
+fallible-iterator | 0.3.0 | MIT/Apache-2.0 | https://github.com/sfackler/rust-fallible-iterator | LICENSE-APACHE, LICENSE-MIT | -
+fallible-streaming-iterator | 0.1.9 | MIT/Apache-2.0 | https://github.com/sfackler/fallible-streaming-iterator | LICENSE-APACHE, LICENSE-MIT | -
+fastrand | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/fastrand | LICENSE-APACHE, LICENSE-MIT | -
+ff | 0.13.1 | MIT/Apache-2.0 | https://github.com/zkcrypto/ff | LICENSE-APACHE, LICENSE-MIT | -
+find-msvc-tools | 0.1.14 | MIT OR Apache-2.0 | https://github.com/rust-lang/cc-rs | LICENSE-APACHE, LICENSE-MIT | -
+fixedbitset | 0.5.7 | MIT OR Apache-2.0 | https://github.com/petgraph/fixedbitset | LICENSE-APACHE, LICENSE-MIT | -
+flate2 | 1.1.10 | MIT OR Apache-2.0 | https://github.com/rust-lang/flate2-rs | LICENSE-APACHE, LICENSE-MIT | -
+flume | 0.11.1 | Apache-2.0/MIT | https://github.com/zesterer/flume | LICENSE-APACHE, LICENSE-MIT | -
+fnv | 1.0.7 | Apache-2.0 / MIT | https://github.com/servo/rust-fnv | LICENSE-APACHE, LICENSE-MIT | -
+foldhash | 0.1.5 | Zlib | https://github.com/orlp/foldhash | LICENSE | -
+foldhash | 0.2.0 | Zlib | https://github.com/orlp/foldhash | LICENSE | -
+foreign-types | 0.3.2 | MIT/Apache-2.0 | https://github.com/sfackler/foreign-types | LICENSE-APACHE, LICENSE-MIT | -
+foreign-types-shared | 0.1.1 | MIT/Apache-2.0 | https://github.com/sfackler/foreign-types | LICENSE-APACHE, LICENSE-MIT | -
+form_urlencoded | 1.2.2 | MIT OR Apache-2.0 | https://github.com/servo/rust-url | LICENSE-APACHE, LICENSE-MIT | -
+fpe | 0.6.1 | MIT/Apache-2.0 | https://github.com/str4d/fpe | LICENSE-APACHE, LICENSE-MIT | -
+frost-core | 3.0.0 | MIT OR Apache-2.0 | https://github.com/ZcashFoundation/frost | (not found in package root) | -
+frost-rerandomized | 3.0.0 | MIT OR Apache-2.0 | https://github.com/ZcashFoundation/frost | (not found in package root) | -
+fs_extra | 1.3.0 | MIT | https://github.com/webdesus/fs_extra | LICENSE | -
+funty | 2.0.0 | MIT | https://github.com/myrrlyn/funty | LICENSE.txt | -
+futures-channel | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/futures-rs | LICENSE-APACHE, LICENSE-MIT | -
+futures-core | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/futures-rs | LICENSE-APACHE, LICENSE-MIT | -
+futures-io | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/futures-rs | LICENSE-APACHE, LICENSE-MIT | -
+futures-sink | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/futures-rs | LICENSE-APACHE, LICENSE-MIT | -
+futures-task | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/futures-rs | LICENSE-APACHE, LICENSE-MIT | -
+futures-util | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/futures-rs | LICENSE-APACHE, LICENSE-MIT | -
+generic-array | 0.14.7 | MIT | https://github.com/fizyk20/generic-array.git | LICENSE | -
+getrandom | 0.2.17 | MIT OR Apache-2.0 | https://github.com/rust-random/getrandom | LICENSE-APACHE, LICENSE-MIT | -
+getrandom | 0.3.4 | MIT OR Apache-2.0 | https://github.com/rust-random/getrandom | LICENSE-APACHE, LICENSE-MIT | -
+getrandom | 0.4.3 | MIT OR Apache-2.0 | https://github.com/rust-random/getrandom | LICENSE-APACHE, LICENSE-MIT | -
+getset | 0.1.7 | MIT | https://github.com/jbaublitz/getset | LICENSE | -
+ghash | 0.5.1 | Apache-2.0 OR MIT | https://github.com/RustCrypto/universal-hashes | LICENSE-APACHE, LICENSE-MIT | -
+group | 0.13.0 | MIT/Apache-2.0 | https://github.com/zkcrypto/group | LICENSE-APACHE, LICENSE-MIT | -
+h2 | 0.4.19 | MIT | https://github.com/hyperium/h2 | LICENSE | -
+half | 2.7.1 | MIT OR Apache-2.0 | https://github.com/VoidStarKat/half-rs | LICENSE-APACHE, LICENSE-MIT | -
+halo2_gadgets | 0.5.0 | MIT OR Apache-2.0 | https://github.com/zcash/halo2 | (not found in package root) | -
+halo2_legacy_pdqsort | 0.1.0 | MIT OR Apache-2.0 | https://github.com/zcash/halo2_legacy_pdqsort | LICENSE-APACHE, LICENSE-MIT | -
+halo2_poseidon | 0.1.0 | MIT OR Apache-2.0 | https://github.com/zcash/halo2 | (not found in package root) | -
+halo2_proofs | 0.3.5 | MIT OR Apache-2.0 | https://github.com/zcash/halo2 | (not found in package root) | -
+hash32 | 0.2.1 | MIT OR Apache-2.0 | https://github.com/japaric/hash32 | LICENSE-APACHE, LICENSE-MIT | -
+hashbrown | 0.12.3 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | LICENSE-APACHE, LICENSE-MIT | -
+hashbrown | 0.15.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | LICENSE-APACHE, LICENSE-MIT | -
+hashbrown | 0.16.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | LICENSE-APACHE, LICENSE-MIT | -
+hashbrown | 0.17.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | LICENSE-APACHE, LICENSE-MIT | -
+hashlink | 0.11.1 | MIT OR Apache-2.0 | https://github.com/djc/hashlink | LICENSE-APACHE, LICENSE-MIT | -
+heapless | 0.7.17 | MIT OR Apache-2.0 | https://github.com/japaric/heapless | LICENSE-APACHE, LICENSE-MIT | -
+heck | 0.5.0 | MIT OR Apache-2.0 | https://github.com/withoutboats/heck | LICENSE-APACHE, LICENSE-MIT | -
+hex | 0.4.3 | MIT OR Apache-2.0 | https://github.com/KokaKiwi/rust-hex | LICENSE-APACHE, LICENSE-MIT | -
+hex-conservative | 0.2.3 | CC0-1.0 | https://github.com/rust-bitcoin/hex-conservative | LICENSE | -
+hex-conservative | 1.3.0 | CC0-1.0 | https://github.com/rust-bitcoin/hex-conservative | LICENSE | -
+hmac | 0.12.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/MACs | LICENSE-APACHE, LICENSE-MIT | -
+hmac | 0.13.0-pre.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/MACs | LICENSE-APACHE, LICENSE-MIT | -
+http | 1.5.0 | MIT OR Apache-2.0 | https://github.com/hyperium/http | LICENSE-APACHE, LICENSE-MIT | -
+http-body | 1.1.0 | MIT | https://github.com/hyperium/http-body | LICENSE | -
+http-body-util | 0.1.5 | MIT | https://github.com/hyperium/http-body | LICENSE | -
+httparse | 1.10.1 | MIT OR Apache-2.0 | https://github.com/seanmonstar/httparse | LICENSE-APACHE, LICENSE-MIT | -
+httpdate | 1.0.3 | MIT OR Apache-2.0 | https://github.com/pyfisch/httpdate | LICENSE-APACHE, LICENSE-MIT | -
+hybrid-array | 0.2.3 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hybrid-array | LICENSE-APACHE, LICENSE-MIT | -
+hyper | 1.11.1 | MIT | https://github.com/hyperium/hyper | LICENSE | -
+hyper-rustls | 0.27.10 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/hyper-rustls | LICENSE-APACHE, LICENSE-ISC, LICENSE-MIT | -
+hyper-timeout | 0.5.2 | MIT OR Apache-2.0 | https://github.com/hjr3/hyper-timeout | LICENSE-APACHE, LICENSE-MIT | -
+hyper-util | 0.1.21 | MIT | https://github.com/hyperium/hyper-util | LICENSE | -
+icu_collections | 2.3.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+icu_locale_core | 2.3.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+icu_normalizer | 2.3.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+icu_normalizer_data | 2.3.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+icu_properties | 2.3.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+icu_properties_data | 2.3.0 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+icu_provider | 2.3.1 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+idna | 1.1.0 | MIT OR Apache-2.0 | https://github.com/servo/rust-url/ | LICENSE-APACHE, LICENSE-MIT | -
+idna_adapter | 1.2.2 | Apache-2.0 OR MIT | https://github.com/hsivonen/idna_adapter | LICENSE-APACHE, LICENSE-MIT | -
+incrementalmerkletree | 0.8.2 | MIT OR Apache-2.0 | https://github.com/zcash/incrementalmerkletree | LICENSE-APACHE, LICENSE-MIT | -
+indexmap | 1.9.3 | Apache-2.0 OR MIT | https://github.com/bluss/indexmap | LICENSE-APACHE, LICENSE-MIT | -
+indexmap | 2.14.2 | Apache-2.0 OR MIT | https://github.com/indexmap-rs/indexmap | LICENSE-APACHE, LICENSE-MIT | -
+inout | 0.1.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | LICENSE-APACHE, LICENSE-MIT | -
+ipnet | 2.12.2 | MIT OR Apache-2.0 | https://github.com/krisprice/ipnet | LICENSE-APACHE, LICENSE-MIT | -
+itertools | 0.14.0 | MIT OR Apache-2.0 | https://github.com/rust-itertools/itertools | LICENSE-APACHE, LICENSE-MIT | -
+itoa | 1.0.18 | MIT OR Apache-2.0 | https://github.com/dtolnay/itoa | LICENSE-APACHE, LICENSE-MIT | -
+jni | 0.22.4 | MIT OR Apache-2.0 | https://github.com/jni-rs/jni-rs | (not found in package root) | -
+jni-macros | 0.22.4 | MIT OR Apache-2.0 | https://github.com/jni-rs/jni-rs | (not found in package root) | -
+jni-sys | 0.4.1 | MIT OR Apache-2.0 | https://github.com/jni-rs/jni-sys | LICENSE-APACHE, LICENSE-MIT | -
+jni-sys-macros | 0.4.1 | MIT OR Apache-2.0 | https://github.com/jni-rs/jni-sys | (not found in package root) | -
+jobserver | 0.1.35 | MIT OR Apache-2.0 | https://github.com/rust-lang/jobserver-rs | LICENSE-APACHE, LICENSE-MIT | -
+josekit | 0.10.3 | MIT OR Apache-2.0 | https://github.com/hidekatsu-izuno/josekit-rs | LICENSE-APACHE, LICENSE-MIT | -
+js-sys | 0.3.106 | MIT OR Apache-2.0 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys | LICENSE-APACHE, LICENSE-MIT | -
+jubjub | 0.10.0 | MIT/Apache-2.0 | https://github.com/zkcrypto/jubjub | LICENSE-APACHE, LICENSE-MIT | -
+lazy_static | 1.5.1 | MIT OR Apache-2.0 | https://github.com/rust-lang-nursery/lazy-static.rs | LICENSE-APACHE, LICENSE-MIT | -
+libc | 0.2.190 | MIT OR Apache-2.0 | https://github.com/rust-lang/libc | LICENSE-APACHE, LICENSE-MIT | -
+libm | 0.2.16 | MIT | https://github.com/rust-lang/compiler-builtins | LICENSE.txt | -
+libredox | 0.1.25 | MIT | https://gitlab.redox-os.org/redox-os/libredox.git | LICENSE | -
+libsqlite3-sys | 0.36.0 | MIT | https://github.com/rusqlite/rusqlite | LICENSE | -
+linux-raw-sys | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/sunfishcode/linux-raw-sys | LICENSE-APACHE, LICENSE-Apache-2.0_WITH_LLVM-exception, LICENSE-MIT | -
+litemap | 0.8.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+litrs | 1.0.0 | MIT OR Apache-2.0 | https://github.com/LukasKalbertodt/litrs | LICENSE-APACHE, LICENSE-MIT | -
+lock_api | 0.4.14 | MIT OR Apache-2.0 | https://github.com/Amanieu/parking_lot | LICENSE-APACHE, LICENSE-MIT | -
+log | 0.4.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/log | LICENSE-APACHE, LICENSE-MIT | -
+lru-slab | 0.1.3 | MIT OR Apache-2.0 OR Zlib | https://github.com/Ralith/lru-slab | LICENSE-APACHE, LICENSE-MIT, LICENSE-ZLIB | -
+matchers | 0.2.0 | MIT | https://github.com/hawkw/matchers | LICENSE | -
+matchit | 0.8.4 | MIT AND BSD-3-Clause | https://github.com/ibraheemdev/matchit | LICENSE, LICENSE.httprouter | -
+maybe-rayon | 0.1.1 | MIT | https://github.com/shssoichiro/maybe-rayon | LICENSE | -
+md-5 | 0.10.6 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | LICENSE-APACHE, LICENSE-MIT | -
+memchr | 2.8.3 | Unlicense OR MIT | https://github.com/BurntSushi/memchr | COPYING, LICENSE-MIT | -
+memuse | 0.2.2 | MIT/Apache-2.0 | https://github.com/str4d/memuse | LICENSE-APACHE, LICENSE-MIT | -
+mime | 0.3.17 | MIT OR Apache-2.0 | https://github.com/hyperium/mime | LICENSE-APACHE, LICENSE-MIT | -
+minimal-lexical | 0.2.1 | MIT/Apache-2.0 | https://github.com/Alexhuszagh/minimal-lexical | LICENSE-APACHE, LICENSE-MIT, LICENSE.md | -
+miniz_oxide | 0.9.1 | MIT OR Zlib OR Apache-2.0 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide | LICENSE, LICENSE-APACHE.md, LICENSE-MIT.md, LICENSE-ZLIB.md | -
+mio | 1.2.4 | MIT | https://github.com/tokio-rs/mio | LICENSE | -
+multimap | 0.10.1 | MIT OR Apache-2.0 | https://github.com/havarnov/multimap | LICENSE-APACHE, LICENSE-MIT | -
+nanorand | 0.7.0 | Zlib | https://github.com/Absolucy/nanorand-rs | LICENSE.md | -
+native-tls | 0.2.18 | MIT OR Apache-2.0 | https://github.com/rust-native-tls/rust-native-tls | LICENSE-APACHE, LICENSE-MIT | -
+nom | 7.1.3 | MIT | https://github.com/Geal/nom | LICENSE | -
+nonempty | 0.11.0 | MIT | https://github.com/cloudhead/nonempty | LICENSE | -
+nu-ansi-term | 0.50.3 | MIT | https://github.com/nushell/nu-ansi-term | LICENSE | -
+num-bigint | 0.4.8 | MIT OR Apache-2.0 | https://github.com/rust-num/num-bigint | LICENSE-APACHE, LICENSE-MIT | -
+num-conv | 0.2.2 | MIT OR Apache-2.0 | https://github.com/jhpratt/num-conv | LICENSE-Apache, LICENSE-MIT | -
+num-integer | 0.1.47 | MIT OR Apache-2.0 | https://github.com/rust-num/num-integer | LICENSE-APACHE, LICENSE-MIT | -
+num-traits | 0.2.19 | MIT OR Apache-2.0 | https://github.com/rust-num/num-traits | LICENSE-APACHE, LICENSE-MIT | -
+objc2-core-foundation | 0.3.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/madsmtm/objc2 | (not found in package root) | -
+objc2-system-configuration | 0.3.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/madsmtm/objc2 | (not found in package root) | -
+oid-registry | 0.7.1 | MIT OR Apache-2.0 | https://github.com/rusticata/oid-registry.git | LICENSE-APACHE, LICENSE-MIT | -
+once_cell | 1.21.4 | MIT OR Apache-2.0 | https://github.com/matklad/once_cell | LICENSE-APACHE, LICENSE-MIT | -
+opaque-debug | 0.3.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | LICENSE-APACHE, LICENSE-MIT | -
+openssl | 0.10.81 | Apache-2.0 | https://github.com/rust-openssl/rust-openssl | LICENSE, LICENSE-APACHE | -
+openssl-macros | 0.1.1 | MIT/Apache-2.0 | https://crates.io/crates/openssl-macros/0.1.1 | LICENSE-APACHE, LICENSE-MIT | -
+openssl-probe | 0.2.1 | MIT OR Apache-2.0 | https://github.com/rustls/openssl-probe | LICENSE-APACHE, LICENSE-MIT | -
+openssl-sys | 0.9.117 | MIT | https://github.com/rust-openssl/rust-openssl | LICENSE-MIT | -
+orchard | 0.15.5 | MIT OR Apache-2.0 | https://github.com/zcash/orchard | COPYING.md, LICENSE-APACHE, LICENSE-MIT | -
+pairing | 0.23.0 | MIT/Apache-2.0 | https://github.com/zkcrypto/pairing | LICENSE-APACHE, LICENSE-MIT | -
+parking_lot | 0.12.5 | MIT OR Apache-2.0 | https://github.com/Amanieu/parking_lot | LICENSE-APACHE, LICENSE-MIT | -
+parking_lot_core | 0.9.12 | MIT OR Apache-2.0 | https://github.com/Amanieu/parking_lot | LICENSE-APACHE, LICENSE-MIT | -
+pasta_curves | 0.5.2 | MIT OR Apache-2.0 | https://github.com/zcash/pasta_curves | COPYING.md, LICENSE-APACHE, LICENSE-MIT | -
+pastey | 0.1.1 | MIT OR Apache-2.0 | https://github.com/as1100k/pastey | LICENSE-APACHE, LICENSE-MIT | -
+percent-encoding | 2.3.2 | MIT OR Apache-2.0 | https://github.com/servo/rust-url/ | LICENSE-APACHE, LICENSE-MIT | -
+petgraph | 0.8.3 | MIT OR Apache-2.0 | https://github.com/petgraph/petgraph | LICENSE-APACHE, LICENSE-MIT | -
+phf | 0.13.1 | MIT | https://github.com/rust-phf/rust-phf | LICENSE | -
+phf_shared | 0.13.1 | MIT | https://github.com/rust-phf/rust-phf | LICENSE | -
+pin-project | 1.1.13 | Apache-2.0 OR MIT | https://github.com/taiki-e/pin-project | LICENSE-APACHE, LICENSE-MIT | -
+pin-project-internal | 1.1.13 | Apache-2.0 OR MIT | https://github.com/taiki-e/pin-project | LICENSE-APACHE, LICENSE-MIT | -
+pin-project-lite | 0.2.17 | Apache-2.0 OR MIT | https://github.com/taiki-e/pin-project-lite | LICENSE-APACHE, LICENSE-MIT | -
+pkg-config | 0.3.34 | MIT OR Apache-2.0 | https://github.com/rust-lang/pkg-config-rs | LICENSE-APACHE, LICENSE-MIT | -
+poly1305 | 0.8.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/universal-hashes | LICENSE-APACHE, LICENSE-MIT | -
+polyval | 0.6.2 | Apache-2.0 OR MIT | https://github.com/RustCrypto/universal-hashes | LICENSE-APACHE, LICENSE-MIT | -
+postcard | 1.1.3 | MIT OR Apache-2.0 | https://github.com/jamesmunns/postcard | LICENSE-APACHE, LICENSE-MIT | -
+postgres-native-tls | 0.5.3 | MIT OR Apache-2.0 | https://github.com/rust-postgres/rust-postgres | LICENSE-APACHE, LICENSE-MIT | -
+postgres-protocol | 0.6.10 | MIT OR Apache-2.0 | https://github.com/rust-postgres/rust-postgres | LICENSE-APACHE, LICENSE-MIT | -
+postgres-types | 0.2.13 | MIT OR Apache-2.0 | https://github.com/rust-postgres/rust-postgres | LICENSE-APACHE, LICENSE-MIT | -
+potential_utf | 0.1.6 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+powerfmt | 0.2.0 | MIT OR Apache-2.0 | https://github.com/jhpratt/powerfmt | LICENSE-Apache, LICENSE-MIT | -
+ppv-lite86 | 0.2.21 | MIT OR Apache-2.0 | https://github.com/cryptocorrosion/cryptocorrosion | LICENSE-APACHE, LICENSE-MIT | -
+prettyplease | 0.2.37 | MIT OR Apache-2.0 | https://github.com/dtolnay/prettyplease | LICENSE-APACHE, LICENSE-MIT | -
+proc-macro2 | 1.0.107 | MIT OR Apache-2.0 | https://github.com/dtolnay/proc-macro2 | LICENSE-APACHE, LICENSE-MIT | -
+prost | 0.14.4 | Apache-2.0 | https://github.com/tokio-rs/prost | LICENSE | -
+prost-build | 0.14.4 | Apache-2.0 | https://github.com/tokio-rs/prost | LICENSE | -
+prost-derive | 0.14.4 | Apache-2.0 | https://github.com/tokio-rs/prost | LICENSE | -
+prost-types | 0.14.4 | Apache-2.0 | https://github.com/tokio-rs/prost | LICENSE | -
+quinn | 0.11.12 | MIT OR Apache-2.0 | https://github.com/quinn-rs/quinn | LICENSE-APACHE, LICENSE-MIT | -
+quinn-proto | 0.11.18 | MIT OR Apache-2.0 | https://github.com/quinn-rs/quinn | LICENSE-APACHE, LICENSE-MIT | -
+quinn-udp | 0.5.15 | MIT OR Apache-2.0 | https://github.com/quinn-rs/quinn | LICENSE-APACHE, LICENSE-MIT | -
+quote | 1.0.47 | MIT OR Apache-2.0 | https://github.com/dtolnay/quote | LICENSE-APACHE, LICENSE-MIT | -
+r-efi | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later | https://github.com/r-efi/r-efi | (not found in package root) | -
+r-efi | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later | https://github.com/r-efi/r-efi | (not found in package root) | -
+radium | 0.7.0 | MIT | https://github.com/bitvecto-rs/radium | LICENSE.txt | -
+rand | 0.10.3 | MIT OR Apache-2.0 | https://github.com/rust-random/rand | LICENSE-APACHE, LICENSE-MIT | -
+rand | 0.8.8 | MIT OR Apache-2.0 | https://github.com/rust-random/rand | LICENSE-APACHE, LICENSE-MIT | -
+rand | 0.9.5 | MIT OR Apache-2.0 | https://github.com/rust-random/rand | LICENSE-APACHE, LICENSE-MIT | -
+rand_chacha | 0.3.1 | MIT OR Apache-2.0 | https://github.com/rust-random/rand | LICENSE-APACHE, LICENSE-MIT | -
+rand_chacha | 0.9.0 | MIT OR Apache-2.0 | https://github.com/rust-random/rand | LICENSE-APACHE, LICENSE-MIT | -
+rand_core | 0.10.1 | MIT OR Apache-2.0 | https://github.com/rust-random/rand_core | LICENSE-APACHE, LICENSE-MIT | -
+rand_core | 0.6.4 | MIT OR Apache-2.0 | https://github.com/rust-random/rand | LICENSE-APACHE, LICENSE-MIT | -
+rand_core | 0.9.5 | MIT OR Apache-2.0 | https://github.com/rust-random/rand | LICENSE-APACHE, LICENSE-MIT | -
+rand_pcg | 0.10.2 | MIT OR Apache-2.0 | https://github.com/rust-random/rngs | LICENSE-APACHE, LICENSE-MIT | -
+rayon | 1.12.0 | MIT OR Apache-2.0 | https://github.com/rayon-rs/rayon | LICENSE-APACHE, LICENSE-MIT | -
+rayon-core | 1.13.0 | MIT OR Apache-2.0 | https://github.com/rayon-rs/rayon | LICENSE-APACHE, LICENSE-MIT | -
+reddsa | 0.5.2 | MIT OR Apache-2.0 | https://github.com/ZcashFoundation/reddsa | LICENCE, LICENCE.MIT, LICENSE.Apache-2.0 | -
+redjubjub | 0.8.0 | MIT OR Apache-2.0 | https://github.com/ZcashFoundation/redjubjub | LICENCE, LICENCE.MIT, LICENSE.Apache-2.0 | -
+redox_syscall | 0.5.18 | MIT | https://gitlab.redox-os.org/redox-os/syscall | LICENSE | -
+regex | 1.13.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex | LICENSE-APACHE, LICENSE-MIT | -
+regex-automata | 0.4.18 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex | LICENSE-APACHE, LICENSE-MIT | -
+regex-syntax | 0.8.11 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex | LICENSE-APACHE, LICENSE-MIT | -
+reqwest | 0.13.5 | MIT OR Apache-2.0 | https://github.com/seanmonstar/reqwest | LICENSE-APACHE, LICENSE-MIT | -
+ring | 0.17.14 | Apache-2.0 AND ISC | https://github.com/briansmith/ring | LICENSE, LICENSE-BoringSSL, LICENSE-other-bits | -
+ripemd | 0.1.3 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | LICENSE-APACHE, LICENSE-MIT | -
+ripemd | 0.2.0-pre.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | LICENSE-APACHE, LICENSE-MIT | -
+rsqlite-vfs | 0.1.1 | MIT | https://crates.io/crates/rsqlite-vfs/0.1.1 | (not found in package root) | -
+rusqlite | 0.38.0 | MIT | https://github.com/rusqlite/rusqlite | LICENSE | -
+rustc-hash | 2.1.3 | Apache-2.0 OR MIT | https://github.com/rust-lang/rustc-hash | LICENSE-APACHE, LICENSE-MIT | -
+rustc_version | 0.4.1 | MIT OR Apache-2.0 | https://github.com/djc/rustc-version-rs | LICENSE-APACHE, LICENSE-MIT | -
+rusticata-macros | 4.1.0 | MIT/Apache-2.0 | https://github.com/rusticata/rusticata-macros.git | LICENSE-APACHE, LICENSE-MIT | -
+rustix | 1.1.5 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/rustix | LICENSE-APACHE, LICENSE-Apache-2.0_WITH_LLVM-exception, LICENSE-MIT | -
+rustls | 0.23.45 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/rustls | LICENSE-APACHE, LICENSE-ISC, LICENSE-MIT | -
+rustls-native-certs | 0.8.4 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/rustls-native-certs | LICENSE, LICENSE-APACHE, LICENSE-ISC, LICENSE-MIT | -
+rustls-pki-types | 1.15.1 | MIT OR Apache-2.0 | https://github.com/rustls/pki-types | LICENSE-APACHE, LICENSE-MIT | -
+rustls-platform-verifier | 0.7.0 | MIT OR Apache-2.0 | https://github.com/rustls/rustls-platform-verifier | LICENSE-APACHE, LICENSE-MIT | -
+rustls-platform-verifier-android | 0.1.1 | MIT OR Apache-2.0 | https://github.com/rustls/rustls-platform-verifier | (not found in package root) | -
+rustls-webpki | 0.103.15 | ISC | https://github.com/rustls/webpki | LICENSE | -
+rustversion | 1.0.23 | MIT OR Apache-2.0 | https://github.com/dtolnay/rustversion | LICENSE-APACHE, LICENSE-MIT | -
+ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 | https://github.com/dtolnay/ryu | LICENSE-APACHE, LICENSE-BOOST | -
+ryu-js | 1.0.3 | Apache-2.0 OR BSL-1.0 | https://github.com/boa-dev/ryu-js | LICENSE-APACHE, LICENSE-BOOST | -
+same-file | 1.0.6 | Unlicense/MIT | https://github.com/BurntSushi/same-file | COPYING, LICENSE-MIT | -
+sapling-crypto | 0.7.0 | MIT OR Apache-2.0 | https://github.com/zcash/sapling-crypto | LICENSE-APACHE, LICENSE-MIT | -
+schannel | 0.1.29 | MIT | https://github.com/steffengy/schannel-rs | LICENSE.md | -
+scopeguard | 1.2.0 | MIT OR Apache-2.0 | https://github.com/bluss/scopeguard | LICENSE-APACHE, LICENSE-MIT | -
+secp256k1 | 0.29.1 | CC0-1.0 | https://github.com/rust-bitcoin/rust-secp256k1/ | LICENSE | -
+secp256k1 | 0.31.1 | CC0-1.0 | https://github.com/rust-bitcoin/rust-secp256k1/ | LICENSE | -
+secp256k1-sys | 0.10.1 | CC0-1.0 | https://github.com/rust-bitcoin/rust-secp256k1/ | LICENSE | -
+secp256k1-sys | 0.11.0 | CC0-1.0 | https://github.com/rust-bitcoin/rust-secp256k1/ | LICENSE | -
+secrecy | 0.8.0 | Apache-2.0 OR MIT | https://github.com/iqlusioninc/crates/tree/main/secrecy | LICENSE-APACHE, LICENSE-MIT | -
+security-framework | 3.7.0 | MIT OR Apache-2.0 | https://github.com/kornelski/rust-security-framework | LICENSE-APACHE, LICENSE-MIT | -
+security-framework-sys | 2.17.0 | MIT OR Apache-2.0 | https://github.com/kornelski/rust-security-framework | LICENSE-APACHE, LICENSE-MIT | -
+semver | 1.0.28 | MIT OR Apache-2.0 | https://github.com/dtolnay/semver | LICENSE-APACHE, LICENSE-MIT | -
+serde | 1.0.229 | MIT OR Apache-2.0 | https://github.com/serde-rs/serde | LICENSE-APACHE, LICENSE-MIT | -
+serde_cbor_2 | 0.13.0 | MIT OR Apache-2.0 | https://github.com/kanidm/cbor | LICENSE-APACHE, LICENSE-MIT | -
+serde_core | 1.0.229 | MIT OR Apache-2.0 | https://github.com/serde-rs/serde | LICENSE-APACHE, LICENSE-MIT | -
+serde_derive | 1.0.229 | MIT OR Apache-2.0 | https://github.com/serde-rs/serde | LICENSE-APACHE, LICENSE-MIT | -
+serde_json | 1.0.151 | MIT OR Apache-2.0 | https://github.com/serde-rs/json | LICENSE-APACHE, LICENSE-MIT | -
+serde_json_canonicalizer | 0.3.2 | MIT | https://github.com/evik42/serde-json-canonicalizer | LICENSE | -
+serde_path_to_error | 0.1.20 | MIT OR Apache-2.0 | https://github.com/dtolnay/path-to-error | LICENSE-APACHE, LICENSE-MIT | -
+serde_urlencoded | 0.7.1 | MIT/Apache-2.0 | https://github.com/nox/serde_urlencoded | LICENSE-APACHE, LICENSE-MIT | -
+serdect | 0.2.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats/tree/master/serdect | LICENSE-APACHE, LICENSE-MIT | -
+sha1 | 0.10.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | LICENSE-APACHE, LICENSE-MIT | -
+sha2 | 0.10.9 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | LICENSE-APACHE, LICENSE-MIT | -
+sha2 | 0.11.0-pre.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | LICENSE-APACHE, LICENSE-MIT | -
+sharded-slab | 0.1.7 | MIT | https://github.com/hawkw/sharded-slab | LICENSE | -
+shardtree | 0.7.1 | MIT OR Apache-2.0 | https://github.com/zcash/incrementalmerkletree | LICENSE-APACHE, LICENSE-MIT | -
+shlex | 2.0.1 | MIT OR Apache-2.0 | https://github.com/comex/rust-shlex | LICENSE-APACHE, LICENSE-MIT | -
+signal-hook-registry | 1.4.8 | MIT OR Apache-2.0 | https://github.com/vorner/signal-hook | LICENSE-APACHE, LICENSE-MIT | -
+simd-adler32 | 0.3.10 | MIT | https://github.com/mcountryman/simd-adler32 | LICENSE.md | -
+simd_cesu8 | 1.2.0 | Apache-2.0 OR MIT | https://github.com/seancroach/simd_cesu8 | LICENSE-APACHE, LICENSE-MIT | -
+simdutf8 | 0.1.5 | MIT OR Apache-2.0 | https://github.com/rusticstuff/simdutf8 | LICENSE-Apache, LICENSE-MIT | -
+sinsemilla | 0.1.0 | MIT OR Apache-2.0 | https://github.com/zcash/sinsemilla | LICENSE-APACHE, LICENSE-MIT | -
+siphasher | 1.0.4 | MIT OR Apache-2.0 | https://github.com/jedisct1/rust-siphash | COPYING, LICENSE-APACHE, LICENSE-MIT | -
+slab | 0.4.12 | MIT | https://github.com/tokio-rs/slab | LICENSE | -
+smallvec | 1.16.2 | MIT OR Apache-2.0 | https://github.com/servo/rust-smallvec | LICENSE-APACHE, LICENSE-MIT | -
+socket2 | 0.6.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/socket2 | LICENSE-APACHE, LICENSE-MIT | -
+spin | 0.9.9 | MIT | https://github.com/mvdnes/spin-rs.git | LICENSE | -
+sqlite-wasm-rs | 0.5.5 | MIT | https://github.com/Spxg/sqlite-wasm-rs | LICENSE | -
+stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 | https://github.com/storyyeller/stable_deref_trait | LICENSE-APACHE, LICENSE-MIT | -
+static_assertions | 1.1.0 | MIT OR Apache-2.0 | https://github.com/nvzqz/static-assertions-rs | LICENSE-APACHE, LICENSE-MIT | -
+stringprep | 0.1.5 | MIT/Apache-2.0 | https://github.com/sfackler/rust-stringprep | LICENSE-APACHE, LICENSE-MIT | -
+subtle | 2.6.1 | BSD-3-Clause | https://github.com/dalek-cryptography/subtle | LICENSE | -
+syn | 2.0.119 | MIT OR Apache-2.0 | https://github.com/dtolnay/syn | LICENSE-APACHE, LICENSE-MIT | -
+syn | 3.0.6 | MIT OR Apache-2.0 | https://github.com/dtolnay/syn | LICENSE-APACHE, LICENSE-MIT | -
+sync_wrapper | 1.0.2 | Apache-2.0 | https://github.com/Actyx/sync_wrapper | LICENSE | -
+synstructure | 0.13.2 | MIT | https://github.com/mystor/synstructure | LICENSE | -
+synstructure | 0.14.0 | MIT | https://github.com/mystor/synstructure | LICENSE | -
+tap | 1.0.1 | MIT | https://github.com/myrrlyn/tap | LICENSE.txt | -
+tempfile | 3.27.0 | MIT OR Apache-2.0 | https://github.com/Stebalien/tempfile | LICENSE-APACHE, LICENSE-MIT | -
+thiserror | 1.0.69 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | LICENSE-APACHE, LICENSE-MIT | -
+thiserror | 2.0.21 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | LICENSE-APACHE, LICENSE-MIT | -
+thiserror-impl | 1.0.69 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | LICENSE-APACHE, LICENSE-MIT | -
+thiserror-impl | 2.0.21 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | LICENSE-APACHE, LICENSE-MIT | -
+thread_local | 1.1.10 | MIT OR Apache-2.0 | https://github.com/Amanieu/thread_local-rs | LICENSE-APACHE, LICENSE-MIT | -
+time | 0.3.55 | MIT OR Apache-2.0 | https://github.com/time-rs/time | LICENSE-Apache, LICENSE-MIT | -
+time-core | 0.1.9 | MIT OR Apache-2.0 | https://github.com/time-rs/time | LICENSE-Apache, LICENSE-MIT | -
+time-macros | 0.2.32 | MIT OR Apache-2.0 | https://github.com/time-rs/time | LICENSE-Apache, LICENSE-MIT | -
+tinystr | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+tinyvec | 1.13.3 | Zlib OR Apache-2.0 OR MIT | https://github.com/Lokathor/tinyvec | LICENSE-APACHE.md, LICENSE-MIT.md, LICENSE-ZLIB.md | -
+tokio | 1.53.2 | MIT | https://github.com/tokio-rs/tokio | LICENSE | -
+tokio-macros | 2.7.2 | MIT | https://github.com/tokio-rs/tokio | LICENSE | -
+tokio-native-tls | 0.3.1 | MIT | https://github.com/tokio-rs/tls | LICENSE | -
+tokio-postgres | 0.7.17 | MIT OR Apache-2.0 | https://github.com/rust-postgres/rust-postgres | LICENSE-APACHE, LICENSE-MIT | -
+tokio-rustls | 0.26.6 | MIT OR Apache-2.0 | https://github.com/rustls/tokio-rustls | LICENSE-APACHE, LICENSE-MIT | -
+tokio-stream | 0.1.19 | MIT | https://github.com/tokio-rs/tokio | LICENSE | -
+tokio-util | 0.7.19 | MIT | https://github.com/tokio-rs/tokio | LICENSE | -
+tonic | 0.14.6 | MIT | https://github.com/hyperium/tonic | LICENSE | -
+tonic-build | 0.14.6 | MIT | https://github.com/hyperium/tonic | LICENSE | -
+tonic-prost | 0.14.6 | MIT | https://github.com/hyperium/tonic | (not found in package root) | -
+tonic-prost-build | 0.14.6 | MIT | https://github.com/hyperium/tonic | (not found in package root) | -
+tower | 0.5.3 | MIT | https://github.com/tower-rs/tower | LICENSE | -
+tower-http | 0.6.11 | MIT | https://github.com/tower-rs/tower-http | LICENSE | -
+tower-layer | 0.3.3 | MIT | https://github.com/tower-rs/tower | LICENSE | -
+tower-service | 0.3.3 | MIT | https://github.com/tower-rs/tower | LICENSE | -
+tracing | 0.1.44 | MIT | https://github.com/tokio-rs/tracing | LICENSE | -
+tracing-attributes | 0.1.31 | MIT | https://github.com/tokio-rs/tracing | LICENSE | -
+tracing-core | 0.1.36 | MIT | https://github.com/tokio-rs/tracing | LICENSE | -
+tracing-log | 0.2.0 | MIT | https://github.com/tokio-rs/tracing | LICENSE | -
+tracing-subscriber | 0.3.23 | MIT | https://github.com/tokio-rs/tracing | LICENSE | -
+try-lock | 0.2.5 | MIT | https://github.com/seanmonstar/try-lock | LICENSE | -
+typenum | 1.20.1 | MIT OR Apache-2.0 | https://github.com/paholg/typenum | LICENSE, LICENSE-APACHE, LICENSE-MIT | -
+uint | 0.9.5 | MIT OR Apache-2.0 | https://github.com/paritytech/parity-common | (not found in package root) | -
+unicode-bidi | 0.3.18 | MIT OR Apache-2.0 | https://github.com/servo/unicode-bidi | LICENSE-APACHE, LICENSE-MIT | -
+unicode-ident | 1.0.26 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/dtolnay/unicode-ident | LICENSE-APACHE, LICENSE-MIT, LICENSE-UNICODE | -
+unicode-normalization | 0.1.25 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-normalization | LICENSE-APACHE, LICENSE-MIT | -
+unicode-properties | 0.1.4 | MIT/Apache-2.0 | https://github.com/unicode-rs/unicode-properties | LICENSE-APACHE, LICENSE-MIT | -
+universal-hash | 0.5.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits | LICENSE-APACHE, LICENSE-MIT | -
+untrusted | 0.9.0 | ISC | https://github.com/briansmith/untrusted | LICENSE.txt | -
+url | 2.5.8 | MIT OR Apache-2.0 | https://github.com/servo/rust-url | LICENSE-APACHE, LICENSE-MIT | -
+utf8_iter | 1.0.4 | Apache-2.0 OR MIT | https://github.com/hsivonen/utf8_iter | LICENSE-APACHE, LICENSE-MIT | -
+uuid | 1.27.0 | Apache-2.0 OR MIT | https://github.com/uuid-rs/uuid | LICENSE-APACHE, LICENSE-MIT | -
+valuable | 0.1.1 | MIT | https://github.com/tokio-rs/valuable | (not found in package root) | -
+vcpkg | 0.2.15 | MIT/Apache-2.0 | https://github.com/mcgoo/vcpkg-rs | LICENSE-APACHE, LICENSE-MIT | -
+version_check | 0.9.5 | MIT/Apache-2.0 | https://github.com/SergioBenitez/version_check | LICENSE-APACHE, LICENSE-MIT | -
+visibility | 0.1.1 | Zlib OR MIT OR Apache-2.0 | https://github.com/danielhenrymantilla/visibility.rs | LICENSE, LICENSE-APACHE, LICENSE-MIT, LICENSE-ZLIB | -
+walkdir | 2.5.0 | Unlicense/MIT | https://github.com/BurntSushi/walkdir | COPYING, LICENSE-MIT | -
+want | 0.3.1 | MIT | https://github.com/seanmonstar/want | LICENSE | -
+wasi | 0.11.1+wasi-snapshot-preview1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/wasi | LICENSE-APACHE, LICENSE-Apache-2.0_WITH_LLVM-exception, LICENSE-MIT | -
+wasi | 0.14.7+wasi-0.2.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/wasi-rs | LICENSE-APACHE, LICENSE-Apache-2.0_WITH_LLVM-exception, LICENSE-MIT | -
+wasip2 | 1.0.4+wasi-0.2.12 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/wasi-rs | LICENSE-APACHE, LICENSE-Apache-2.0_WITH_LLVM-exception, LICENSE-MIT | -
+wasite | 1.0.2 | Apache-2.0 OR BSL-1.0 OR MIT | https://github.com/ardaku/wasite | (not found in package root) | -
+wasm-bindgen | 0.2.129 | MIT OR Apache-2.0 | https://github.com/wasm-bindgen/wasm-bindgen | LICENSE-APACHE, LICENSE-MIT | -
+wasm-bindgen-futures | 0.4.79 | MIT OR Apache-2.0 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/futures | LICENSE-APACHE, LICENSE-MIT | -
+wasm-bindgen-macro | 0.2.129 | MIT OR Apache-2.0 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro | LICENSE-APACHE, LICENSE-MIT | -
+wasm-bindgen-macro-support | 0.2.129 | MIT OR Apache-2.0 | https://github.com/wasm-bindgen/wasm-bindgen/tree/main/crates/macro-support | LICENSE-APACHE, LICENSE-MIT | -
+wasm-bindgen-shared | 0.2.129 | MIT OR Apache-2.0 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared | LICENSE-APACHE, LICENSE-MIT | -
+web-sys | 0.3.106 | MIT OR Apache-2.0 | https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys | LICENSE-APACHE, LICENSE-MIT | -
+web-time | 1.1.0 | MIT OR Apache-2.0 | https://github.com/daxpedda/web-time | LICENSE-APACHE, LICENSE-MIT | -
+webauthn-attestation-ca | 0.5.5 | MPL-2.0 | https://github.com/kanidm/webauthn-rs | (not found in package root) | -
+webauthn-rs | 0.5.5 | MPL-2.0 | https://github.com/kanidm/webauthn-rs | (not found in package root) | -
+webauthn-rs-core | 0.5.5 | MPL-2.0 | https://github.com/kanidm/webauthn-rs | (not found in package root) | -
+webauthn-rs-proto | 0.5.5 | MPL-2.0 | https://github.com/kanidm/webauthn-rs | (not found in package root) | -
+webpki-root-certs | 1.0.9 | CDLA-Permissive-2.0 | https://github.com/rustls/webpki-roots | LICENSE | -
+webpki-roots | 1.0.9 | CDLA-Permissive-2.0 | https://github.com/rustls/webpki-roots | LICENSE | -
+which | 8.0.6 | MIT | https://github.com/harryfei/which-rs.git | LICENSE.txt | -
+whoami | 2.1.3 | Apache-2.0 OR BSL-1.0 OR MIT | https://github.com/ardaku/whoami | LICENSE_APACHE, LICENSE_BOOST, LICENSE_MIT | -
+winapi-util | 0.1.11 | Unlicense OR MIT | https://github.com/BurntSushi/winapi-util | COPYING, LICENSE-MIT | -
+windows-link | 0.2.1 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+windows-sys | 0.52.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+windows-sys | 0.61.2 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+windows-targets | 0.52.6 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+windows_aarch64_gnullvm | 0.52.6 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+windows_aarch64_msvc | 0.52.6 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+windows_i686_gnu | 0.52.6 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+windows_i686_gnullvm | 0.52.6 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+windows_i686_msvc | 0.52.6 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+windows_x86_64_gnu | 0.52.6 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+windows_x86_64_gnullvm | 0.52.6 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+windows_x86_64_msvc | 0.52.6 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | license-apache-2.0, license-mit | -
+wit-bindgen | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/wit-bindgen | LICENSE-APACHE, LICENSE-Apache-2.0_WITH_LLVM-exception, LICENSE-MIT | -
+writeable | 0.6.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+wyz | 0.5.1 | MIT | https://github.com/myrrlyn/wyz | LICENSE.txt | -
+x509-parser | 0.16.0 | MIT OR Apache-2.0 | https://github.com/rusticata/x509-parser.git | LICENSE-APACHE, LICENSE-MIT | -
+yoke | 0.8.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+yoke-derive | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+zcash_address | 0.13.0 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zcash_address | 0.14.0-pre.0 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zcash_client_backend | 0.24.0 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zcash_encoding | 0.4.0 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zcash_encoding | 0.5.0 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zcash_keys | 0.16.1 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zcash_note_encryption | 0.4.2 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zcash_primitives | 0.30.1 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zcash_protocol | 0.10.6 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zcash_protocol | 0.11.0-pre.0 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zcash_script | 0.4.5 | Apache-2.0 | https://github.com/ZcashFoundation/zcash_script | (not found in package root) | -
+zcash_spec | 0.2.1 | MIT OR Apache-2.0 | https://github.com/zcash/zcash_spec | LICENSE-APACHE, LICENSE-MIT | -
+zcash_transparent | 0.10.0 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zerocopy | 0.8.59 | BSD-2-Clause OR Apache-2.0 OR MIT | https://github.com/google/zerocopy | LICENSE-APACHE, LICENSE-BSD, LICENSE-MIT | -
+zerocopy-derive | 0.8.59 | BSD-2-Clause OR Apache-2.0 OR MIT | https://github.com/google/zerocopy | LICENSE-APACHE, LICENSE-BSD, LICENSE-MIT | -
+zerofrom | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+zerofrom-derive | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+zeroize | 1.9.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils | LICENSE-APACHE, LICENSE-MIT | -
+zeroize_derive | 1.5.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils | LICENSE-APACHE, LICENSE-MIT | -
+zerotrie | 0.2.5 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+zerovec | 0.11.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+zerovec-derive | 0.11.6 | Unicode-3.0 | https://github.com/unicode-org/icu4x | LICENSE | -
+zip32 | 0.2.1 | MIT OR Apache-2.0 | https://github.com/zcash/zip32 | LICENSE-APACHE, LICENSE-MIT | -
+zip321 | 0.10.0-pre.0 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zip321 | 0.9.0 | MIT OR Apache-2.0 | https://github.com/zcash/librustzcash | LICENSE-APACHE, LICENSE-MIT | -
+zlib-rs | 0.6.8 | Zlib | https://github.com/trifectatechfoundation/zlib-rs | LICENSE | -
+zmij | 1.0.23 | MIT | https://github.com/dtolnay/zmij | LICENSE-MIT | -
+
+END OF INVENTORY

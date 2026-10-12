@@ -183,7 +183,7 @@ The retained connector modules implement explicit capability contracts and netwo
 
 These modules are no longer a product-facing registry. The current signed-out Vault exposes passkey access only; the authenticated workspace exposes no persistent wallet connection state; and `/zcash/wallet` redirects to payment review. Existing ZecAuth or derived-wallet authentication records from earlier versions remain removable under the access-method safeguards, but new wallet pairing is not offered in current account or payment navigation.
 
-WalletConnect remains excluded from product discovery, and no specific injected wallet defines Zerant compatibility. ZIP-321 is the current portable payment boundary. Retaining compatibility tests does not change credential subject binding, server storage, key lifecycle, revocation, replay handling, consent, or retention.
+No specific injected wallet defines Zerant compatibility. ZIP-321 is the current portable payment boundary. Retaining compatibility tests does not change credential subject binding, server storage, key lifecycle, revocation, replay handling, consent, or retention.
 
 ### Zcash sign-in identity linking
 
@@ -197,7 +197,7 @@ The Zerant ID is an account handle for authentication and credential routing. It
 
 Zcash developer RPCs are used only behind the private service boundary for bounded readiness, capability discovery, and named-transaction observation. RPC success is not payment settlement, and RPC credentials never reach the browser. ZIP-321 payment URIs are part of the product now: Zerant validates an exact request and lets the holder open or copy the complete request in a compatible wallet. FROST/shared-control and PCZT are documented capability boundaries for a later organization treasury or shared approval workflow; no Zerant ID payment and no live FROST signer are claimed here.
 
-WalletConnect is not a supported product route. The hosted testnet product uses the portable ZIP-321 handoff as its payment boundary. Retained adapter code is compatibility research, not a prerequisite or visible connection state.
+The hosted testnet product uses portable ZIP-321 handoff as its payment boundary. Retained adapter code is compatibility research, not a prerequisite or visible connection state.
 
 ### Wallet-independent testnet payment handoff (2026-10-06)
 
@@ -378,7 +378,7 @@ discovery alone never authorizes spending. FROST is an interface, not live signi
 
 The repository retains detector, adapter, restoration, and direct-payment tests from the earlier browser-wallet prototype. They remain useful for interoperability research and regression coverage, but current product navigation does not expose provider discovery, connection state, or direct browser-wallet execution.
 
-Passkeys provide current Zerant account access. Every validated payment retains its canonical ZIP-321 URI for external handoff; simple requests may also expose exact manual details after server validation. WalletConnect remains excluded from product discovery. External wallet submission is not settlement verification, and none of the retained compatibility code changes credential trust, consent, revocation, replay, or retention boundaries.
+Passkeys provide current Zerant account access. Every validated payment retains its canonical ZIP-321 URI for external handoff; simple requests may also expose exact manual details after server validation. External wallet submission is not settlement verification, and none of the retained compatibility code changes credential trust, consent, revocation, replay, or retention boundaries.
 
 ### Vault key-provider boundary
 

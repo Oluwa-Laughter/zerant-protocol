@@ -1,15 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { connectConnector, disconnectZcash, getZcashConnectionSnapshot, probeExistingConnection, resetConnectorAuthorization, restoreConnection } from "./zcash-connection";
-import { discoverZcashConnectors, injectedConnector, walletConnectConnector } from "./zcash-connectors";
+import { discoverZcashConnectors, injectedConnector } from "./zcash-connectors";
 import { registerZcashWalletDetector, type ZcashWalletAdapter } from "./zcash-wallet";
 import { signInWithZcashWallet } from "./zcash-auth";
 import { directPaymentMode } from "./zcash-payment-connector";
-import { WalletConnectZcashAdapter, ZCASH_MAINNET_CAIP } from "./zcash-walletconnect";
 
 function fakeAdapter(id: string, identitySigning = false): ZcashWalletAdapter {
   return { id, name: id, capabilities: { identitySigning, shieldedPayment: false,
-    transparentPayment: false, paymentRequestHandoff: false, walletConnect: false,
+    transparentPayment: false, paymentRequestHandoff: false,
     zecAuthHandoff: false, connectionRestore: true },
   connect: async () => ({ providerId: id, providerName: id, shieldedAddress: "", transparentAddress: "tm", accountCount: 1 }),
   existingConnection: async () => null,
@@ -25,7 +24,7 @@ test("registry discovers multiple installed providers and portable paths", async
   const removeFirst = registerZcashWalletDetector(() => first);
   const removeSecond = registerZcashWalletDetector(() => second);
   try {
-    const methods = discoverZcashConnectors("connection", "zcash:testnet", "");
+    const methods = discoverZcashConnectors("connection", "zcash:testnet");
     assert.deepEqual(methods.map((method) => method.id), ["first:injected", "second:injected", "zip321:portable"]);
     await connectConnector(methods[1], "zcash:testnet");
     assert.equal(getZcashConnectionSnapshot().account?.providerId, "second");
@@ -206,55 +205,6 @@ test("rich or shielded requests cannot be downgraded to transparent payment", ()
   assert.equal(directPaymentMode({ ...base, payments: [{ ...base.payments[0], recipient: "t1recipient", memo_present: true }] }, connector), null);
   assert.equal(directPaymentMode({ ...base, payments: [{ ...base.payments[0], recipient: "t1recipient" }] }, connector), "transparent");
 });
-
-test("WalletConnect gains transparent payment only after a verified transferable transparent session", async () => {
-  const requests: unknown[] = []; const displayed: string[] = []; let disconnected = false;
-  const session = { topic: "topic", namespaces: { bip122: { accounts: [`${ZCASH_MAINNET_CAIP}:t1recipient`], methods: ["zcash_getAddress", "zcash_transfer"] } } };
-  let available = false;
-  const adapter = new WalletConnectZcashAdapter("project", (uri) => displayed.push(uri), async () => ({
-    session: { getAll: () => available ? [session] : [] },
-    connect: async () => ({ uri: "wc:pairing", approval: async () => { available = true; return session; } }),
-    disconnect: async () => { disconnected = true; },
-    request: async (input: unknown) => { requests.push(input); return "tx"; },
-  }));
-  const connector = walletConnectConnector("project", (uri) => displayed.push(uri), adapter);
-  assert.deepEqual([...connector.capabilities].sort(), ["connectionRestore", "walletConnect"]);
-  assert.equal(connector.capabilities.has("identitySigning"), false);
-  assert.equal(connector.capabilities.has("shieldedPayment"), false);
-  await connector.connect!();
-  assert.deepEqual(displayed, ["wc:pairing"]);
-  assert.equal(connector.capabilities.has("transparentPayment"), true);
-  assert.equal((await connector.existingConnection!())?.providerId, "walletconnect");
-  assert.deepEqual(requests, []);
-  await connector.disconnect!(); assert.equal(disconnected, true);
-  assert.equal(connector.capabilities.has("transparentPayment"), false);
-});
-
-test("WalletConnect does not advertise payment without transfer method or transparent account", async () => {
-  for (const [address, methods] of [
-    ["t1recipient", ["zcash_getAddress"]],
-    ["u1recipient", ["zcash_getAddress", "zcash_transfer"]],
-  ] as const) {
-    const session = { topic: "topic", namespaces: { bip122: {
-      accounts: [`${ZCASH_MAINNET_CAIP}:${address}`], methods: [...methods],
-    } } };
-    const requests: unknown[] = [];
-    const adapter = new WalletConnectZcashAdapter("project", () => {}, async () => ({
-      session: { getAll: () => [session] },
-      connect: async () => { throw new Error("Restored session should be used."); },
-      disconnect: async () => {},
-      request: async (input: unknown) => { requests.push(input); return "tx"; },
-    }));
-    const connector = walletConnectConnector("project", () => {}, adapter);
-    assert.equal(connector.capabilities.has("transparentPayment"), false);
-    assert.ok(await connector.existingConnection!());
-    assert.equal(connector.capabilities.has("transparentPayment"), false);
-    assert.equal(connector.capabilities.has("identitySigning"), false);
-    assert.equal(connector.capabilities.has("shieldedPayment"), false);
-    assert.deepEqual(requests, []);
-  }
-});
-
 
 test("authorization reset clears selected state and verifies Noir permission is gone", async () => {
   let authorized = true;

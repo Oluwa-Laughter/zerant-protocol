@@ -29,6 +29,7 @@ Zerant is a **testnet-stage credential, trust and consent platform** with an ind
 - [Payment specification](specs/payment-v0.1.md) — payment claim model and integration boundaries.
 - [Public issuer trust discovery](PUBLIC_TRUST_DISCOVERY.md) — keys and issuer metadata.
 - [Threat model](THREAT_MODEL.md), [privacy contract](PRIVACY.md), [security reporting](../SECURITY.md).
+- [Project license](../LICENSE) and [third-party notices](../THIRD_PARTY_NOTICES.md) — ownership and dependency obligations.
 - [Account access](ACCOUNT_ACCESS.md) — passkeys, sessions, and optional wallet authentication.
 
 ## Integrations and developer references

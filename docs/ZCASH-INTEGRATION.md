@@ -194,7 +194,7 @@ Zerant does not read a wallet balance or transaction history before offering thi
 
 This section documents compatibility behavior retained in source and tests. It is not a current product interaction: the normal Vault uses passkeys, the payment workspace uses ZIP-321 handoff, and no product screen presents a persistent browser-wallet connection state.
 
-The earlier browser prototype routed through explicit injected-wallet adapters, ZecAuth authentication handoff, and canonical ZIP-321 payment handoff. Those adapters remain isolated compatibility code rather than current navigation. WalletConnect is intentionally not used by product discovery because its current namespace does not solve the hosted testnet flow. The native Zcash payment parser remains the authority for canonical ZIP-321 validation, and any external wallet submission remains separate from settlement verification.
+The earlier browser prototype evaluated explicit injected-wallet adapters, ZecAuth authentication handoff, and canonical ZIP-321 payment handoff. The retained injected and portable adapters are compatibility code, not a required connection step in current navigation. ZIP-321 remains the portable testnet payment method; server-side canonical request validation is authoritative, and wallet submission is distinct from settlement verification.
 
 ### Production light-client readiness
 

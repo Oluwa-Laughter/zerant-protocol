@@ -8,12 +8,11 @@ import {
   type WalletMessageSignature,
   type ZecAuthWalletChallenge,
 } from "./zcash-wallet";
-import { WalletConnectZcashAdapter } from "./zcash-walletconnect";
 
 export type WalletCapability =
   | "identitySigning" | "zecAuth" | "shieldedPayment"
-  | "transparentPayment" | "zip321Handoff" | "walletConnect" | "connectionRestore";
-export type WalletTransport = "injected" | "zecauth" | "walletconnect" | "uri_handoff";
+  | "transparentPayment" | "zip321Handoff" | "connectionRestore";
+export type WalletTransport = "injected" | "zecauth" | "uri_handoff";
 export type WalletAvailability = "detected" | "available" | "unavailable" | "unsupported";
 export type WalletPurpose = "identity" | "payment" | "connection";
 export type ZcashChain = "zcash:mainnet" | "zcash:testnet";
@@ -36,37 +35,26 @@ export interface ZcashConnector {
   disconnect?(): Promise<void>;
 }
 
-function liveConnector(adapter: ZcashWalletAdapter, transport: "injected" | "walletconnect"): ZcashConnector {
+function liveConnector(adapter: ZcashWalletAdapter, transport: "injected"): ZcashConnector {
   const capabilities = new Set<WalletCapability>();
-  if (transport === "injected" && adapter.capabilities.identitySigning && adapter.signIdentityChallenge) capabilities.add("identitySigning");
-  if (transport === "injected" && adapter.capabilities.shieldedPayment && adapter.sendShieldedPayment) capabilities.add("shieldedPayment");
-  if (transport === "injected" && adapter.capabilities.transparentPayment && adapter.sendTransparentPayment) capabilities.add("transparentPayment");
+  if (adapter.capabilities.identitySigning && adapter.signIdentityChallenge) capabilities.add("identitySigning");
+  if (adapter.capabilities.shieldedPayment && adapter.sendShieldedPayment) capabilities.add("shieldedPayment");
+  if (adapter.capabilities.transparentPayment && adapter.sendTransparentPayment) capabilities.add("transparentPayment");
   if (adapter.capabilities.connectionRestore) capabilities.add("connectionRestore");
-  if (transport === "walletconnect") capabilities.add("walletConnect");
-  function syncAfterSession(): void {
-    if (transport !== "walletconnect") return;
-    capabilities.delete("transparentPayment");
-    if (adapter.capabilities.transparentPayment && adapter.sendTransparentPayment) capabilities.add("transparentPayment");
-  }
   return {
     id: `${adapter.id}:${transport}`, walletId: adapter.id, name: adapter.name,
-    transport, availability: transport === "injected" ? "detected" : "available", capabilities, adapter,
-    connect: async () => { const account = await adapter.ensureConnection(); syncAfterSession(); return account; },
-    existingConnection: async () => { const account = await adapter.existingConnection(); syncAfterSession(); return account; },
+    transport, availability: "detected", capabilities, adapter,
+    connect: async () => { const account = await adapter.ensureConnection(); return account; },
+    existingConnection: async () => { const account = await adapter.existingConnection(); return account; },
     signIdentityChallenge: adapter.signIdentityChallenge?.bind(adapter),
     sendShieldedPayment: adapter.sendShieldedPayment?.bind(adapter),
     sendTransparentPayment: adapter.sendTransparentPayment?.bind(adapter),
-    disconnect: adapter.disconnect ? async () => { try { await adapter.disconnect!(); } finally { capabilities.delete("transparentPayment"); } } : undefined,
+    disconnect: adapter.disconnect ? async () => { await adapter.disconnect!(); } : undefined,
   };
 }
 
 export function injectedConnector(adapter: InjectedZcashWalletAdapter): ZcashConnector {
   return liveConnector(adapter, "injected");
-}
-
-export function walletConnectConnector(projectId: string, displayUri: (uri: string) => void,
-  adapter = new WalletConnectZcashAdapter(projectId, displayUri)): ZcashConnector {
-  return liveConnector(adapter, "walletconnect");
 }
 
 export function zecAuthConnector(): ZcashConnector {
@@ -107,16 +95,14 @@ function valid(connector: ZcashConnector): boolean {
   };
   if (!connector.id || !connector.walletId || !connector.name || !(connector.capabilities instanceof Set)) return false;
   const capabilities: ReadonlySet<WalletCapability> = connector.capabilities;
-  if (capabilities.has("walletConnect") && (connector.transport !== "walletconnect" || !connector.connect)) return false;
   return [...capabilities].every((capability) =>
-    Object.hasOwn(methods, capability) || capability === "walletConnect") &&
+    Object.hasOwn(methods, capability)) &&
     [...capabilities].every((capability) =>
       !methods[capability] || typeof connector[methods[capability]] === "function");
 }
 
 export function supportsPurpose(connector: ZcashConnector, purpose: WalletPurpose): boolean {
   if (connector.availability === "unavailable" || connector.availability === "unsupported") return false;
-  if (purpose === "identity" && connector.transport === "walletconnect") return false;
   if (purpose === "connection") return !!connector.connect || connector.capabilities.has("zecAuth") || connector.capabilities.has("zip321Handoff");
   return purpose === "identity"
     ? (connector.capabilities.has("identitySigning") && !!connector.signIdentityChallenge)
@@ -129,12 +115,8 @@ export function supportsPurpose(connector: ZcashConnector, purpose: WalletPurpos
 export function discoverZcashConnectors(
   purpose: WalletPurpose,
   activeChain: ZcashChain,
-  walletConnectProjectId = "",
   candidates?: ZcashConnector[],
-  displayUri: (uri: string) => void = () => {},
 ): ZcashConnector[] {
-  void walletConnectProjectId;
-  void displayUri;
   const available = candidates ?? [
     ...getInjectedZcashWallets().map(injectedConnector),
     ...[...registered.values()].map((factory) => factory()).filter((value): value is ZcashConnector => value !== null),
@@ -145,19 +127,14 @@ export function discoverZcashConnectors(
   };
   const best = new Map<string, ZcashConnector>();
   for (const connector of available) {
-    // Zerant does not use WalletConnect for product flows. Its current Zcash
-    // namespace is mainnet-oriented and cannot solve the testnet wallet path;
-    // reviewed injected adapters and ZIP-321 handoff remain the supported routes.
-    if (connector.transport === "walletconnect") continue;
     if (!valid(connector) || !supportsPurpose(connector, purpose)) continue;
     const prior = best.get(connector.walletId);
     if (!prior || priority[connector.availability] < priority[prior.availability]) best.set(connector.walletId, connector);
   }
   const transportPriority: Record<WalletTransport, number> = {
     injected: 0,
-    walletconnect: 1,
-    uri_handoff: 2,
-    zecauth: 3,
+    uri_handoff: 1,
+    zecauth: 2,
   };
   return [...best.values()].sort((a, b) =>
     priority[a.availability] - priority[b.availability]
