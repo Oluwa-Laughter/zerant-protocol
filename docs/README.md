@@ -1,42 +1,52 @@
-# Documentation
+# Zerant documentation
 
-This directory contains Zerant's product architecture, protocol contracts, security boundaries, integration references, and development notes.
+Zerant is a **testnet-stage credential, trust and consent platform** with an independent Zcash payment-preparation integration. The [main README](../README.md) is the fastest overview and includes the **[live application](https://zerant.vercel.app)** and **[product demo](https://youtu.be/P36WelovsiU)**.
 
-Start with the [project README](../README.md) for the overview, technology stack, and local development commands.
+## Start here
 
-## System design
+| Question | Read |
+| --- | --- |
+| What does the product do, and how can I try it? | [Project README](../README.md) |
+| What is live vs. experimental? | [Feature status and roadmap](ROADMAP.md) |
+| Where do credentials, requests and keys flow? | [Architecture](ARCHITECTURE.md) |
+| What data is exposed and what are the privacy limits? | [Privacy contract](PRIVACY.md) and [threat model](THREAT_MODEL.md) |
+| What is actually integrated with Zcash? | [Zcash integration](ZCASH-INTEGRATION.md) and [wallet compatibility](WALLET_COMPATIBILITY.md) |
+| How can a verifier integrate? | [Verifier API](VERIFIER_INTEGRATION_API.md) and [webhooks](VERIFIER_WEBHOOKS.md) |
+| How is it deployed and configured? | [Deployment / operations](VERCEL_DEPLOYMENT.md) |
 
-- [Architecture](ARCHITECTURE.md) — services, data ownership, trust boundaries, and request lifecycle.
-- [Protocol](PROTOCOL.md) — issuer, holder, and verifier contracts.
-- [Privacy](PRIVACY.md) — disclosure guarantees and practical limits.
-- [Threat model](THREAT_MODEL.md) — adversarial cases and residual risks.
-- [Account access](ACCOUNT_ACCESS.md) — passkeys, authentication, and session behavior.
-- [Product and implementation roadmap](ROADMAP.md) — completed and planned milestones.
+### Implementation boundaries
 
-## Integrations
+- **Hosted application:** Next.js frontend, private Rust/Axum service and database; passkey accounts; issuer, holder and verifier workflows; signed consent-bound disclosures; Zcash testnet payment preparation.
+- **Native Rust / local tooling:** protocol modules, fixtures, and isolated Zcash/regtest verification experiments. These do **not** imply the hosted product executes those same operations with real wallet funds.
+- **Not currently claimed:** zero-knowledge credential predicates, cryptographic anonymity, universal unlinkability, wallet custody, exact shielded recipient settlement verification, or a production mainnet payment service.
 
-- [Zcash integration](ZCASH-INTEGRATION.md) — addresses, ZIP-321, payment review, network state, and custody separation.
-- [Wallet compatibility](WALLET_COMPATIBILITY.md) — supported actions and boundaries of retained adapters.
-- [Verifier API](VERIFIER_INTEGRATION_API.md) — request and result integrations.
-- [Verifier webhooks](VERIFIER_WEBHOOKS.md) — signed delivery, retries, and trust.
-- [Public trust discovery](PUBLIC_TRUST_DISCOVERY.md) — published issuer and key information.
-- [Zcash resources](ZCASH-RESOURCES.md) — useful protocol and ecosystem references.
-- [Deployment](VERCEL_DEPLOYMENT.md) — private services, environment configuration, and operations.
+## Protocol and security
 
-## Protocol specs and examples
+- [Protocol model](PROTOCOL.md) — the issuer/holder/verifier trust model.
+- [Credential formats](specs/credential-v0.1.md) — canonical signed credential structure.
+- [Minimal disclosure v0.1](specs/disclosure-v0.1.md), [v0.2](specs/disclosure-v0.2.md), [v0.3](specs/disclosure-v0.3.md) — versioned specifications, not interchangeable guarantees.
+- [Policy/reputation primitives](specs/reputation-v0.1.md) — contextual evaluation rather than a global reputation score.
+- [Payment specification](specs/payment-v0.1.md) — payment claim model and integration boundaries.
+- [Public issuer trust discovery](PUBLIC_TRUST_DISCOVERY.md) — keys and issuer metadata.
+- [Threat model](THREAT_MODEL.md), [privacy contract](PRIVACY.md), [security reporting](../SECURITY.md).
+- [Account access](ACCOUNT_ACCESS.md) — passkeys, sessions, and optional wallet authentication.
 
-- [Credential specification](specs/credential-v0.1.md)
-- [Disclosure specifications](specs/disclosure-v0.1.md), [v0.2](specs/disclosure-v0.2.md), [v0.3](specs/disclosure-v0.3.md)
-- [Payment specification](specs/payment-v0.1.md)
-- [Reputation and policy specification](specs/reputation-v0.1.md)
-- [Policy examples](examples/README.md)
-- [Original milestone scope](scope/milestone-01.md) — historical reference, not the current feature list.
+## Integrations and developer references
 
-## Design and engineering
+- [Verifier integration API](VERIFIER_INTEGRATION_API.md).
+- [Verifier webhooks](VERIFIER_WEBHOOKS.md).
+- [Zcash integration](ZCASH-INTEGRATION.md).
+- [Wallet compatibility](WALLET_COMPATIBILITY.md).
+- [Ecosystem resources](ZCASH-RESOURCES.md).
+- [Backend deployment](VERCEL_DEPLOYMENT.md).
+- [Policy fixtures and examples](examples/README.md).
 
-- [Design principles](../DESIGN.md)
-- [Product principles](../PRODUCT.md)
-- [Animation and accessibility audit](ANIMATION_AUDIT.md)
-- [Security reporting](../SECURITY.md)
+## Design and historical notes
 
-Documentation should distinguish implemented behavior from experimental work. In particular, a credential disclosure is not a zero-knowledge proof, and a prepared Zcash payment is not a confirmed settlement.
+- [Design system](../DESIGN.md) — current UI and accessibility principles.
+- [Product model](../PRODUCT.md) — problems, primitives and trust boundaries.
+- [Roadmap](ROADMAP.md) — delivered and future work.
+- [Animation review](ANIMATION_AUDIT.md) — point-in-time UI audit.
+- [Initial milestone scope](scope/milestone-01.md) and [native credential implementation note](specs/implementation-m1b.md) — historical snapshots; refer to the current README for hosted capability.
+
+**Reading rule:** Versioned protocol drafts and earlier milestone notes are engineering references, not proof of a feature deployed on the live site. When documentation differs, distinguish the tested **hosted application** from the **native crate** or historical design proposal.

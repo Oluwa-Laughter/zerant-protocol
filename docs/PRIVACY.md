@@ -1,6 +1,6 @@
 # Privacy contract and limits
 
-Status: privacy contract and implementation limits. Native credential/disclosure code enforces several data-minimization and binding rules, while vault/browser transport and Zcash settlement privacy remain outside the implemented boundary. Zerant is signed minimal disclosure, not zero knowledge, anonymity or cryptographic unlinkability.
+**Reading note (current product):** The hosted app uses an authenticated Rust service and server-managed encrypted credential records. Its holder-approval and verifier results are request-scoped; cryptographic proof-generation and policy tooling described below may concern native Rust crates rather than browser-local processing. The service can decrypt records as needed and is a trust boundary. Zerant is signed minimal disclosure, **not** zero knowledge, anonymity or cryptographic unlinkability. Zcash settlement confirmation is not implemented for exact shielded recipients.
 
 ## Pairwise verifier proof keys
 

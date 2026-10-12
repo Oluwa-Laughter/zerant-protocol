@@ -1,5 +1,7 @@
 # Animation and Responsive Verification
 
+Historical QA snapshot. Re-run mobile interaction and accessibility checks after major UI changes.
+
 Validation date: 2026-10-08  
 Site: https://zerant.vercel.app  
 Reference workflow: MengTo `optimize-web-animations` (measure live behavior, reduce unnecessary offscreen work, respect reduced motion).

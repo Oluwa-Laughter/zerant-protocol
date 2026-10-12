@@ -2,7 +2,9 @@
 
 Zerant is a versioned application protocol, not a claim of W3C VC compatibility. The native Rust credential profile and disclosure v0.2 profile are implemented; browser transport, vault storage and hosted deployment remain separate concerns. MUST/MUST NOT language is an implemented guarantee only where matching code and tests exist.
 
-## Local lifecycle
+The following native/local flow describes the Rust disclosure protocol. The hosted Next.js interface uses an authenticated Rust service and PostgreSQL for account, credential and verification operations; it is **not** a holder-only, in-browser cryptographic vault. See [Architecture](ARCHITECTURE.md) and [Privacy](PRIVACY.md).
+
+## Native/local protocol lifecycle
 
 Issuer signs source credentials after authenticating its subject. Holder validates and encrypts them. Holder runs a public, pinned contextual policy locally. The issuer independently evaluates only its own evidence and provisions separate domain-bound attestations, with holder authorization for the audience key. These contain a single claim value or supported threshold boolean. No source IDs, global subject key, exact threshold score or evidence history are copied into attestations.
 

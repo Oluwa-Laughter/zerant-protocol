@@ -8,7 +8,7 @@ export const metadata: Metadata = {
     template: "%s | Zerant",
   },
   description:
-    "Privacy-preserving trust infrastructure for credentials, consent, contextual policy and Zcash settlement.",
+    "Private credentials, consent-based verification and Zcash testnet payment preparation.",
   icons: {
     icon: "/brand/zerant-mark.svg",
     shortcut: "/brand/zerant-mark.svg",

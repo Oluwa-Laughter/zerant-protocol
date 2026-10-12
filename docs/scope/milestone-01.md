@@ -1,5 +1,7 @@
 # Milestone 01: local foundation
 
+> **Historical milestone scope:** This document records an earlier implementation phase. It is not the current hosted feature list. See [README](../../README.md) and [Roadmap](../ROADMAP.md).
+
 Status: historical foundation scope. Several native Rust requirements are now implemented; this file remains the original acceptance reference and does not describe current product status by itself.
 
 ## Included
